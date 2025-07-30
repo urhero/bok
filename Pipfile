@@ -1,0 +1,34 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+pandas = "*"
+numpy = "*"
+matplotlib = "*"
+jupyter = "*"
+pyodbc = "*"
+sqlalchemy = "*"
+configure = "*"
+tqdm = "*"
+seaborn = "*"
+tabulate = "*"
+pyarrow = "*"
+reportlab = "*"
+plotly = "*"
+dask = {extras = ["complete"], version = "*"}
+numba = "*"
+polars = "*"
+scipy = "*"
+scikit-learn = "*"
+rich = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.12"
+python_full_version = "3.12.3"
+
+[pipenv]
+allow_prereleases = true
