@@ -418,7 +418,7 @@ def random_style_capped_sim(
     return best_stats, weights_tbl
 
 
-def report(start_date, end_date) -> None:
+def report(start_date, end_date) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Run the full ETL → optimisation → export process."""
     logger.info("Report generation started for period: %s to %s", start_date, end_date)
 
@@ -505,3 +505,4 @@ def report(start_date, end_date) -> None:
     agg_w.to_csv(DATA_DIR / f"aggregated_weights_{end_date}.csv")
 
     logger.info("Pipeline completed ✓ — files saved in %s", DATA_DIR)
+    return factor_rets, meta
