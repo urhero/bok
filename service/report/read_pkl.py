@@ -418,7 +418,7 @@ def random_style_capped_sim(
     return best_stats, weights_tbl
 
 
-def report(start_date, end_date) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def report(start_date, end_date) -> None:
     """Run the full ETL → optimisation → export process."""
     logger.info("Report generation started for period: %s to %s", start_date, end_date)
 
@@ -490,9 +490,9 @@ def report(start_date, end_date) -> Tuple[pd.DataFrame, pd.DataFrame]:
         df['weight'] = df['label'] * w / df.groupby(['ddt', 'label'])['label'].transform('count')
         weight_frames.append(df[['ddt', 'ticker', 'isin', 'gvkeyiid', 'weight']])
 
-        # ------------------------------------------------------------------
-        # 9. Aggregate across factors  (Σ weights per date × security)
-        # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 9. Aggregate across factors  (Σ weights per date × security)
+    # ------------------------------------------------------------------
     agg_w = (
         pd.concat(weight_frames, ignore_index=True)
         .groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)["weight"]
@@ -505,4 +505,4 @@ def report(start_date, end_date) -> Tuple[pd.DataFrame, pd.DataFrame]:
     agg_w.to_csv(DATA_DIR / f"aggregated_weights_{end_date}.csv")
 
     logger.info("Pipeline completed ✓ — files saved in %s", DATA_DIR)
-    return factor_rets, meta
+
