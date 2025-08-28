@@ -194,5 +194,5 @@ cython_debug/
 
 # Custom additions
 data/
-config.py
+#config.py
 .cursorindexingignore
