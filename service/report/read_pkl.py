@@ -94,6 +94,7 @@ def _filter_grouped(
         q_ret = raw_clean.groupby(["ddt", "quantile"])["M_RETURN"].mean().unstack(fill_value=0)
         q_mean = q_ret.mean(axis=0).to_frame("mean")
         thresh = (q_mean.loc["Q1", "mean"] - q_mean.loc["Q5", "mean"]) * 0.10
+        # >= <=
         q_mean["long"] = (q_mean["mean"] > q_mean.loc["Q1", "mean"] - thresh).astype(int).cumprod()
         q_mean["short"] = (q_mean["mean"] < q_mean.loc["Q5", "mean"] + thresh).astype(int) * -1
         q_mean["short"] = q_mean["short"].abs()[::-1].cumprod()[::-1] * -1
@@ -148,6 +149,7 @@ def _build_returns(
     meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
     meta["rank_style"] = meta.groupby("styleName")["cagr"].rank(ascending=False)
     meta["rank_total"] = meta["cagr"].rank(ascending=False)
+    meta.to_csv("meta_data.csv")
     meta = meta.sort_values("rank_total").reset_index(drop=True).rename(columns={'index': 'factorAbbreviation'})[:50]
 
     order = meta["factorAbbreviation"].tolist()
@@ -305,7 +307,7 @@ def assemble_top_style_portfolios(
 def random_style_capped_sim(
     rtn_df: pd.DataFrame,
     style_list: List[str],
-    num_sims: int = 10_000_000,
+    num_sims: int = 1_000,
     style_cap: float = 0.25,
     tol: float = 1e-12,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -403,12 +405,20 @@ def random_style_capped_sim(
     best_stats = stats.loc[[best_idx]]
 
     factors = rtn_df.columns.to_numpy()
+    # weights_tbl = pd.DataFrame({
+    #     "factor": np.array(['RevMagFY1C', 'SalesAcc', 'PM6M', 'CashEV', '52WSlope', 'FCFSales', 'LTDE']),
+    #     "raw_weight": np.array([0.25000, 0.248240, 0.166327, 0.161807, 0.0836373, 0.048804, 0.041150]),
+    #     "styleName": np.array(['Analyst Expectations', 'Historical Growth', 'Price Momentum', 'Valuation',
+    #                            'Price Momentum', 'Earnings Quality', 'Capital Efficiency']),
+    #     "fitted_weight": np.array([0.25000, 0.248240, 0.166327, 0.161807, 0.0836373, 0.048804, 0.041150]),
+    # })
     weights_tbl = pd.DataFrame({
         "factor": factors,
         "raw_weight": raw_mat[:, best_idx],
         "styleName": styles,
         "fitted_weight": fitted_mat[:, best_idx],
     })
+
     weights_tbl = (
         weights_tbl[weights_tbl["raw_weight"] > 0]
         .sort_values("raw_weight", ascending=False)
@@ -442,11 +452,11 @@ def report(start_date, end_date) -> None:
     mix_grid = pd.concat(grids, ignore_index=True)
 
     # 5. Save outputs
-    factor_rets.to_csv(DATA_DIR / "factor_rets.csv")
-    neg_corr.to_csv(DATA_DIR / "neg_corr.csv")
-    style_df.to_csv(DATA_DIR / "style_portfolios.csv")
-    style_neg_corr.to_csv(DATA_DIR / "style_neg_corr.csv")
-    mix_grid.to_csv(DATA_DIR / "mix_grid.csv", index=False)
+    # factor_rets.to_csv(DATA_DIR / "factor_rets.csv")
+    # neg_corr.to_csv(DATA_DIR / "neg_corr.csv")
+    # style_df.to_csv(DATA_DIR / "style_portfolios.csv")
+    # style_neg_corr.to_csv(DATA_DIR / "style_neg_corr.csv")
+    # mix_grid.to_csv(DATA_DIR / "mix_grid.csv", index=False)
 
     # Subset return matrix to selected factors
     # 6. Best sub_factor for each main_factor  ── add style names
@@ -465,7 +475,7 @@ def report(start_date, end_date) -> None:
     best_sub = best_sub[["main_factor", "main_style", "sub_factor", "sub_style"]]
 
     # Save if needed
-    best_sub.to_csv(DATA_DIR / "best_sub_factor.csv", index=False)
+    # best_sub.to_csv(DATA_DIR / "best_sub_factor.csv", index=False)
 
     # Subset return matrix to selected factors
     cols_to_keep = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel())
@@ -484,25 +494,97 @@ def report(start_date, end_date) -> None:
     for _, row in res[1].iterrows():
         fac = row['factor']
         w = row['fitted_weight']
+        s = row['styleName']
 
         j = kept_abbr.index(fac)
         df = cleaned_raw[j][['ddt', 'ticker', 'isin', 'gvkeyiid', 'label']].copy()
         df['weight'] = df['label'] * w / df.groupby(['ddt', 'label'])['label'].transform('count')
-        weight_frames.append(df[['ddt', 'ticker', 'isin', 'gvkeyiid', 'weight']])
+        df['ls_weight'] = df['label'] / df.groupby(['ddt', 'label'])['label'].transform('count')
+        df['factor_weight'] = w
+        df['style'] = s
+        df['name'] = f'MXCN1A_{s}'
+        df['factor'] = fac
+        df['count'] = df.groupby(['ddt', 'label'])['label'].transform('count')
+        df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
+        end_date_df = df[df['ddt'] == end_date].reset_index(drop=True)
+        weight_frames.append(end_date_df[['ddt', 'ticker', 'isin', 'gvkeyiid', 'weight',
+                                          'ls_weight', 'factor_weight',
+                                          'factor', 'style', 'name', 'count']])
 
     # ------------------------------------------------------------------
     # 9. Aggregate across factors  (Σ weights per date × security)
     # ------------------------------------------------------------------
+
+    weight_raw = pd.concat(weight_frames, ignore_index=True)
+    # weight_raw = weight_raw[weight_raw['factor'] != 'SalesAcc'].reset_index(drop=True)
+    weight_raw['factor_weight'] = weight_raw['factor_weight'] * np.sign(weight_raw['weight']) ** 2
     agg_w = (
-        pd.concat(weight_frames, ignore_index=True)
+        weight_raw
         .groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)["weight"]
         .sum()
     )
+
     # ▶︎ zero-pad tickers to 6 chars
-    agg_w["ticker"] = agg_w["ticker"].astype(str).str.zfill(6).add(" CH Equity")
+    # agg_w["ticker"] = agg_w["ticker"].astype(str).str.zfill(6).add(" CH Equity")
+    agg_w['style'] = 'MP'
+    factor_sum = (
+        weight_raw
+        .groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)["factor_weight"]
+        .sum()
+    )
+    agg_w = agg_w.merge(
+        factor_sum,
+        on=["ddt", "ticker", "isin", "gvkeyiid"],
+        how="left"
+    )
+    agg_w['name'] = 'MXCN1A_MP'
     agg_w = agg_w[agg_w['ddt'] == end_date].reset_index(drop=True)
+    agg_w['count'] =(
+        agg_w.groupby(['ddt', agg_w['weight'] > 0])['weight']
+        .transform('size')
+    )
+    agg_w['factor'] = 'AGG'
+    agg_w = agg_w[['ddt', 'ticker', 'isin', 'gvkeyiid', 'weight', 'factor_weight', 'factor', 'style', 'name', 'count']]
 
-    agg_w.to_csv(DATA_DIR / f"aggregated_weights_{end_date}.csv")
+    weight_raw = weight_raw.drop(columns=['weight'])
+    weight_raw = weight_raw.rename(columns={'ls_weight': 'weight'})
+    final_weights = pd.concat([weight_raw, agg_w],
+                              axis=0,
+                              ignore_index=True)
 
+    final_style_weight = (
+        final_weights.groupby(['ddt', 'ticker', 'isin', 'gvkeyiid', 'style'])[['weight', 'factor_weight']]
+        .sum()
+    )
+
+    agg_w.to_csv(DATA_DIR / f"aggregated_weights_{end_date}_test.csv")
+    final_weights.to_csv(DATA_DIR / f"total_aggregated_weights_{end_date}_test.csv")
+
+    final_style_weight.to_csv(DATA_DIR / f"total_aggregated_weights_style_{end_date}_test.csv")
+
+    final_weights.loc[final_weights['style'] == 'MP', 'factor_weight'] = 1
+    final_weights = final_weights.replace(0, np.nan)
+
+    pivoted_final = final_weights.pivot_table(index=['ddt', 'ticker', 'isin', 'gvkeyiid'],
+                                                    columns=['style', 'factor_weight', 'factor'], values='weight',
+                                                    aggfunc='sum').reset_index()
+
+    sample_df = pd.DataFrame({"factor": pivoted_final.columns.get_level_values(2).tolist()[4:]})
+    sum_df = pd.merge(res[1], sample_df, on='factor', how='inner')
+
+    final_weights.loc[final_weights['style'] == 'MP', 'factor_weight'] = sum_df['fitted_weight'].sum(axis=0)
+    final_weights = final_weights.replace(0, np.nan)
+
+    pivoted_final = final_weights.pivot_table(index=['ddt', 'ticker', 'isin', 'gvkeyiid'],
+                                                    columns=['style', 'factor_weight', 'factor'], values='weight',
+                                                    aggfunc='sum').reset_index()
+
+    cols = pivoted_final.columns
+    mp_mask = cols.get_level_values('style') == 'MP'
+
+    new_order = cols[~mp_mask].tolist() + cols[mp_mask].tolist()
+    pivoted_final = pivoted_final.loc[:, new_order]
+
+    pivoted_final.to_csv(DATA_DIR / f"pivoted_total_agg_wgt_{end_date}.csv")
     logger.info("Pipeline completed ✓ — files saved in %s", DATA_DIR)
 
