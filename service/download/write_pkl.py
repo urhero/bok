@@ -8,7 +8,7 @@ Features
 * Structured logging with ``RichHandler`` (when run as script)
 * Helper functions for pickling, ranking, quantile labelling, etc.
 
-Revision 2025‑07‑25
+Revision 2025‑10‑31
 -------------------
 * **Return type annotations reinstated** for public APIs:
   * ``assign_factor`` → returns a 4‑tuple of ``pd.DataFrame`` **or** a 4‑tuple
@@ -18,16 +18,16 @@ Revision 2025‑07‑25
 * No other logic changes.
 """
 
-import logging
-import pickle
+
 from pathlib import Path
 from typing import Any, List, Tuple
+from port.query_structure import GenerateQueryStructure
+from rich.progress import track
 
 import numpy as np
 import pandas as pd
-from rich.progress import track
-
-from port.query_structure import GenerateQueryStructure
+import logging
+import pickle
 
 # ----------------------------------------------------------------------------
 # Logging setup (only used when run as a script)
@@ -112,9 +112,9 @@ def _assign_factor(
         logger.warning("Skipping %s – insufficient history", abbv)
         return None, None, None, None
 
-    lag_col = abbv  # use factor code as new column name
-    fld[lag_col] = fld.groupby("gvkeyiid")["val"].shift(1)
-    fld = fld.dropna(subset=[lag_col]).drop(columns=["val", "factorAbbreviation"])
+    
+    fld[abbv] = fld.groupby("gvkeyiid")["val"].shift(1)
+    fld = fld.dropna(subset=[abbv]).drop(columns=["val", "factorAbbreviation"])
 
     # ------------------------------------------------------------------
     # 2. Pull monthly market returns (M_RETURN)
@@ -141,15 +141,19 @@ def _assign_factor(
     # ------------------------------------------------------------------
     # 4. Within‑sector ranking, score, quantile bucket
     # ------------------------------------------------------------------
+
     merged["rank"] = (
-        merged.groupby(["ddt", "sec"])[lag_col].rank(method="average", ascending=bool(order))
+        merged.groupby(["ddt", "sec"])[abbv].rank(method="average", ascending=bool(order))
     )
+
     merged["score"] = merged.groupby(["ddt", "sec"])["rank"].transform(_scale_rank)
     merged["quantile"] = merged["score"].apply(_quantile_label)
     merged = merged.dropna(subset=["quantile"])
+
     # ------------------------------------------------------------------
     # 5. Sector & market quantile returns
     # ------------------------------------------------------------------
+
     sector_ret = (
         merged.groupby(["ddt", "sec", "quantile"])["M_RETURN"].mean().unstack(fill_value=0)
     ).groupby("sec").mean().T

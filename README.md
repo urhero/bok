@@ -68,6 +68,21 @@ Example:
 python main.py report 2023-01-01 2023-12-31
 ```
 
+#### Generate Model Portfolio
+
+To generate model portfolio from the downloaded data:
+
+```bash
+python main.py mp <start_date> <end_date>
+```
+
+Replace `<start_date>` and `<end_date>` with dates in `YYYY-MM-DD` format.
+
+Example:
+```bash
+python main.py mp 2023-01-01 2023-12-31
+```
+
 ## Data
 
 The `data/` directory stores various CSV and pickle files generated or used by the pipeline, including:

@@ -23,6 +23,8 @@ polars = "*"
 scipy = "*"
 scikit-learn = "*"
 rich = "*"
+qpsolvers = {extras = ["osqp"], version = "*"}
+osqp = "*"
 
 [dev-packages]
 

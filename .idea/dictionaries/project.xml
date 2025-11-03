@@ -3,9 +3,17 @@
     <words>
       <w>abbv</w>
       <w>cagr</w>
+      <w>denom</w>
       <w>gvkeyiid</w>
       <w>isin</w>
+      <w>keyfun</w>
       <w>mxcn</w>
+      <w>ncorr</w>
+      <w>norr</w>
+      <w>qret</w>
+      <w>rebal</w>
+      <w>rtns</w>
+      <w>yymmdd</w>
     </words>
   </dictionary>
 </component>
