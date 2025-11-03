@@ -1,6 +1,6 @@
 from rich.logging import RichHandler
 from service.download.write_pkl import download
-from service.report.read_pkl import report
+from service.live.model_portfolio import mp
 import logging
 import argparse
 
@@ -17,13 +17,13 @@ if __name__ == "__main__":
     parser_download.add_argument("end_date", type=str, help="End date in YYYY-MM-DD format.")
 
     # Report command
-    parser_report = subparsers.add_parser("report", help="Generate reports from downloaded data.")
+    parser_report = subparsers.add_parser("mp", help="Generate MP from downloaded data.")
     parser_report.add_argument("start_date", type=str, help="Start date in YYYY-MM-DD format.")
     parser_report.add_argument("end_date", type=str, help="End date in YYYY-MM-DD format.")
 
     args = parser.parse_args()
 
-    if args.command in ("download", "report"):
+    if args.command in ("download", "mp"):
         # Configure rich‑aware logging so progress stays at top.
         logging.basicConfig(
             level=logging.INFO,
@@ -33,7 +33,7 @@ if __name__ == "__main__":
         )
         if args.command == "download":
             download(args.start_date, args.end_date)
-        elif args.command == "report":
-            report(args.start_date, args.end_date)
+        elif args.command == "mp":
+            mp(args.start_date, args.end_date)
     else:
         parser.print_help()

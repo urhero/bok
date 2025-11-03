@@ -18,573 +18,417 @@ Key outputs
 | `mix_grid.csv`        | 5 × 101 weight grid per style – includes `main_factor` & `sub_factor` |
 """
 from __future__ import annotations
+from service.live.model_portfolio import _load_pickles, _filter_grouped, _generate_meta
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.patches import Rectangle
 
 import logging
-import pickle
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
-
 import numpy as np
 import pandas as pd
-from rich.progress import track
+import matplotlib.pyplot as plt
+import logging
 
-__all__ = [
-    "get_port_wgt",
-    "assemble_top_style_portfolios",
-]
+abbrs, names, styles, raw = _load_pickles()
+kept_abbr, kept_name, kept_style, kept_idx, dropped_sec, cleaned_raw = _filter_grouped(abbrs, names, styles, raw)
 
-# ---------------------------------------------------------------------------
-# Logging setup
-# ---------------------------------------------------------------------------
-logger = logging.getLogger(__name__)
+factor_rets, _, _ = _generate_meta(kept_abbr, kept_name, kept_style, cleaned_raw)
 
-# ---------------------------------------------------------------------------
-# Global paths
-# ---------------------------------------------------------------------------
-DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+list_sector = []
 
-# =============================================================================
-# 1️⃣ Pickle Loader
-# =============================================================================
+for dec, idx in zip(dropped_sec, kept_idx):
 
-def _load_pickles(dir_: Path = DATA_DIR) -> Tuple[List[str], List[str], List[str], List[Any]]:
-    """Load four pickled lists produced by the *download* stage."""
-    files = ["list_abbv.pkl", "list_name.pkl", "list_style.pkl", "list_data.pkl"]
-    loaded: List[Any] = []
-    for fn in files:
-        p = dir_ / fn
-        if not p.exists():
-            logger.error("Pickle '%s' missing", fn)
-            raise FileNotFoundError(fn)
-        loaded.append(pickle.loads(p.read_bytes()))
-    logger.info("Loaded %d factors from pickles", len(loaded[0]))
-    return tuple(loaded)  # type: ignore[return-value]
+    sec_df = raw[idx][0]
+    list_sector.append(sec_df)
 
-# =============================================================================
-# 2️⃣ Sector Filter + Relabelling
-# =============================================================================
-
-def _filter_grouped(
-    list_abbrs: List[str],
-    list_names: List[str],
-    list_styles: List[str],
-    list_data: List[Tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]],
-) -> Tuple[List[str], List[str], List[str], List[int], List[List[str]], List[pd.DataFrame]]:
-    """Remove sectors with negative Q‑spread; recompute long/short labels."""
-
-    kept_abbr, kept_name, kept_style, kept_idx = [], [], [], []
-    dropped_sec: List[List[str]] = []
-    new_raw: List[pd.DataFrame] = []
-
-    for idx, (sec_df, _, _, raw_df) in track(
-        enumerate(list_data), description="Filtering sectors", total=len(list_data)
-    ):
-        if sec_df is None or raw_df is None:
-            logger.debug("Factor %d skipped – no data", idx)
-            continue
-        tmp = sec_df.T.reset_index()
-        tmp["spread"] = tmp["Q1"] - tmp["Q5"]
-        to_drop = tmp.loc[tmp["spread"] < 0, "sec"].tolist()
-        raw_clean = raw_df[~raw_df["sec"].isin(to_drop)].reset_index(drop=True)
-        if raw_clean.empty:
-            logger.debug("Factor %d discarded – all sectors dropped", idx)
-            continue
-
-        q_ret = raw_clean.groupby(["ddt", "quantile"])["M_RETURN"].mean().unstack(fill_value=0)
-        q_mean = q_ret.mean(axis=0).to_frame("mean")
-        thresh = (q_mean.loc["Q1", "mean"] - q_mean.loc["Q5", "mean"]) * 0.10
-        # >= <=
-        q_mean["long"] = (q_mean["mean"] > q_mean.loc["Q1", "mean"] - thresh).astype(int).cumprod()
-        q_mean["short"] = (q_mean["mean"] < q_mean.loc["Q5", "mean"] + thresh).astype(int) * -1
-        q_mean["short"] = q_mean["short"].abs()[::-1].cumprod()[::-1] * -1
-        q_mean["label"] = q_mean["long"] + q_mean["short"]
-        merged = raw_clean.merge(q_mean.reset_index()[["quantile", "label"]], on="quantile")
-
-        kept_abbr.append(list_abbrs[idx]); kept_name.append(list_names[idx]); kept_style.append(list_styles[idx]); kept_idx.append(idx)
-        dropped_sec.append(to_drop); new_raw.append(merged)
-
-    logger.info("Sector filter retained %d / %d factors", len(kept_idx), len(list_abbrs))
-    return kept_abbr, kept_name, kept_style, kept_idx, dropped_sec, new_raw
-
-# =============================================================================
-# 3️⃣ Return Matrix · Ranking · Negative Correlation
-# =============================================================================
-
-def _compute_label(df_raw: pd.DataFrame, abbr: str) -> pd.Series:
-    spread = df_raw.groupby(["ddt", "label"])["M_RETURN"].mean().unstack(fill_value=0)
-    return (spread.iloc[:, -1] - spread.iloc[:, 0]).rename(abbr)
+STYLE_COLORS = {
+    "Valuation":            "#d62728",   # Red
+    "Price Momentum":       "#ff7f0e",   # Orange
+    "Earnings Quality":     "#e377c2",   # Bright Pink
+    "Size":                 "#2ca02c",   # Green
+    "Analyst Expectations": "#17becf",   # Cyan / Teal
+    "Historical Growth":    "#8c564b",   # Brown
+    "Capital Efficiency":   "#bcbd22"    # Olive (high-contrast yellow-green)
+}
 
 
-def _corr_when_negative(df: pd.DataFrame, min_obs: int = 20) -> pd.DataFrame:
-    out = pd.DataFrame(index=df.columns, columns=df.columns, dtype=float)
-    for col in df.columns:
-        mask = df[col] < 0
-        out.loc[col] = df.loc[mask].corr()[col] if mask.sum() >= min_obs else np.nan
-    return out
+# ==== 1) 드롭 섹터 → 팩터 매핑 만들기 ====
+
+# 원래 너가 쓰는 rename 규칙을 dict로 뺌 (데이터/드롭목록 둘 다 동일 규칙 적용)
+RENAME_SECTORS = {
+    'Communication Services': 'CS',
+    'Consumer Discretionary': 'Cons. Disc.',
+    'Consumer Staples': 'Cons. Stap.',
+    'Information Technology': 'IT',
+}
+
+# kept_idx와 dropped_sec는 _filter_grouped 결과(리턴값) 기준
+# list_factor_name은 각 팩터의 factor_name 리스트
+factor2drop = {}
+for dec, idx in zip(dropped_sec, kept_idx):
+    # 드롭 목록도 축약명으로 통일 (플롯에서 data.columns에 맞추기 위해)
+    dec_norm = [RENAME_SECTORS.get(s, s) for s in dec]
+    factor2drop[abbrs[idx]] = set(dec_norm)
 
 
-def _build_returns(
-    abbrs: List[str],
-    names: List[str],
-    styles: List[str],
-    data: List[pd.DataFrame],
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    logger.info("Building monthly return matrix")
-    ret_df = pd.concat({_a: _compute_label(r, _a) for _a, r in zip(abbrs, data)}.values(), axis=1).fillna(0)
-    ret_df.loc[ret_df.index[0] - pd.DateOffset(months=1)] = 0.0
-    ret_df = ret_df.sort_index()
-
-    valid = ret_df.columns[(ret_df == 0).sum() <= 10]
-    ret_df = ret_df[valid]
-
-    meta = (
-        pd.DataFrame({"factorAbbreviation": abbrs, "factorName": names, "styleName": styles})
-        .set_index("factorAbbreviation")
-        .loc[valid]
-        .reset_index()
-    )
-
-    months = len(ret_df) - 1
-    meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
-    meta["rank_style"] = meta.groupby("styleName")["cagr"].rank(ascending=False)
-    meta["rank_total"] = meta["cagr"].rank(ascending=False)
-    meta.to_csv("meta_data.csv")
-    meta = meta.sort_values("rank_total").reset_index(drop=True).rename(columns={'index': 'factorAbbreviation'})[:50]
-
-    order = meta["factorAbbreviation"].tolist()
-    ret_df = ret_df[order]
-    neg_corr = _corr_when_negative(ret_df).loc[order, order]
-
-    logger.info("Return matrix built (%d factors)", len(order))
-    return ret_df, neg_corr, meta
-
-# =============================================================================
-# 4️⃣ Two‑Factor Mix Optimiser
-# =============================================================================
-
-def _max_dd(cum: np.ndarray) -> np.ndarray:
-    return (cum / np.maximum.accumulate(cum, axis=0) - 1).min(axis=0)
+meta_df = pd.read_csv("meta_data.csv", index_col=0).sort_values(by='cagr', ascending=False).reset_index()
+meta_df = meta_df.rename(columns={'index': 'factorAbbreviation'})
 
 
-def get_port_wgt(
-    factor_rets: pd.DataFrame,
-    data_raw: pd.DataFrame,
-    data_neg: pd.DataFrame,
-    *_,
-) -> Tuple[pd.DataFrame, List[pd.Series], str, float, str, float]:
-    """Grid-search the optimal weight split for a main/sub factor pair.
+# ==== 2) plot_factor_returns 수정: dropped 인자 추가 및 회색 칠하기 ====
 
-    Returns
-    -------
-    df_mix : DataFrame
-        Grid of weight pairs with performance metrics and rankings.
-    ports  : list[Series]
-        List of mix return series (one per grid column, order aligned with
-        `df_mix`).
-    main_factor, main_w, sub_factor, sub_w : str | float
-        Identifiers and optimal weights.
+def plot_factor_returns(data, style_name, factor_name, name, mode, ax=None, show=False, dropped=None):
     """
+    dropped: set[str] | None  -> 회색 처리할 섹터명 집합(축약명 기준)
+    """
+    if dropped is None:
+        dropped = set()
 
-    # ------------------------------------------------------------------
-    # 1. Build candidate list (five sub-factors with best combined rank)
-    # ------------------------------------------------------------------
-    negative_corr = (
-        data_neg.loc[data_raw["factorAbbreviation"], :]
-        .T.reset_index()
-        .reset_index()
-    )
-    negative_corr.iloc[:, 0] += 1  # CAGR rank starts at 1
-    negative_corr.columns = ["rank_cagr", "factorAbbreviation", negative_corr.columns[-1]]
-    negative_corr["rank_negative_corr"] = negative_corr[negative_corr.columns[-1]].rank()
-    negative_corr["rank_avg"] = negative_corr["rank_cagr"] * 0.7 + negative_corr["rank_negative_corr"] * 0.3
-    negative_corr = negative_corr.nsmallest(5, "rank_avg")
+    colour = STYLE_COLORS.get(style_name, "black")
 
-    # ------------------------------------------------------------------
-    # 2. Prepare weight grid & common variables
-    # ------------------------------------------------------------------
-    w_grid = np.linspace(0.0, 1.0, 101)
-    w_inv = 1.0 - w_grid
-    ann = 12 / factor_rets.shape[0]  # monthly → annual exponent
-    main = data_raw["factorAbbreviation"].iat[0]
+    if data is None:
+        pass
+    else:
+        created_new = ax is None
+        if created_new:
+            fig, ax = plt.subplots(figsize=(12, 6))
+        else:
+            fig = ax.figure
 
-    frames: List[pd.DataFrame] = []
-    mix_series: List[pd.Series] = []
+        if mode == 'Factor Return':
+            # df = data.groupby(['ddt', 'label'])['M_RETURN'].mean().unstack()
+            df = data.copy()
+            s = pd.to_numeric(df, errors='coerce')
+            cum = (1.0 + s).cumprod()
+            out = ((cum - 1.0) * 100.0).dropna()
 
-    # ------------------------------------------------------------------
-    # 3. Iterate over candidate sub-factors with a progress bar
-    # ------------------------------------------------------------------
-    for sub in track(
-        negative_corr["factorAbbreviation"], description=f"Mixing {main} with sub-factors"
-    ):
-        port = factor_rets[[main, sub]]
-        mix_ret = port[main].to_numpy()[:, None] * w_grid + port[sub].to_numpy()[:, None] * w_inv
-        mix_cum = np.cumprod(1 + mix_ret, axis=0)
+            ax.set_title(f'{name}', fontsize=8, color=colour)
+            ax.plot(out.index, out.values, color=colour)
 
-        df = pd.DataFrame({
-            "main_wgt": w_grid,
-            "sub_wgt": w_inv,
-            "main_cagr": (1 + port[main]).cumprod().iat[-1] ** ann - 1,
-            "sub_cagr": (1 + port[sub]).cumprod().iat[-1] ** ann - 1,
-            "mix_cagr": mix_cum[-1] ** ann - 1,
-            "main_mdd": ((1 + port[main]).cumprod() / (1 + port[main]).cumprod().cummax() - 1).min(),
-            "sub_mdd": ((1 + port[sub]).cumprod() / (1 + port[sub]).cumprod().cummax() - 1).min(),
-            "mix_mdd": (mix_cum / np.maximum.accumulate(mix_cum, axis=0) - 1).min(axis=0),
-            "main_factor": main,
-            "sub_factor": sub,
-        })
-        frames.append(df)
+        elif mode == 'Sector Return Histogram':
 
-        # Store each mix return column as Series (aligned with df rows)
-        mix_series.extend(
-            pd.Series(mix_ret[:, i], index=port.index) for i in range(mix_ret.shape[1])
+            # ### 변경: 컬럼명 축약으로 통일 (드롭 목록과 일치)
+            data = data.rename(columns=RENAME_SECTORS) * 100
+
+            quantiles = data.index.tolist()
+            sectors = data.columns.tolist()
+            bar_width = 0.15
+            x = np.arange(len(sectors))
+            colors = ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854']
+
+            # ### 변경: 각 quantile 막대를 “섹터별”로 회색/컬러 분기
+            for i, q in enumerate(quantiles):
+                vals = data.loc[q].values
+                offset = (i - 2) * bar_width
+
+                # 섹터별 색상 배열: 드롭이면 회색, 아니면 기존 색
+                bar_colors = ['#FFFFFF' if s in dropped else colors[i] for s in sectors]
+
+                ax.bar(x + offset, vals, width=bar_width,
+                       label=q, color=bar_colors, edgecolor='black')
+
+            ax.set_xticks(x)
+            ax.set_xticklabels(sectors, rotation=45, ha='right')
+            ax.set_ylabel('AvgReturn (%)')
+            ax.set_title(f'{name}', fontsize=8, color=colour)
+
+            # ### 옵션: 범례에 Dropped 표시 추가(원하면 주석 해제)
+            # from matplotlib.patches import Patch
+            # handles, labels = ax.get_legend_handles_labels()
+            # handles.append(Patch(facecolor='#B0B0B0', edgecolor='black', label='Dropped'))
+            # ax.legend(handles=handles, ncol=3, fontsize=8)
+
+        else:  # Annualized by Quantile
+            # df_mean = data.groupby(['ddt', 'quantile'])['M_RETURN'].mean().unstack().mean(axis=0) * 100
+            df_mean = data.copy()
+            df_mean = df_mean.set_index('quantile')
+            y = pd.to_numeric(df_mean['mean'], errors='coerce').astype(float) * 100
+
+            labels = (df_mean['label']
+                      .astype(int)
+                      .fillna(0)
+                      .astype(int))
+            q_label_map = labels.to_dict()
+
+            # 색 지정: ±1 → 파랑, 0 → 흰색
+            BLUE = '#1f77b4'
+            RED = '#d62728'
+            WHITE = '#FFFFFF'
+            idx_order = list(y.index)
+            bar_colors = [
+                (BLUE if q_label_map.get(q, 0) == 1
+                 else RED if q_label_map.get(q, 0) == -1
+                else WHITE)
+                for q in idx_order
+            ]
+            ax.bar([str(q) for q in y.index], y.values,
+                   color=bar_colors, edgecolor='black', linewidth=0.8)
+
+            ax.set_xlabel('Quantile')
+            ax.set_ylabel('AvgReturn(%)')
+            ax.set_title(f'{name}', fontsize=8, color=colour)
+
+        if created_new:
+            plt.tight_layout()
+        return fig
+
+
+style_cagr = meta_df['styleName'].values.tolist()
+abbr_cagr = meta_df['factorAbbreviation'].values.tolist()
+name_cagr = meta_df['factorName'].values.tolist()
+
+# ==== 3) PDF 생성 루프에서 dropped 전달 ====
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+
+plt.ioff()
+
+rows, cols  = 3, 4
+per_page    = rows * cols
+file_name   = "sector_returns_pages_sorted_by_cagr.pdf"
+
+with PdfPages(file_name) as pp:
+
+    # --- 범례 페이지 (그대로) ---
+    fig_legend, ax_legend = plt.subplots(figsize=(cols * 4, rows * 3))
+    ax_legend.set_axis_off()
+
+    for i, (style, hexcol) in enumerate(STYLE_COLORS.items()):
+        row = i // 2
+        col = i % 2
+        y   = 0.95 - 0.14 * row
+        x   = 0.07 + 0.46 * col
+        ax_legend.add_patch(
+            Rectangle((x, y-0.04), 0.09, 0.09, facecolor=hexcol, edgecolor="black")
         )
+        ax_legend.text(x + 0.12, y, style, fontsize=13, va="center")
 
-        logger.info("Completed main=%s ↔ sub=%s", main, sub)
+    ax_legend.set_title("Factor-Style Colour Key", fontsize=18, pad=30)
+    fig_legend.subplots_adjust(top=0.90, bottom=0.05, left=0.05, right=0.95)
+    pp.savefig(fig_legend)
+    plt.close(fig_legend)
 
-    # ------------------------------------------------------------------
-    # 4. Concatenate grid & rank
-    # ------------------------------------------------------------------
-    df_mix = pd.concat(frames, ignore_index=True)
-    df_mix["rank_total"] = df_mix["mix_cagr"].rank(ascending=False) * 0.6 + df_mix["mix_mdd"].rank(ascending=False) * 0.4
-    best = df_mix.nsmallest(1, "rank_total").iloc[0]
+    # --- 본문 페이지 ---
+    fig, axes = plt.subplots(rows, cols, figsize=(cols*4, rows*3))
+    idx_in_page = 0
+    total = len(list_sector)
 
-    return (
-        df_mix,
-        mix_series,
-        main,
-        round(best["main_wgt"], 2),
-        best["sub_factor"],
-        round(best["sub_wgt"], 2),
-    )
+    for i, (style_name, factor_name, full_name) in enumerate(
+        zip(style_cagr, abbr_cagr, name_cagr), 0
+    ):
+        ax = axes.flat[idx_in_page]
 
-# =============================================================================
-# 5️⃣ Assemble Style Portfolios
-# =============================================================================
+        try:
+            # ### 변경: 이 팩터의 드롭 섹터 set 조회 (없으면 빈 set)
+            drop_set = factor2drop.get(factor_name, set())
 
-def assemble_top_style_portfolios(
-    factor_rets: pd.DataFrame,
-    meta: pd.DataFrame,
-    neg_corr: pd.DataFrame,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Select #1 factor per style and generate its optimal mix series."""
+            res = plot_factor_returns(
+                list_sector[kept_abbr.index(meta_df['factorAbbreviation'].values.tolist()[i])],
+                style_name,
+                factor_name,
+                full_name,
+                "Sector Return Histogram",
+                ax=ax,
+                show=False,
+                dropped=drop_set           # ### 변경: 회색 처리 대상 전달
+            )
+            if res is None:
+                logging.warning(f"[{i}/{total}] {factor_name} → None, skip")
+                continue
 
-    tag_map = {
-        "Analyst Expectations": "ane",
-        "Price Momentum": "mom",
-        "Valuation": "val",
-        "Historical Growth": "hig",
-        "Capital Efficiency": "caf",
-        "Earnings Quality": "eaq",
-    }
-
-    mixes: Dict[str, pd.Series] = {}
-    processed: set[str] = set()
-
-    for _, row in meta.iterrows():  # meta already sorted by global rank
-        style = row["styleName"]
-        if style in processed:
+        except Exception as e:
+            logging.error(f"[{i}/{total}] {factor_name} fail: {e}")
             continue
-        processed.add(style)
-        tag = tag_map.get(style, style[:3].lower())
 
-        df_mix, series_list, *_ = get_port_wgt(
-            factor_rets, row.to_frame().T.reset_index(drop=True), neg_corr
+        ax.set_axis_on()
+        idx_in_page += 1
+
+        is_last = i == total
+        if idx_in_page == per_page or is_last:
+            for empty_ax in axes.flat[idx_in_page:]:
+                empty_ax.axis("off")
+            fig.tight_layout()
+            pp.savefig(fig)
+            plt.close(fig)
+
+            if not is_last:
+                fig, axes = plt.subplots(rows, cols, figsize=(cols*4, rows*3))
+                idx_in_page = 0
+
+plt.close("all")
+print(f"PDF 저장 완료 → {file_name}")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+
+plt.ioff()  # 노트북 화면 자동 출력 끄기
+
+rows, cols  = 3, 4
+per_page    = rows * cols
+file_name   = "quantile_returns_pages_sorted_by_cagr.pdf"
+
+with PdfPages(file_name) as pp:
+
+    # 앞서 정의한 rows, cols 사용
+    fig_legend, ax_legend = plt.subplots(
+        figsize=(cols * 4, rows * 3)  # (16, 9) – 본문과 같은 크기
+    )
+    ax_legend.set_axis_off()
+
+    # 가로 두 칼럼(4×2)으로 배치
+    for i, (style, hexcol) in enumerate(STYLE_COLORS.items()):
+        row = i // 2
+        col = i % 2
+        y   = 0.95 - 0.14 * row          # 세로 위치 (약간 여백)
+        x   = 0.07 + 0.46 * col       # 좌우 위치
+
+        # 컬러 사각형
+        ax_legend.add_patch(
+            Rectangle((x, y-0.04), 0.09, 0.09,
+                      facecolor=hexcol, edgecolor="black")
         )
-        best_idx = df_mix.nsmallest(1, "rank_total").index[0]
-        mixes[tag] = series_list[best_idx].rename(tag)
+        # 텍스트
+        ax_legend.text(x + 0.12, y, style,
+                       fontsize=13, va="center")
 
-    style_df = pd.concat(mixes.values(), axis=1)
-    style_neg_corr = _corr_when_negative(style_df)
-    logger.info("Built %d style portfolios", style_df.shape[1])
-    return style_df, style_neg_corr
+    # 제목: pad 를 크게, 색 안 잘리게 top 여백 확보
+    ax_legend.set_title("Factor-Style Colour Key",
+                        fontsize=18, pad=30)
 
+    # 위·아래·좌·우 margin 확보 (잘림 방지)
+    fig_legend.subplots_adjust(top=0.90, bottom=0.05,
+                            left=0.05, right=0.95)
 
-# =============================================================================
-# 6️⃣ Simulate Factor Exposures
-# =============================================================================
+    pp.savefig(fig_legend)
+    plt.close(fig_legend)
 
-def random_style_capped_sim(
-    rtn_df: pd.DataFrame,
-    style_list: List[str],
-    num_sims: int = 1_000,
-    style_cap: float = 0.25,
-    tol: float = 1e-12,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Monte-Carlo search for the best style-capped portfolio.
+    ##
+    fig, axes = plt.subplots(rows, cols, figsize=(cols*4, rows*3))
+    idx_in_page = 0
+    total = len(quantile_rtn)
 
-    Parameters
-    ----------
-    rtn_df : DataFrame
-        Monthly spread return matrix (rows = dates, cols = factorAbbreviation).
-    style_list : list[str]
-        Style name for every column in `rtn_df`, in the same order.
-    num_sims : int, default 20_000_000
-        Number of random portfolios to draw.
-    style_cap : float, default 0.25
-        Maximum weight share per style.
-    tol : float, default 1e-12
-        Numerical tolerance when checking caps.
+    for i, (style_name, factor_name, full_name) in enumerate(zip(style_cagr, abbr_cagr, name_cagr), 0):
+        ax = axes.flat[idx_in_page]     # 현재 칸
 
-    Returns
-    -------
-    best_stats : DataFrame (1 × 4)
-        CAGR, MDD and rank metrics of the top portfolio.
-    weights_tbl : DataFrame
-        Columns: factor, raw_weight, styleName, fitted_weight
-    """
+        try:
+            res = plot_factor_returns(quantile_rtn[kept_abbr.index(meta_df['factorAbbreviation'].values.tolist()[i])],
+                                      style_name, factor_name, full_name,
+                                      "Quantile Spread", ax=ax, show=False)
+            if res is None:
+                logging.warning(f"[{i}/{total}] {factor_name} → None, skip")
+                continue                # **axis("off") 호출 안 함**
+        except Exception as e:
+            logging.error(f"[{i}/{total}] {factor_name} fail: {e}")
+            continue                    # 역시 axis 상태 건드리지 않음
 
-    # ------------------------------------------------------------------
-    # 0. Basic checks & prep
-    # ------------------------------------------------------------------
-    K = rtn_df.shape[1]
-    if len(style_list) != K:
-        raise ValueError("length of style_list must equal number of columns in rtn_df")
+        # 성공적으로 그렸다면 (혹시 이전에 꺼졌을 수도 있으니) 축 켜기
+        ax.set_axis_on()
+        idx_in_page += 1
 
-    styles = np.asarray(style_list)
+        # 페이지가 가득 찼거나 마지막 데이터면 저장
+        is_last = i == total
+        if idx_in_page == per_page or is_last:
+            for empty_ax in axes.flat[idx_in_page:]:
+                empty_ax.axis("off")    # 최종 빈 칸만 깔끔히 제거
+            fig.tight_layout()
+            pp.savefig(fig)
+            plt.close(fig)
 
-    # ------------------------------------------------------------------
-    # 1. Random raw weights (Σ w = 1 per column)
-    # ------------------------------------------------------------------
-    raw_mat = np.random.rand(K, num_sims).astype(np.float64)
-    raw_mat /= raw_mat.sum(axis=0, keepdims=True)
+            if not is_last:            # 다음 페이지 준비
+                fig, axes = plt.subplots(rows, cols,
+                                         figsize=(cols*4, rows*3))
+                idx_in_page = 0
 
-    # ------------------------------------------------------------------
-    # 2. Build style mask (S × K)
-    # ------------------------------------------------------------------
-    uniq_styles = np.unique(styles)
-    S = len(uniq_styles)
+plt.close("all")  # 혹시 남은 Figure 전부 정리
+print(f"PDF 저장 완료 → {file_name}")
 
-    mask = np.zeros((S, K), dtype=int)
-    for i, s in enumerate(uniq_styles):
-        mask[i, styles == s] = 1
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
 
-    # ------------------------------------------------------------------
-    # 3. Apply style caps (shrink & redistribute)
-    # ------------------------------------------------------------------
-    share = mask @ raw_mat
-    excess = np.clip(share - style_cap, a_min=0, a_max=None)
-    scale = np.where(share > style_cap, style_cap / share, 1.0)
-    shrink = mask.T @ scale
-    mat_scaled = raw_mat * shrink
+plt.ioff()  # 노트북 화면 자동 출력 끄기
 
-    room = np.where(share < style_cap, style_cap - share, 0)
-    room_sum = room.sum(axis=0, keepdims=True)
-    ratio = np.divide(room, room_sum, where=room_sum != 0)
-    add = excess.sum(axis=0, keepdims=True) * ratio
-    fitted_mat = mat_scaled + (mask.T @ add)
-    fitted_mat /= fitted_mat.sum(axis=0, keepdims=True)
+rows, cols  = 3, 4
+per_page    = rows * cols
+file_name   = "factor_returns_pages_sorted_by_cagr.pdf"
 
-    # Feasibility filter
-    ok = (mask @ fitted_mat <= style_cap + tol).all(axis=0)
-    raw_mat = raw_mat[:, ok]
-    fitted_mat = fitted_mat[:, ok]
+with PdfPages(file_name) as pp:
 
-    # ------------------------------------------------------------------
-    # 4. Simulate returns
-    # ------------------------------------------------------------------
-    port_np = rtn_df.to_numpy(dtype=np.float32)
-    sim = port_np @ fitted_mat                         # (T × sims)
-    sim = pd.DataFrame(sim, index=rtn_df.index)
-
-    ann_exp = 12 / len(sim)
-    cum = (1 + sim).cumprod()
-    cagr = cum.iloc[-1].pow(ann_exp) - 1
-    mdd = (cum / cum.cummax() - 1).min()
-
-    stats = pd.DataFrame({"cagr": cagr, "mdd": mdd})
-    stats["rank_cagr"] = stats["cagr"].rank(ascending=False)
-    stats["rank_mdd"] = stats["mdd"].rank(ascending=False)
-    stats["rank_total"] = stats["rank_cagr"] * 0.6 + stats["rank_mdd"] * 0.4
-
-    # ------------------------------------------------------------------
-    # 5. Pick the best portfolio & build weight table
-    # ------------------------------------------------------------------
-    best_idx = stats["rank_total"].idxmin()
-    best_stats = stats.loc[[best_idx]]
-
-    factors = rtn_df.columns.to_numpy()
-    # weights_tbl = pd.DataFrame({
-    #     "factor": np.array(['RevMagFY1C', 'SalesAcc', 'PM6M', 'CashEV', '52WSlope', 'FCFSales', 'LTDE']),
-    #     "raw_weight": np.array([0.25000, 0.248240, 0.166327, 0.161807, 0.0836373, 0.048804, 0.041150]),
-    #     "styleName": np.array(['Analyst Expectations', 'Historical Growth', 'Price Momentum', 'Valuation',
-    #                            'Price Momentum', 'Earnings Quality', 'Capital Efficiency']),
-    #     "fitted_weight": np.array([0.25000, 0.248240, 0.166327, 0.161807, 0.0836373, 0.048804, 0.041150]),
-    # })
-    weights_tbl = pd.DataFrame({
-        "factor": factors,
-        "raw_weight": raw_mat[:, best_idx],
-        "styleName": styles,
-        "fitted_weight": fitted_mat[:, best_idx],
-    })
-
-    weights_tbl = (
-        weights_tbl[weights_tbl["raw_weight"] > 0]
-        .sort_values("raw_weight", ascending=False)
-        .reset_index(drop=True)
+    # 앞서 정의한 rows, cols 사용
+    fig_legend, ax_legend = plt.subplots(
+        figsize=(cols * 4, rows * 3)  # (16, 9) – 본문과 같은 크기
     )
+    ax_legend.set_axis_off()
 
-    return best_stats, weights_tbl
+    # 가로 두 칼럼(4×2)으로 배치
+    for i, (style, hexcol) in enumerate(STYLE_COLORS.items()):
+        row = i // 2
+        col = i % 2
+        y   = 0.95 - 0.14 * row          # 세로 위치 (약간 여백)
+        x   = 0.07 + 0.46 * col       # 좌우 위치
 
+        # 컬러 사각형
+        ax_legend.add_patch(
+            Rectangle((x, y-0.04), 0.09, 0.09,
+                      facecolor=hexcol, edgecolor="black")
+        )
+        # 텍스트
+        ax_legend.text(x + 0.12, y, style,
+                       fontsize=13, va="center")
 
-def report(start_date, end_date) -> None:
-    """Run the full ETL → optimisation → export process."""
-    logger.info("Report generation started for period: %s to %s", start_date, end_date)
+    # 제목: pad 를 크게, 색 안 잘리게 top 여백 확보
+    ax_legend.set_title("Factor-Style Colour Key",
+                        fontsize=18, pad=30)
 
-    # 1. Load pickles and apply sector filter
-    abbrs, names, styles, raw = _load_pickles()
-    kept_abbr, kept_name, kept_style, _, _, cleaned_raw = _filter_grouped(abbrs, names, styles, raw)
+    # 위·아래·좌·우 margin 확보 (잘림 방지)
+    fig_legend.subplots_adjust(top=0.90, bottom=0.05,
+                            left=0.05, right=0.95)
 
-    # 2. Build return matrix, neg-corr matrix, and meta ranking table
-    factor_rets, neg_corr, meta = _build_returns(kept_abbr, kept_name, kept_style, cleaned_raw)
+    pp.savefig(fig_legend)
+    plt.close(fig_legend)
 
-    # 3. Create style-level mixed portfolios
-    style_df, style_neg_corr = assemble_top_style_portfolios(factor_rets, meta, neg_corr)
+    ##
 
-    # 4. Generate weight grids only for the top factor in each style
-    top_meta = meta.groupby("styleName", as_index=False).first()
-    grids = []
-    for _, row in top_meta.iterrows():
-        grid, *_ = get_port_wgt(factor_rets, row.to_frame().T.reset_index(drop=True), neg_corr)
-        grid["styleName"] = row["styleName"]
-        grids.append(grid)
-    mix_grid = pd.concat(grids, ignore_index=True)
+    fig, axes = plt.subplots(rows, cols, figsize=(cols*4, rows*3))
+    idx_in_page = 0
+    total = len(factor_rets.columns)
 
-    # 5. Save outputs
-    # factor_rets.to_csv(DATA_DIR / "factor_rets.csv")
-    # neg_corr.to_csv(DATA_DIR / "neg_corr.csv")
-    # style_df.to_csv(DATA_DIR / "style_portfolios.csv")
-    # style_neg_corr.to_csv(DATA_DIR / "style_neg_corr.csv")
-    # mix_grid.to_csv(DATA_DIR / "mix_grid.csv", index=False)
+    for i, (style_name, factor_name, full_name) in enumerate(zip(style_cagr, abbr_cagr, name_cagr), 0):
+        ax = axes.flat[idx_in_page]     # 현재 칸
 
-    # Subset return matrix to selected factors
-    # 6. Best sub_factor for each main_factor  ── add style names
-    best_sub = (
-        mix_grid.sort_values("rank_total")  # ascending by rank_total
-        .groupby("main_factor", as_index=False)  # group by each main_factor
-        .first()[["main_factor", "sub_factor"]]  # keep the smallest-rank row
-    )
+        try:
+            res = plot_factor_returns(factor_rets[meta_df['factorAbbreviation'].values.tolist()[i]],
+                                      style_name, factor_name, full_name,
+                                      "Factor Return", ax=ax, show=False)
+            if res is None:
+                logging.warning(f"[{i}/{total}] {factor_name} → None, skip")
+                continue                # **axis("off") 호출 안 함**
+        except Exception as e:
+            logging.error(f"[{i}/{total}] {factor_name} fail: {e}")
+            continue                    # 역시 axis 상태 건드리지 않음
 
-    # ------------------------------------------------------------------
-    # Map factor → style and append to best_sub
-    # ------------------------------------------------------------------
-    style_map = meta.set_index("factorAbbreviation")["styleName"]
-    best_sub["main_style"] = best_sub["main_factor"].map(style_map)
-    best_sub["sub_style"] = best_sub["sub_factor"].map(style_map)
-    best_sub = best_sub[["main_factor", "main_style", "sub_factor", "sub_style"]]
+        # 성공적으로 그렸다면 (혹시 이전에 꺼졌을 수도 있으니) 축 켜기
+        ax.set_axis_on()
+        idx_in_page += 1
 
-    # Save if needed
-    # best_sub.to_csv(DATA_DIR / "best_sub_factor.csv", index=False)
+        # 페이지가 가득 찼거나 마지막 데이터면 저장
+        is_last = i == total
+        if idx_in_page == per_page or is_last:
+            for empty_ax in axes.flat[idx_in_page:]:
+                empty_ax.axis("off")    # 최종 빈 칸만 깔끔히 제거
+            fig.tight_layout()
+            pp.savefig(fig)
+            plt.close(fig)
 
-    # Subset return matrix to selected factors
-    cols_to_keep = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel())
-    ret_subset = factor_rets[cols_to_keep]
+            if not is_last:            # 다음 페이지 준비
+                fig, axes = plt.subplots(rows, cols,
+                                         figsize=(cols*4, rows*3))
+                idx_in_page = 0
 
-    # 7. Build factor_list & style_list (aligned order)
-    factor_list = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel()).tolist()
-    style_list = [style_map[f] for f in factor_list]
-
-    res = random_style_capped_sim(ret_subset, style_list)
-
-    # ------------------------------------------------------------------
-    # 8. Build per-factor weight tables (date × id × weight)
-    # ------------------------------------------------------------------
-    weight_frames = []
-    for _, row in res[1].iterrows():
-        fac = row['factor']
-        w = row['fitted_weight']
-        s = row['styleName']
-
-        j = kept_abbr.index(fac)
-        df = cleaned_raw[j][['ddt', 'ticker', 'isin', 'gvkeyiid', 'label']].copy()
-        df['weight'] = df['label'] * w / df.groupby(['ddt', 'label'])['label'].transform('count')
-        df['ls_weight'] = df['label'] / df.groupby(['ddt', 'label'])['label'].transform('count')
-        df['factor_weight'] = w
-        df['style'] = s
-        df['name'] = f'MXCN1A_{s}'
-        df['factor'] = fac
-        df['count'] = df.groupby(['ddt', 'label'])['label'].transform('count')
-        df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
-        end_date_df = df[df['ddt'] == end_date].reset_index(drop=True)
-        weight_frames.append(end_date_df[['ddt', 'ticker', 'isin', 'gvkeyiid', 'weight',
-                                          'ls_weight', 'factor_weight',
-                                          'factor', 'style', 'name', 'count']])
-
-    # ------------------------------------------------------------------
-    # 9. Aggregate across factors  (Σ weights per date × security)
-    # ------------------------------------------------------------------
-
-    weight_raw = pd.concat(weight_frames, ignore_index=True)
-    # weight_raw = weight_raw[weight_raw['factor'] != 'SalesAcc'].reset_index(drop=True)
-    weight_raw['factor_weight'] = weight_raw['factor_weight'] * np.sign(weight_raw['weight']) ** 2
-    agg_w = (
-        weight_raw
-        .groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)["weight"]
-        .sum()
-    )
-
-    # ▶︎ zero-pad tickers to 6 chars
-    # agg_w["ticker"] = agg_w["ticker"].astype(str).str.zfill(6).add(" CH Equity")
-    agg_w['style'] = 'MP'
-    factor_sum = (
-        weight_raw
-        .groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)["factor_weight"]
-        .sum()
-    )
-    agg_w = agg_w.merge(
-        factor_sum,
-        on=["ddt", "ticker", "isin", "gvkeyiid"],
-        how="left"
-    )
-    agg_w['name'] = 'MXCN1A_MP'
-    agg_w = agg_w[agg_w['ddt'] == end_date].reset_index(drop=True)
-    agg_w['count'] =(
-        agg_w.groupby(['ddt', agg_w['weight'] > 0])['weight']
-        .transform('size')
-    )
-    agg_w['factor'] = 'AGG'
-    agg_w = agg_w[['ddt', 'ticker', 'isin', 'gvkeyiid', 'weight', 'factor_weight', 'factor', 'style', 'name', 'count']]
-
-    weight_raw = weight_raw.drop(columns=['weight'])
-    weight_raw = weight_raw.rename(columns={'ls_weight': 'weight'})
-    final_weights = pd.concat([weight_raw, agg_w],
-                              axis=0,
-                              ignore_index=True)
-
-    final_style_weight = (
-        final_weights.groupby(['ddt', 'ticker', 'isin', 'gvkeyiid', 'style'])[['weight', 'factor_weight']]
-        .sum()
-    )
-
-    agg_w.to_csv(DATA_DIR / f"aggregated_weights_{end_date}_test.csv")
-    final_weights.to_csv(DATA_DIR / f"total_aggregated_weights_{end_date}_test.csv")
-
-    final_style_weight.to_csv(DATA_DIR / f"total_aggregated_weights_style_{end_date}_test.csv")
-
-    final_weights.loc[final_weights['style'] == 'MP', 'factor_weight'] = 1
-    final_weights = final_weights.replace(0, np.nan)
-
-    pivoted_final = final_weights.pivot_table(index=['ddt', 'ticker', 'isin', 'gvkeyiid'],
-                                                    columns=['style', 'factor_weight', 'factor'], values='weight',
-                                                    aggfunc='sum').reset_index()
-
-    sample_df = pd.DataFrame({"factor": pivoted_final.columns.get_level_values(2).tolist()[4:]})
-    sum_df = pd.merge(res[1], sample_df, on='factor', how='inner')
-
-    final_weights.loc[final_weights['style'] == 'MP', 'factor_weight'] = sum_df['fitted_weight'].sum(axis=0)
-    final_weights = final_weights.replace(0, np.nan)
-
-    pivoted_final = final_weights.pivot_table(index=['ddt', 'ticker', 'isin', 'gvkeyiid'],
-                                                    columns=['style', 'factor_weight', 'factor'], values='weight',
-                                                    aggfunc='sum').reset_index()
-
-    cols = pivoted_final.columns
-    mp_mask = cols.get_level_values('style') == 'MP'
-
-    new_order = cols[~mp_mask].tolist() + cols[mp_mask].tolist()
-    pivoted_final = pivoted_final.loc[:, new_order]
-
-    pivoted_final.to_csv(DATA_DIR / f"pivoted_total_agg_wgt_{end_date}.csv")
-    logger.info("Pipeline completed ✓ — files saved in %s", DATA_DIR)
-
+plt.close("all")  # 혹시 남은 Figure 전부 정리
+print(f"PDF 저장 완료 → {file_name}")
