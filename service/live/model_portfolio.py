@@ -353,7 +353,7 @@ def assemble_top_style_portfolios(
 def random_style_capped_sim(
     rtn_df: pd.DataFrame,
     style_list: List[str],
-    num_sims: int = 1_000,
+    num_sims: int = 1_000_000,
     style_cap: float = 0.25,
     tol: float = 1e-12,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -601,8 +601,8 @@ def mp(start_date, end_date) -> None:
     final_weights = final_weights.replace(0, np.nan)
 
     pivoted_final = final_weights.pivot_table(index=['ddt', 'ticker', 'isin', 'gvkeyiid'],
-                                                    columns=['style', 'factor_weight', 'factor'], values='weight',
-                                                    aggfunc='sum').reset_index()
+                                              columns=['style', 'factor_weight', 'factor'], values='weight',
+                                              aggfunc='sum').reset_index()
 
     sample_df = pd.DataFrame({"factor": pivoted_final.columns.get_level_values(2).tolist()[4:]})
     sum_df = pd.merge(res[1], sample_df, on='factor', how='inner')
