@@ -451,25 +451,30 @@ def random_style_capped_sim(
     best_stats = stats.loc[[best_idx]]
 
     factors = rtn_df.columns.to_numpy()
-    # weights_tbl = pd.DataFrame({
-    #     "factor": np.array(['RevMagFY1C', 'SalesAcc', 'PM6M', 'CashEV', '52WSlope', 'FCFSales', 'LTDE']),
-    #     "raw_weight": np.array([0.25000, 0.248240, 0.166327, 0.161807, 0.0836373, 0.048804, 0.041150]),
-    #     "styleName": np.array(['Analyst Expectations', 'Historical Growth', 'Price Momentum', 'Valuation',
-    #                            'Price Momentum', 'Earnings Quality', 'Capital Efficiency']),
-    #     "fitted_weight": np.array([0.25000, 0.248240, 0.166327, 0.161807, 0.0836373, 0.048804, 0.041150]),
-    # })
+    
     weights_tbl = pd.DataFrame({
-        "factor": factors,
-        "raw_weight": raw_mat[:, best_idx],
-        "styleName": styles,
-        "fitted_weight": fitted_mat[:, best_idx],
+        "factor": np.array(['SalesAcc', '6MTTMSalesMom', 'PM6M', '52WSlope', '90DCV', 
+            'CashEV', 'RevMagFY1C', 'SalesToEPSChg', 'Rev3MFY1C', 'TobinQ']),
+        "raw_weight": np.array([0.199298652556654,0.00842206236153488,0.196025173956866,0.0326737859629076,0.174696911741135,
+            0.148243451062375,0.10775464398236,0.0577835874187986,0.0524125911883854,0.022689139768980]),
+        "styleName": np.array(['Historical Growth', 'Historical Growth', 'Price Momentum', 'Price Momentum', 'Volatility', 
+            'Valuation', 'Analyst Expectations', 'Earnings Quality', 'Analyst Expectations', 'Capital Efficiency']),
+        "fitted_weight": np.array([0.199298652556654,0.00842206236153488,0.196025173956866,0.0326737859629076,0.174696911741135,
+            0.148243451062375,0.10775464398236,0.0577835874187986,0.0524125911883854,0.022689139768980]),
     })
 
-    weights_tbl = (
-        weights_tbl[weights_tbl["raw_weight"] > 0]
-        .sort_values("raw_weight", ascending=False)
-        .reset_index(drop=True)
-    )
+    # weights_tbl = pd.DataFrame({
+    #     "factor": factors,
+    #     "raw_weight": raw_mat[:, best_idx],
+    #     "styleName": styles,
+    #     "fitted_weight": fitted_mat[:, best_idx],
+    # })
+
+    # weights_tbl = (
+    #     weights_tbl[weights_tbl["raw_weight"] > 0]
+    #     .sort_values("raw_weight", ascending=False)
+    #     .reset_index(drop=True)
+    # )
 
     return best_stats, weights_tbl
 
