@@ -1,5 +1,5 @@
 PARAM = {
-    "benchmark": "MXWO",
+    "benchmark": "MXCN1A",
     "universe": "clarifi_mxcn1a_afl",
     "server_name": "10.206.1.19,9433",
     "db_name": "GLOBAL",
