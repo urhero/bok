@@ -205,7 +205,7 @@ def download(
         .fetch_snp()  # S&P 데이터 가져오기
         .drop_duplicates(
             subset=["ddt", "gvkeyiid", "factorAbbreviation", "val"],
-            keep="last",  # 중복 시 마지막 값 유지(그럴까?)
+            keep="last",  # 중복 시 마지막 값 유지(그럴까? 쿼리 단계에서 하는 것 보다 빠른가?)
             ignore_index=True,
         )
     )
