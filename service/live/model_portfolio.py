@@ -84,8 +84,8 @@ def _add_initial_zero(series: pd.DataFrame) -> pd.DataFrame:
 def _assign_factor(
         abbv: str,
         order: int,
-        query: pd.DataFrame,
-        meta: pd.DataFrame,
+    fld: pd.DataFrame,
+    m_ret: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | Tuple[None, None, None, None]:
     """특정 팩터에 대한 섹터/분위수/스프레드 수익률 계산
 
@@ -93,10 +93,10 @@ def _assign_factor(
     ----------
     abbv, order
         팩터 약어 및 순위 방향 (1=오름차순, 0/-1=내림차순)
-    query
-        전체 원시 팩터 데이터프레임 (M_RETURN 행 포함)
-    meta
-        팩터 메타데이터와 조인된 query (스타일/순서 조회용)
+    fld
+        해당 팩터의 데이터프레임 (이미 필터링됨)
+    m_ret
+        시장 수익률 데이터프레임 (이미 추출됨)
 
     Returns
     -------
@@ -112,7 +112,8 @@ def _assign_factor(
     # ------------------------------------------------------------------
     # 1. 팩터 시계열 수집 및 래그 적용
     # ------------------------------------------------------------------
-    fld = meta[meta["factorAbbreviation"] == abbv].dropna().reset_index(drop=True)
+    # fld는 이미 필터링되어 전달됨
+    fld = fld.dropna().reset_index(drop=True)
 
     # 히스토리가 충분하지 않으면 스킵
     if len(fld['ddt'].unique()) <= 2:
@@ -126,11 +127,7 @@ def _assign_factor(
     # ------------------------------------------------------------------
     # 2. 월간 시장 수익률(M_RETURN) 추출
     # ------------------------------------------------------------------
-    m_ret = (
-        query[query["factorAbbreviation"] == "M_RETURN"].reset_index(drop=True)
-        .rename(columns={"val": "M_RETURN"})
-        .drop(columns=["factorAbbreviation"])
-    )
+    # m_ret는 이미 추출되어 전달됨
 
     # ------------------------------------------------------------------
     # 3. 팩터 + 수익률 병합, 잘못된 섹터 필터링
@@ -651,9 +648,25 @@ def mp(start_date, end_date) -> None:
     abbrs, orders = info.factorAbbreviation.tolist(), info.factorOrder.tolist()
 
     # 3️⃣ Rich 진행바와 함께 팩터 할당
+    # 최적화: M_RETURN 미리 추출
+    m_ret = (
+        query[query["factorAbbreviation"] == "M_RETURN"].reset_index(drop=True)
+        .rename(columns={"val": "M_RETURN"})
+        .drop(columns=["factorAbbreviation"])
+    )
+
+    # 최적화: meta를 미리 그룹화
+    grouped_meta = meta.groupby("factorAbbreviation")
+
     data_list: List[Any] = []
     for abbr, order in track(zip(abbrs, orders), total=len(abbrs), description="Assigning factors"):
-        data_list.append(_assign_factor(abbr, order, query, meta))
+        # 그룹이 존재하면 가져오고, 없으면 빈 DataFrame 전달
+        if abbr in grouped_meta.groups:
+            fld = grouped_meta.get_group(abbr)
+        else:
+            fld = pd.DataFrame(columns=meta.columns)
+        
+        data_list.append(_assign_factor(abbr, order, fld, m_ret))
     logger.info(f"Factors assigned in {time.time() - t1:.2f}s")
 
     """Run the full ETL → optimisation → export process."""
