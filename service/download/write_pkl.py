@@ -221,6 +221,12 @@ def download(
     query.to_parquet(parquet_path, index=False)
     logger.info(f"Query saved to {parquet_path} in {time.time() - t0:.2f}s")
 
+
+    # parquet 파일 로드하기
+    t0 = time.time()
+    query = pd.read_parquet(parquet_path)
+    logger.info(f"Query loaded from {parquet_path} in {time.time() - t0:.2f}s")
+
     # 2️⃣ 메타데이터(순서/스타일/이름)와 조인
     t1 = time.time()
     info = pd.read_csv(info_path)
