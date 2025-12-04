@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 import logging
 import pickle
+import time
 
 # ----------------------------------------------------------------------------
 # 로깅 설정 (스크립트로 실행될 때만 사용)
@@ -200,6 +201,7 @@ def download(
     logger.info("Pickles → %s", out_dir)
 
     # 1️⃣ 날짜 범위 내 원시 팩터 데이터 가져오기
+    t0 = time.time()
     query = (
         GenerateQueryStructure(start_date, end_date)
         .fetch_snp()  # S&P 데이터 가져오기
@@ -209,8 +211,10 @@ def download(
             ignore_index=True,
         )
     )
+    logger.info(f"Query fetched in {time.time() - t0:.2f}s")
 
     # 2️⃣ 메타데이터(순서/스타일/이름)와 조인
+    t1 = time.time()
     info = pd.read_csv(info_path)
     meta = query.merge(info, on="factorAbbreviation", how="inner")
 
@@ -220,6 +224,7 @@ def download(
     data_list: List[Any] = []
     for abbr, order in track(zip(abbrs, orders), total=len(abbrs), description="Assigning factors"):
         data_list.append(_assign_factor(abbr, order, query, meta))
+    logger.info(f"Factors assigned in {time.time() - t1:.2f}s")
 
     # 4️⃣ 결과를 피클 파일로 저장
     _dump_pickle(abbrs, out_dir / "list_abbv.pkl")  # 팩터 약어 리스트
