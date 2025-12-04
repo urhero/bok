@@ -1,20 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-End-to-End Factor Pipeline (v4-complete)
+엔드투엔드 팩터 파이프라인 (v4-complete)
 =======================================
-This pipeline cleans raw factor data, constructs monthly spread return
-matrices, ranks factors by CAGR, optimises two‑factor mixes, and exports
-CSV artefacts — **while preserving the column order specified in
-`meta['factorAbbreviation']`.**
+이 파이프라인은 원시 팩터 데이터를 정제하고, 월간 스프레드 수익률 행렬을 구성하며,
+CAGR로 팩터 순위를 매기고, 2-팩터 믹스를 최적화하며, CSV 결과물을 내보냅니다.
 
-Key outputs
+**`meta['factorAbbreviation']`에 지정된 컬럼 순서를 유지합니다.**
+
+
+
+
+주요 출력물
 -----------
 | File                          | Description                                                      |
 |-------------------------------|------------------------------------------------------------------|
-| `final_pivot_yymmdd.csv`      | Pivoted weight matrix with individual factor exposure            |
-| `final_style_yymmdd.csv`      | Weight panel data per categorized factor style                   |
-| `final_factor_yymmdd.csv`     | Weight panel data with individual factor exposure                |
-| `final_mp_yymmdd.csv`         | Affordable model portfolio                                       |
+| `final_pivot_yymmdd.csv`      | 개별 팩터 노출도가 포함된 피벗된 가중치 행렬            |
+| `final_style_yymmdd.csv`      | 스타일별로 분류된 팩터 가중치 패널 데이터                   |
+| `final_factor_yymmdd.csv`     | 개별 팩터 노출도가 포함된 가중치 패널 데이터                |
+| `final_mp_yymmdd.csv`         | 실행 가능한 모델 포트폴리오                                       |
 """
 from __future__ import annotations
 
@@ -29,22 +32,22 @@ from rich.progress import track
 
 
 # ---------------------------------------------------------------------------
-# Logging setup
+# 로깅 설정
 # ---------------------------------------------------------------------------
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Global paths
+# 전역 경로
 # ---------------------------------------------------------------------------
 DATA_DIR = Path.cwd() / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
-# 1️⃣ Pickle Loader
+# 1️⃣ 피클 로더
 # =============================================================================
 
 def _load_pickles(dir_: Path = DATA_DIR) -> Tuple[List[str], List[str], List[str], List[Any]]:
-    """Load four pickled lists produced by the *download* stage."""
+    """다운로드 단계에서 생성된 4개의 피클 리스트를 로드"""
     files = ["list_abbv.pkl", "list_name.pkl", "list_style.pkl", "list_data.pkl"]
     loaded: List[Any] = []
     for fn in files:
@@ -57,7 +60,7 @@ def _load_pickles(dir_: Path = DATA_DIR) -> Tuple[List[str], List[str], List[str
     return tuple(loaded)  # type: ignore[return-value]
 
 # =============================================================================
-# 2️⃣ Sector Filter + Relabelling
+# 2️⃣ 섹터 필터링 + 재라벨링
 # =============================================================================
 
 def _filter_grouped(
@@ -66,7 +69,7 @@ def _filter_grouped(
     list_styles: List[str],
     list_data: List[Tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]],
 ) -> Tuple[List[str], List[str], List[str], List[int], List[List[str]], List[pd.DataFrame]]:
-    """Remove sectors with negative Q‑spread; recompute long/short labels."""
+    """음의 Q-스프레드를 가진 섹터 제거; 롱/숏 라벨 재계산"""
 
     kept_abbr, kept_name, kept_style, kept_idx = [], [], [], []
     dropped_sec: List[List[str]] = []
@@ -79,9 +82,9 @@ def _filter_grouped(
             logger.debug("Factor %d skipped – no data", idx)
             continue
         tmp = sec_df.T.reset_index()
-        tmp["spread"] = tmp["Q1"] - tmp["Q5"]
-        to_drop = tmp.loc[tmp["spread"] < 0, "sec"].tolist()
-        raw_clean = raw_df[~raw_df["sec"].isin(to_drop)].reset_index(drop=True)
+        tmp["spread"] = tmp["Q1"] - tmp["Q5"]  # Q1-Q5 스프레드 계산
+        to_drop = tmp.loc[tmp["spread"] < 0, "sec"].tolist()  # 음의 스프레드 섹터 식별
+        raw_clean = raw_df[~raw_df["sec"].isin(to_drop)].reset_index(drop=True)  # 해당 섹터 제거
         if raw_clean.empty:
             logger.debug("Factor %d discarded – all sectors dropped", idx)
             continue
@@ -103,10 +106,11 @@ def _filter_grouped(
     return kept_abbr, kept_name, kept_style, kept_idx, dropped_sec, new_raw
 
 # =============================================================================
-# 3️⃣ Return Matrix · Ranking · Negative Correlation
+# 3️⃣ 수익률 행렬 · 순위 · 하락 상관관계
 # =============================================================================
 
 def _ncorr(df: pd.DataFrame, min_obs: int = 20) -> pd.DataFrame:
+    """음의 수익률 기간 동안의 상관관계 계산(Downside Correlation 에 가깝지만 기준 자산 수익률이 음수인 모든 기간을 포함)"""
     out = pd.DataFrame(index=df.columns, columns=df.columns, dtype=float)
     for col in df.columns:
         mask = df[col] < 0
@@ -183,7 +187,7 @@ def _aggregate_returns(
     df_net = pd.concat(list_net, axis=1).dropna(axis=1)
     df_trc = pd.concat(list_trc, axis=1).dropna(axis=1)
 
-    return df_grs, df_net, df_trc
+    return df_grs, df_net, df_trc  # gross returns, net returns, trading costs?
 
 
 def _generate_meta(
@@ -222,7 +226,7 @@ def _generate_meta(
     return ret_df, negative_corr, meta
 
 # =============================================================================
-# 4️⃣ Two‑Factor Mix Optimiser
+# 4️⃣ 2-팩터 믹스 최적화
 # =============================================================================
 
 
@@ -232,7 +236,7 @@ def _get_wgt(
         data_neg: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, List[pd.Series], str, float, str, float]:
     """
-    Grid-search the optimal weight split for a main/sub factor pairs.
+    메인/서브 팩터 쌍에 대한 최적 가중치 분할을 그리드 탐색
 
     Returns
     -------
@@ -304,7 +308,7 @@ def _get_wgt(
     )
 
 # =============================================================================
-# 5️⃣ Assemble Style Portfolios
+# 5️⃣ 스타일 포트폴리오 조립
 # =============================================================================
 
 def assemble_top_style_portfolios(
@@ -312,7 +316,7 @@ def assemble_top_style_portfolios(
     meta: pd.DataFrame,
     neg_corr: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Select #1 factor per style and generate its optimal mix series."""
+    """각 스타일별 1위 팩터 선택 및 최적 믹스 시계열 생성"""
 
     tag_map = {
         "Analyst Expectations": "ane",
@@ -347,7 +351,7 @@ def assemble_top_style_portfolios(
 
 
 # =============================================================================
-# 6️⃣ Simulate Factor Exposures
+# 6️⃣ 팩터 노출도 시뮬레이션
 # =============================================================================
 
 def random_style_capped_sim(
@@ -358,7 +362,7 @@ def random_style_capped_sim(
     tol: float = 1e-12,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Monte-Carlo search for the best style-capped portfolio.
+    스타일 weight 제약이 있는 최적 포트폴리오를 몬테카를로 탐색
 
     Parameters
     ----------
@@ -482,14 +486,14 @@ def mp(start_date, end_date) -> None:
     """Run the full ETL → optimisation → export process."""
     logger.info("Report generation started for period: %s to %s", start_date, end_date)
 
-    # 1. Load pickles and apply sector filter
+    # 1. 피클 로드 및 섹터 필터 적용
     abbrs, names, styles, raw = _load_pickles()
     kept_abbr, kept_name, kept_style, _, _, cleaned_raw = _filter_grouped(abbrs, names, styles, raw)
 
-    # 2. Build return matrix, negative correlation matrix and meta ranking table
+    # 2. 수익률 행렬, 음의 상관관계 행렬, 메타 순위 테이블 생성
     rtns, norr, meta = _generate_meta(kept_abbr, kept_name, kept_style, cleaned_raw)
 
-    # 3. Generate weight grids only for the top factor in each style
+    # 3. 각 스타일의 최상위 팩터(팩터들?)에 대해서만 가중치 그리드 생성
     top_meta = meta.groupby("styleName", as_index=False).first()
     grids = []
     for _, row in top_meta.iterrows():
@@ -498,8 +502,8 @@ def mp(start_date, end_date) -> None:
         grids.append(grid)
     mix_grid = pd.concat(grids, ignore_index=True)
 
-    # Subset return matrix to selected factors
-    # 5. Best sub_factor for each main_factor  ── add style names
+    # 선택된 팩터로 수익률 행렬 부분집합 생성
+    # 5. 각 메인 팩터에 대한 최적 서브 팩터 선택 ── 스타일 이름 추가
     best_sub = (
         mix_grid.sort_values("rank_total")  # ascending by rank_total
         .groupby("main_factor", as_index=False)  # group by each main_factor
@@ -517,18 +521,18 @@ def mp(start_date, end_date) -> None:
     # Save if needed
     # best_sub.to_csv(DATA_DIR / "best_sub_factor.csv", index=False)
 
-    # Subset return matrix to selected factors
+    # 6. 메인 팩터와 보조 팩터로 수익률 행렬 합집합 생성
     cols_to_keep = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel())
     ret_subset = rtns[cols_to_keep]
 
-    # 7. Build factor_list & style_list (aligned order)
+    # 7. factor_list 및 style_list 구성 (정렬된 순서)
     factor_list = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel()).tolist()
     style_list = [style_map[f] for f in factor_list]
 
     res = random_style_capped_sim(ret_subset, style_list)
 
     # ------------------------------------------------------------------
-    # 8. Build per-factor weight tables (date × id × weight)
+    # 8. 팩터별 가중치 테이블 구성 (date × id × weight)
     # ------------------------------------------------------------------
     weight_frames = []
     for _, row in res[1].iterrows():
@@ -552,7 +556,7 @@ def mp(start_date, end_date) -> None:
                                           'factor', 'style', 'name', 'count']])
 
     # ------------------------------------------------------------------
-    # 9. Aggregate across factors  (Σ weights per date × security)
+    # 9. 팩터 간 집계 (Σ weights per date × security)
     # ------------------------------------------------------------------
 
     weight_raw = pd.concat(weight_frames, ignore_index=True)

@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-"""Download & factor utilities (rich progress + logging)
+"""팩터 다운로드 및 처리 유틸리티 (Rich 진행바 + 로깅)
 
-Features
+주요 기능
 --------
-* **Rich** progress bar (stays on top of log lines)
-* Structured logging with ``RichHandler`` (when run as script)
-* Helper functions for pickling, ranking, quantile labelling, etc.
+* **Rich** 진행바 (로그 라인 위에 표시)
+* RichHandler를 사용한 구조화된 로깅 (스크립트로 실행 시)
+* 피클링, 랭킹, 분위수 라벨링 등을 위한 헬퍼 함수
 
-Revision 2025‑10‑31
+2025‑10‑31 개정
 -------------------
-* **Return type annotations reinstated** for public APIs:
-  * ``assign_factor`` → returns a 4‑tuple of ``pd.DataFrame`` **or** a 4‑tuple
-    of ``None`` when the factor has insufficient history.
-  * ``download`` → returns a tuple of three ``List[str]`` plus the ``data_list``.
-* Added more explicit *Returns* section in docstrings.
-* No other logic changes.
+* 공개 API에 대한 반환 타입 주석 복원:
+  * ``assign_factor`` → 4개의 ``pd.DataFrame`` 튜플 **또는** 팩터 히스토리가 
+    부족한 경우 4개의 ``None`` 튜플 반환
+  * ``download`` → 3개의 ``List[str]``과 ``data_list``의 튜플 반환
+* docstring에 더 명시적인 *Returns* 섹션 추가
+* 다른 로직 변경 없음
 """
 
 
@@ -28,51 +28,52 @@ import numpy as np
 import pandas as pd
 import logging
 import pickle
+import time
 
 # ----------------------------------------------------------------------------
-# Logging setup (only used when run as a script)
+# 로깅 설정 (스크립트로 실행될 때만 사용)
 # ----------------------------------------------------------------------------
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# Generic helpers
+# 범용 헬퍼 함수
 # =============================================================================
 
 def _dump_pickle(obj: Any, path: Path, *, protocol: int = pickle.HIGHEST_PROTOCOL) -> None:
-    """Save *obj* to *path* using pickle.
-
-    Ensures parent directories exist before writing so callers can simply pass
-    a target file path without worrying about the directory tree.
+    """객체를 피클 형식으로 저장
+    
+    파일을 쓰기 전에 상위 디렉토리가 존재하는지 확인하므로,
+    호출자는 디렉토리 트리를 걱정하지 않고 대상 파일 경로만 전달하면 됨
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(pickle.dumps(obj, protocol=protocol))
 
 # =============================================================================
-# Numeric helper utilities
+# 수치 계산 헬퍼 유틸리티
 # =============================================================================
 
 def _scale_rank(series: pd.Series) -> pd.Series:
-    """Map 1‑*n* ranks to a 1‑99 scale (NaN if *n* ≤ 10)."""
+    """1~n 순위를 1~99 스케일로 변환 (n ≤ 10이면 NaN 반환)"""
     n = len(series)
     if n <= 10:
         return pd.Series(np.nan, index=series.index)
-    return (series - 1) * (99 / (n - 1)) + 1
+    return (series - 1) * (99 / (n - 1)) + 1  # 하드코딩 (percentile 화)
 
 
 def _quantile_label(score: float | int | np.floating) -> str | float:
-    """Return Q1‑Q5 label for *score* (1‑100); returns ``np.nan`` if out‑of‑range."""
+    """점수(1~100)를 Q1~Q5 라벨로 변환; 범위를 벗어나면 np.nan 반환"""
     if not (1 <= score <= 100):
         return np.nan
-    return f"Q{int((score - 1) // 20 + 1)}"  # 20‑point buckets
+    return f"Q{int((score - 1) // 20 + 1)}"  # 20점 단위 버킷(5분위 나눔) 하드코딩
 
 
 def _add_initial_zero(series: pd.DataFrame) -> pd.DataFrame:
-    """Insert a zero one month prior to the first observation (baseline)."""
+    """첫 관측값 한 달 전에 0을 삽입 (기준선 설정)"""
     series.loc[series.index[0] - pd.DateOffset(months=1)] = 0
     return series.sort_index()
 
 # ----------------------------------------------------------------------------
-# Core factor assignment
+# 핵심 팩터 할당 로직
 # ----------------------------------------------------------------------------
 
 def _assign_factor(
@@ -81,43 +82,44 @@ def _assign_factor(
         query: pd.DataFrame,
         meta: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | Tuple[None, None, None, None]:
-    """Compute sector/quantile/spread returns for *abbv* factor.
+    """특정 팩터에 대한 섹터/분위수/스프레드 수익률 계산
 
     Parameters
     ----------
     abbv, order
-        Factor abbreviation and ranking direction (1=ascending, 0/‑1=descending).
+        팩터 약어 및 순위 방향 (1=오름차순, 0/-1=내림차순)
     query
-        Full raw factor dataframe (includes *M_RETURN* rows).
+        전체 원시 팩터 데이터프레임 (M_RETURN 행 포함)
     meta
-        ``query`` joined to factor metadata (for style/order lookup).
+        팩터 메타데이터와 조인된 query (스타일/순서 조회용)
 
     Returns
     -------
     Tuple[DataFrame, DataFrame, DataFrame, DataFrame] | tuple[None, None, None, None]
-        ``sector_ret``   – average monthly returns by sector × quantile (Q1‑Q5)
-        ``quantile_ret`` – overall market returns by quantile (Q1‑Q5)
-        ``spread``       – long‑short (Q1‑Q5) monthly performance series
-        ``merged``       – underlying stock‑level frame used for calculations
+        ``sector_ret``   – 섹터 × 분위수(Q1‑Q5)별 평균 월간 수익률
+        ``quantile_ret`` – 분위수(Q1‑Q5)별 전체 시장 수익률
+        ``spread``       – 롱‑숏(Q1‑Q5) 월간 성과 시계열
+        ``merged``       – 계산에 사용된 기본 종목 수준 데이터프레임
 
-        If the factor has ≤100 data points, all four elements are ``None``.
+        팩터의 데이터 포인트가 ≤100개인 경우, 4개 요소 모두 ``None``
     """
 
     # ------------------------------------------------------------------
-    # 1. Collect and lag the factor series
+    # 1. 팩터 시계열 수집 및 래그 적용
     # ------------------------------------------------------------------
     fld = meta[meta["factorAbbreviation"] == abbv].dropna().reset_index(drop=True)
 
+    # 히스토리가 충분하지 않으면 스킵
     if len(fld['ddt'].unique()) <= 2:
         logger.warning("Skipping %s – insufficient history", abbv)
         return None, None, None, None
 
-    
+    # 각 종목별로 1개월 래그 적용 (전월 팩터 값을 당월에 사용)
     fld[abbv] = fld.groupby("gvkeyiid")["val"].shift(1)
     fld = fld.dropna(subset=[abbv]).drop(columns=["val", "factorAbbreviation"])
 
     # ------------------------------------------------------------------
-    # 2. Pull monthly market returns (M_RETURN)
+    # 2. 월간 시장 수익률(M_RETURN) 추출
     # ------------------------------------------------------------------
     m_ret = (
         query[query["factorAbbreviation"] == "M_RETURN"].reset_index(drop=True)
@@ -126,7 +128,7 @@ def _assign_factor(
     )
 
     # ------------------------------------------------------------------
-    # 3. Merge factor + returns, filter bad sectors
+    # 3. 팩터 + 수익률 병합, 잘못된 섹터 필터링
     # ------------------------------------------------------------------
     merged = (
         fld.merge(
@@ -134,42 +136,48 @@ def _assign_factor(
             on=["gvkeyiid", "ticker", "isin", "ddt", "sec", "country"],
             how="inner",
         )
-        .query("sec != 'Undefined'")
+        .query("sec != 'Undefined'")  # 정의되지 않은 섹터 제거
         .reset_index(drop=True)
     )
 
     # ------------------------------------------------------------------
-    # 4. Within‑sector ranking, score, quantile bucket
+    # 4. 섹터 내 순위 매기기, 점수화, 분위수 버킷 할당
     # ------------------------------------------------------------------
 
+    # 날짜 및 섹터별로 팩터 값에 대한 순위 계산
     merged["rank"] = (
         merged.groupby(["ddt", "sec"])[abbv].rank(method="average", ascending=bool(order))
     )
 
+    # 순위를 1~99 점수로 변환
     merged["score"] = merged.groupby(["ddt", "sec"])["rank"].transform(_scale_rank)
+    # 점수를 Q1~Q5 분위수 라벨로 변환
     merged["quantile"] = merged["score"].apply(_quantile_label)
     merged = merged.dropna(subset=["quantile"])
 
     # ------------------------------------------------------------------
-    # 5. Sector & market quantile returns
+    # 5. 섹터 및 시장 분위수 수익률 계산
     # ------------------------------------------------------------------
 
+    # 섹터별 분위수 평균 수익률 계산
     sector_ret = (
         merged.groupby(["ddt", "sec", "quantile"])["M_RETURN"].mean().unstack(fill_value=0)
     ).groupby("sec").mean().T
 
+    # 전체 시장의 분위수별 평균 수익률 계산 (모든 섹터 포함?)
     quantile_ret = merged.groupby(["ddt", "quantile"])["M_RETURN"].mean().unstack(fill_value=0)
 
     # ------------------------------------------------------------------
-    # 6. Q1‑Q5 spread (long‑short)
+    # 6. Q1‑Q5 스프레드 계산 (롱‑숏 전략)
     # ------------------------------------------------------------------
+    # Q1(최고) - Q5(최저) 수익률 차이 계산
     spread = pd.DataFrame({abbv: quantile_ret.iloc[:, 0] - quantile_ret.iloc[:, -1]})
     spread = _add_initial_zero(spread)
 
     return sector_ret, quantile_ret, spread, merged
 
 # =============================================================================
-# Download driver – orchestrates query, processing, and persistence
+# 다운로드 드라이버 – 쿼리, 처리, 저장 오케스트레이션
 # =============================================================================
 
 def download(
@@ -179,7 +187,7 @@ def download(
     info_path: Path | str = "data/factor_info.csv",
     out_dir: Path | str | None = None,
 ) -> Tuple[List[str], List[str], List[str], List[Any]]:
-    """Run full pipeline and write four pickle files to disk.
+    """전체 파이프라인 실행 및 4개의 피클 파일을 디스크에 저장
 
     Returns
     -------
@@ -187,37 +195,42 @@ def download(
         (``abbr_list``, ``name_list``, ``style_list``, ``data_list``)
     """
 
+    # 출력 디렉토리 설정 (지정되지 않으면 기본 경로 사용)
     out_dir = Path(out_dir) if out_dir else Path(__file__).resolve().parent.parent.parent / "data"
     out_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Pickles → %s", out_dir)
 
-    # 1️⃣ Fetch raw factors within date range
+    # 1️⃣ 날짜 범위 내 원시 팩터 데이터 가져오기
+    t0 = time.time()
     query = (
         GenerateQueryStructure(start_date, end_date)
-        .fetch_snp()
+        .fetch_snp()  # S&P 데이터 가져오기
         .drop_duplicates(
             subset=["ddt", "gvkeyiid", "factorAbbreviation", "val"],
-            keep="last",
+            keep="last",  # 중복 시 마지막 값 유지(그럴까? 쿼리 단계에서 하는 것 보다 빠른가?)
             ignore_index=True,
         )
     )
+    logger.info(f"Query fetched in {time.time() - t0:.2f}s")
 
-    # 2️⃣ Join with metadata (order/style/name)
+    # 2️⃣ 메타데이터(순서/스타일/이름)와 조인
+    t1 = time.time()
     info = pd.read_csv(info_path)
     meta = query.merge(info, on="factorAbbreviation", how="inner")
 
     abbrs, orders = info.factorAbbreviation.tolist(), info.factorOrder.tolist()
 
-    # 3️⃣ Assign factors with rich progress bar
+    # 3️⃣ Rich 진행바와 함께 팩터 할당
     data_list: List[Any] = []
     for abbr, order in track(zip(abbrs, orders), total=len(abbrs), description="Assigning factors"):
         data_list.append(_assign_factor(abbr, order, query, meta))
+    logger.info(f"Factors assigned in {time.time() - t1:.2f}s")
 
-    # 4️⃣ Persist outputs
-    _dump_pickle(abbrs, out_dir / "list_abbv.pkl")
-    _dump_pickle(info.factorName.tolist(), out_dir / "list_name.pkl")
-    _dump_pickle(info.styleName.tolist(), out_dir / "list_style.pkl")
-    _dump_pickle(data_list, out_dir / "list_data.pkl")
+    # 4️⃣ 결과를 피클 파일로 저장
+    _dump_pickle(abbrs, out_dir / "list_abbv.pkl")  # 팩터 약어 리스트
+    _dump_pickle(info.factorName.tolist(), out_dir / "list_name.pkl")  # 팩터 이름 리스트
+    _dump_pickle(info.styleName.tolist(), out_dir / "list_style.pkl")  # 스타일 이름 리스트
+    _dump_pickle(data_list, out_dir / "list_data.pkl")  # 계산된 데이터 리스트
 
     logger.info("Done – %d factors processed", len(abbrs))
     return abbrs, info.factorName.tolist(), info.styleName.tolist(), data_list
