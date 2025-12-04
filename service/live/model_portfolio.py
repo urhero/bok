@@ -644,7 +644,7 @@ def mp(start_date, end_date) -> None:
 
     # 2️⃣ 메타데이터(순서/스타일/이름)와 조인
     t1 = time.time()
-    info_path = "data/factor_info.csv"
+    info_path = out_dir / "factor_info.csv"
     info = pd.read_csv(info_path)
     meta = query.merge(info, on="factorAbbreviation", how="inner")
 
