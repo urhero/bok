@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, List, Tuple
 from port.query_structure import GenerateQueryStructure
 from rich.progress import track
+from config import PARAM
 
 import numpy as np
 import pandas as pd
@@ -212,6 +213,13 @@ def download(
         )
     )
     logger.info(f"Query fetched in {time.time() - t0:.2f}s")
+
+    # 쿼리 데이터를 parquet 파일로 저장 (벤치마크명_시작날짜_종료날짜)
+    t0 = time.time()
+    benchmark = PARAM["benchmark"]
+    parquet_path = out_dir / f"{benchmark}_{start_date}_{end_date}.parquet"
+    query.to_parquet(parquet_path, index=False)
+    logger.info(f"Query saved to {parquet_path} in {time.time() - t0:.2f}s")
 
     # 2️⃣ 메타데이터(순서/스타일/이름)와 조인
     t1 = time.time()
