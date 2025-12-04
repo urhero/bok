@@ -82,7 +82,7 @@ class GenerateQueryStructure:
         query_raw = (
             f"SELECT * FROM [dbo].[{arg['universe']}]\n"
             f"WHERE ddt >= '{self.start_date}' AND ddt <= '{self.end_date}'\n"
-            "ORDER BY ddt"
+            "ORDER BY fld, ddt"
         )
 
         logger.debug("SQL query: %s", query_raw.replace('\n', ' '))
