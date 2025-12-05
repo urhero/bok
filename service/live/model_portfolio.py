@@ -154,12 +154,12 @@ def _assign_factor(
     # 5. 섹터 및 시장 분위수 수익률 계산
     # ------------------------------------------------------------------
 
-    # 섹터별 분위수 평균 수익률 계산
+    # 섹터별 분위수 평균 수익률 계산 (?기하 수익률로 고쳐야함, 하드코딩)
     sector_ret = (
         merged.groupby(["ddt", "sec", "quantile"])["M_RETURN"].mean().unstack(fill_value=0)
     ).groupby("sec").mean().T
 
-    # 전체 시장의 분위수별 평균 수익률 계산 (모든 섹터 포함?)
+    # 전체 시장의 분위수별 평균 수익률 계산 (모든 섹터 포함?) (?기하 수익률로 고쳐야함, 하드코딩)
     quantile_ret = merged.groupby(["ddt", "quantile"])["M_RETURN"].mean().unstack(fill_value=0)
 
     # ------------------------------------------------------------------
