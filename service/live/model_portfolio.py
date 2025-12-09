@@ -325,7 +325,7 @@ def _generate_meta(
     ret_df.loc[ret_df.index[0]] = 0.0
     ret_df = ret_df.sort_index()  # 날짜 오름차순, 혹시나 싶어서 함 #?
 
-    valid = ret_df.columns[(ret_df == 0).sum() <= 10]
+    valid = ret_df.columns[(ret_df == 0).sum() <= 10]  # 컬럼이 팩터, 수익률 0인 애들이 10개 이하인 팩터가 valid
     ret_df = ret_df[valid]
 
     meta = (
@@ -333,18 +333,18 @@ def _generate_meta(
         .set_index("factorAbbreviation")
         .loc[valid]
         .reset_index()
-    )
+    ) # 롱 형식
 
     months = len(ret_df) - 1
     meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
-    meta["rank_style"] = meta.groupby("styleName")["cagr"].rank(ascending=False)
-    meta["rank_total"] = meta["cagr"].rank(ascending=False)
+    meta["rank_style"] = meta.groupby("styleName")["cagr"].rank(ascending=False)  # 스타일내에서의 랭크
+    meta["rank_total"] = meta["cagr"].rank(ascending=False)  # 전체에서의 랭크
     meta.to_csv("meta_data.csv")
-    meta = meta.sort_values("rank_total").reset_index(drop=True).rename(columns={"index": "factorAbbreviation"})[:50]
+    meta = meta.sort_values("rank_total").reset_index(drop=True).rename(columns={"index": "factorAbbreviation"})[:50]  # 팩터 약어를 인덱스에서 컬럼으로 전환, 상위 50개만
 
     order = meta["factorAbbreviation"].tolist()
-    ret_df = ret_df[order]
-    negative_corr = _ncorr(ret_df).loc[order, order]
+    ret_df = ret_df[order]  # 50개 팩터만
+    negative_corr = _ncorr(ret_df).loc[order, order]  # 50개 팩터간의 하락 상관계수
 
     logger.info("Return matrix built (%d factors)", len(order))
     return ret_df, negative_corr, meta
@@ -655,9 +655,9 @@ def mp(start_date, end_date) -> None:
     rtns, norr, meta = _generate_meta(kept_abbr, kept_name, kept_style, cleaned_raw)
 
     # 3. 각 스타일의 최상위 팩터(팩터들?)에 대해서만 가중치 그리드 생성
-    top_meta = meta.groupby("styleName", as_index=False).first()
+    top_meta = meta.groupby("styleName", as_index=False).first()  # 스타일별 최상위 팩터
     grids = []
-    for _, row in top_meta.iterrows():
+    for _, row in top_meta.iterrows():  # .iterrows() 가 인덱스, 값으로 반환
         grid, *_ = _get_wgt(rtns, row.to_frame().T.reset_index(drop=True), norr)
         grid["styleName"] = row["styleName"]
         grids.append(grid)
