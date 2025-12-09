@@ -77,8 +77,8 @@ def _add_initial_zero(series: pd.DataFrame) -> pd.DataFrame:
 def _assign_factor(
         abbv: str,
         order: int,
-    fld: pd.DataFrame,
-    m_ret: pd.DataFrame,
+        fld: pd.DataFrame,
+        m_ret: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | Tuple[None, None, None, None]:
     """특정 팩터에 대한 섹터/분위수/스프레드 수익률 계산
 
