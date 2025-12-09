@@ -246,7 +246,9 @@ def _ls_portfolio(
     raw_df = data_raw[data_raw["ddt"] >= "2017-12-31"].reset_index(drop=True).copy()
     raw_df["signal"] = raw_df["label"].map({1: "L", 0: "N", -1: "S"})
     raw_df["num"] = raw_df.groupby(["ddt", "signal"])["signal"].transform("count")
+    # wgt_rtn은 포트폴리오 비중임, 수익률 계산용 #?
     raw_df["wgt_rtn"] = 1 / raw_df["num"] * raw_df["label"]
+    # tvr_df 는 턴오버 계산용 wgt임. 실제 턴오버는 trading_friction #?
     raw_df["wgt_tvr"] = abs(raw_df["wgt_rtn"])
     raw_df_l = raw_df[raw_df["signal"] == "L"].reset_index(drop=True)
     raw_df_s = raw_df[raw_df["signal"] == "S"].reset_index(drop=True)
@@ -262,30 +264,31 @@ def _vectorized_bt(
     wgt_df = port_raw.pivot_table(index="ddt", columns="gvkeyiid", values="wgt_rtn")
     rtn_df = port_raw.pivot_table(index="ddt", columns="gvkeyiid", values="M_RETURN")
     rtn_df.iloc[0] = 0
+    # tvr_df 는 턴오버 계산용 wgt임. 실제 턴오버는 trading_friction #?
     tvr_df = port_raw.pivot_table(index="ddt", columns="gvkeyiid", values="wgt_tvr")
     sgn_df = np.sign(wgt_df)
 
     r = rtn_df.sort_index()
     w = tvr_df.reindex(r.index)
     w0 = tvr_df.copy()
-    is_rebal = w.notna().any(axis=1).fillna(False)
-    block_id = is_rebal.cumsum().astype(int)
-    cumG_blk = (1 + sgn_df * r).groupby(block_id).cumprod()
+    is_rebal = w.notna().any(axis=1).fillna(False)  #? # 각 날짜별 NA가 아닌게 하나라도 있으면 True
+    block_id = is_rebal.cumsum().astype(int)  #? 리밸런싱 블럭 1,2,3,....
+    cumG_blk = (1 + sgn_df * r).groupby(block_id).cumprod() # 블럭내에서 누적 곱
 
-    denom = (w0 * cumG_blk).sum(axis=1)
-    w_pre = (w0 * cumG_blk).div(denom, axis=0)
+    denom = (w0 * cumG_blk).sum(axis=1)  #각 날짜 비중 합
+    w_pre = (w0 * cumG_blk).div(denom, axis=0)  # 각 날짜 비중 100%로 조정
 
-    wgt_df.iloc[0] = w0.loc[wgt_df.index[0]]
-    rebal_in_r = r.index.intersection(tvr_df.index)
-    turnover = 1 * (w.shift(-1).loc[rebal_in_r] - w_pre.loc[rebal_in_r]).abs().sum(axis=1)
-    turnover = turnover.reindex(r.index).fillna(0)
-    trading_friction = (cost_bps / 1e4) * turnover
+    wgt_df.iloc[0] = w0.loc[wgt_df.index[0]] # 첫날 비중
+    rebal_in_r = r.index.intersection(tvr_df.index)  # 리밸런싱 웨이트와 수익률 날짜(인덱스) 교집합으로 리밸런싱 날짜 선택
+    turnover = 1 * (w.shift(-1).loc[rebal_in_r] - w_pre.loc[rebal_in_r]).abs().sum(axis=1)  # 리밸런싱 날짜의 웨이트 차이
+    turnover = turnover.reindex(r.index).fillna(0)  # 리밸런싱 날짜 외의 날짜는 0으로 채움
+    trading_friction = (cost_bps / 1e4) * turnover  # 거래비용
 
-    _gross = (wgt_df * r).sum(axis=1)
-    _gross_df = _gross.to_frame().rename(columns={0: abbr_nms})
+    _gross = (wgt_df * r).sum(axis=1)  # 날짜별 수익률 (이미 시프트 되어 있음)
+    _gross_df = _gross.to_frame().rename(columns={0: abbr_nms})  # 날짜별 수익률(거래비용 차감전) 
 
-    _tf_df = trading_friction.to_frame().rename(columns={0: abbr_nms})
-    _net_df = _gross_df - _tf_df
+    _tf_df = trading_friction.to_frame().rename(columns={0: abbr_nms})  # 날짜별 거래비용, 시리즈를 데이터프레임으로 변환
+    _net_df = _gross_df - _tf_df  # 날짜별 수익률(거래비용 차감전) - 거래비용
 
     return _gross_df, _net_df, _tf_df
 
@@ -320,7 +323,7 @@ def _generate_meta(
     logger.info("Building monthly return matrix")
     ret_df = _aggregate_returns(data, abbrs)[1]
     ret_df.loc[ret_df.index[0]] = 0.0
-    ret_df = ret_df.sort_index()
+    ret_df = ret_df.sort_index()  # 날짜 오름차순, 혹시나 싶어서 함 #?
 
     valid = ret_df.columns[(ret_df == 0).sum() <= 10]
     ret_df = ret_df[valid]
