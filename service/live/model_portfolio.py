@@ -50,19 +50,19 @@ logger = logging.getLogger(__name__)
 # 수치 계산 헬퍼 유틸리티
 # =============================================================================
 
-def _rank_to_percentile(series: pd.Series) -> pd.Series:
-    """1~n 순위를 0~100 스케일로 변환 (n ≤ 10이면 NaN 반환)"""
+def _scale_rank(series: pd.Series) -> pd.Series:
+    """1~n 순위를 1~99 스케일로 변환 (n ≤ 10이면 NaN 반환)"""
     n = len(series)
     if n <= 10:
         return pd.Series(np.nan, index=series.index)
-    return (series - 1) * (100 / (n - 1))
+    return (series - 1) * (99 / (n - 1)) + 1  # 하드코딩 (percentile 화)
 
-def _n_quantile_label(score: float | int | np.floating, n: int = 5) -> Union[str, float]:
-    """점수(1~100)를 n분위 라벨(Q1~Qn)로 변환"""
-    if not (1 <= score <= 100) or n <= 0:  # 100으로 정확히 나누어지는 분위수로 하려면  or 100 % n != 0 추가
-        return np.nan 
-    bucket_size = 100 / n
-    return f"Q{int((score - 1) // bucket_size + 1)}"
+
+def _quantile_label(score: float | int | np.floating) -> str | float:
+    """점수(1~100)를 Q1~Q5 라벨로 변환; 범위를 벗어나면 np.nan 반환"""
+    if not (1 <= score <= 100):
+        return np.nan
+    return f"Q{int((score - 1) // 20 + 1)}"  # 20점 단위 버킷(5분위 나눔) 하드코딩
 
 
 def _add_initial_zero(series: pd.DataFrame) -> pd.DataFrame:
@@ -144,10 +144,10 @@ def _assign_factor(
         merged.groupby(["ddt", "sec"])[abbv].rank(method="average", ascending=bool(order))
     )
 
-    # 순위를 0~100 점수로 변환
-    merged["score"] = merged.groupby(["ddt", "sec"])["rank"].transform(_rank_to_percentile)
+    # 순위를 1~99 점수로 변환
+    merged["score"] = merged.groupby(["ddt", "sec"])["rank"].transform(_scale_rank)
     # 점수를 Q1~Q5 분위수 라벨로 변환
-    merged["quantile"] = merged["score"].apply(_n_quantile_label, n=5)
+    merged["quantile"] = merged["score"].apply(_quantile_label)
     merged = merged.dropna(subset=["quantile"])
 
     # ------------------------------------------------------------------
