@@ -29,6 +29,7 @@ from config import PARAM
 import numpy as np
 import pandas as pd
 import time
+import math
 from rich.progress import track
 
 
@@ -50,20 +51,32 @@ logger = logging.getLogger(__name__)
 # 수치 계산 헬퍼 유틸리티
 # =============================================================================
 
-def _scale_rank(series: pd.Series) -> pd.Series:
-    """1~n 순위를 1~99 스케일로 변환 (n ≤ 10이면 NaN 반환)"""
+def _rank_to_percentile(series: pd.Series) -> pd.Series:
+    """
+    1~n 순위를 0~100 스케일(백분위)로 변환합니다.
+    (데이터 개수 n <= 10이면 NaN 반환)
+    """
     n = len(series)
+    
     if n <= 10:
         return pd.Series(np.nan, index=series.index)
-    return (series - 1) * (99 / (n - 1)) + 1  # 하드코딩 (percentile 화)
+    
+    # Min-Max Scaling: Rank 1 -> 0점, Rank n -> 100점
+    return (series - 1) / (n - 1) * 100
 
 
-def _quantile_label(score: float | int | np.floating) -> str | float:
-    """점수(1~100)를 Q1~Q5 라벨로 변환; 범위를 벗어나면 np.nan 반환"""
-    if not (1 <= score <= 100):
+def _n_quantile_label(score: float | int, n: int = 5) -> str | float:
+    """
+    0~100 백분율을 n분위(Q1~Qn) 라벨로 변환합니다.
+    (범위를 벗어나거나 NaN이면 np.nan 반환)
+    """
+    if pd.isna(score) or not (0 <= score <= 100):
         return np.nan
-    return f"Q{int((score - 1) // 20 + 1)}"  # 20점 단위 버킷(5분위 나눔) 하드코딩
 
+    # 예: n=5 (20점 단위), 20점 -> 1(Q1), 21점 -> 1.05 -> 2(Q2)
+    q_idx = math.ceil(score * n / 100)
+    
+    return f"Q{int(max(1, q_idx))}" # 0점은 Q1으로 보정(max 1)
 
 def _add_initial_zero(series: pd.DataFrame) -> pd.DataFrame:
     """첫 관측값 한 달 전에 0을 삽입 (기준선 설정)"""
@@ -144,10 +157,10 @@ def _assign_factor(
         merged.groupby(["ddt", "sec"])[abbv].rank(method="average", ascending=bool(order))
     )
 
-    # 순위를 1~99 점수로 변환
-    merged["score"] = merged.groupby(["ddt", "sec"])["rank"].transform(_scale_rank)
-    # 점수를 Q1~Q5 분위수 라벨로 변환
-    merged["quantile"] = merged["score"].apply(_quantile_label)
+    # 순위를 0~100 백분율로 변환
+    merged["score"] = merged.groupby(["ddt", "sec"])["rank"].transform(_rank_to_percentile)
+    # 백분율을 Q1~Q5 분위수 라벨로 변환
+    merged["quantile"] = merged["score"].apply(_n_quantile_label, n=5)
     merged = merged.dropna(subset=["quantile"])
 
     # ------------------------------------------------------------------
