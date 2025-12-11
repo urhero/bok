@@ -33,12 +33,6 @@ def _extract_parentheses(text: str) -> str:
     return match.group(1) if match else text
 
 
-def _assign_fld(frame: pd.DataFrame) -> pd.DataFrame:
-    """Create ``factorAbbreviation`` column from ``fld`` then drop ``fld``."""
-    frame = frame.copy()
-    frame["factorAbbreviation"] = frame["fld"].apply(_extract_parentheses)
-    return frame.drop(columns=["fld"])
-
 # ----------------------------------------------------------------------------
 # Core class
 # ----------------------------------------------------------------------------
@@ -80,9 +74,37 @@ class GenerateQueryStructure:
 
         engine = sql.create_engine(conn_url)
         query_raw = (
-            f"SELECT * FROM [dbo].[{arg['universe']}]\n"
-            f"WHERE ddt >= '{self.start_date}' AND ddt <= '{self.end_date}'\n"
-            "ORDER BY fld, ddt"
+            f"WITH RankedData AS (\n"
+            f"    SELECT \n"
+            f"        gvkeyiid, \n"
+            f"        ticker, \n"
+            f"        isin, \n"
+            f"        ddt, \n"
+            f"        val, \n"
+            f"        fld AS factorAbbreviation, \n"
+            f"        sec, \n"
+            f"        country, \n"
+            f"        updated_at, \n"
+            f"        ROW_NUMBER() OVER (\n"
+            f"            PARTITION BY gvkeyiid, ddt, fld \n"  # 중복 검사 기준
+            f"            ORDER BY updated_at DESC \n"  # 최신 updated_at에 1순위 부여
+            f"        ) as rn \n"
+            f"    FROM [dbo].[{arg['universe']}]\n"
+            f"    WHERE ddt >= '{self.start_date}' AND ddt <= '{self.end_date}'\n"
+            f")\n"
+            f"SELECT \n"
+            f"    gvkeyiid, \n"
+            f"    ticker, \n"
+            f"    isin, \n"
+            f"    ddt, \n"
+            f"    val, \n"
+            f"    factorAbbreviation, \n"
+            f"    sec, \n"
+            f"    country, \n"
+            f"    updated_at \n"
+            f"FROM RankedData\n"
+            f"WHERE rn = 1\n" # 최신 updated_at을 가진 행 (rn=1)만 선택
+            f"ORDER BY factorAbbreviation, ddt"
         )
 
         logger.debug("SQL query: %s", query_raw.replace('\n', ' '))
@@ -94,4 +116,4 @@ class GenerateQueryStructure:
         else:
             logger.info("Fetched %d rows", len(df))
 
-        return _assign_fld(df)
+        return df
