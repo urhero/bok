@@ -158,9 +158,9 @@ def _assign_factor(
     )
 
     # 순위를 0~100 백분율로 변환
-    merged["score"] = merged.groupby(["ddt", "sec"])["rank"].transform(_rank_to_percentile)
+    merged["percentile"] = merged.groupby(["ddt", "sec"])["rank"].transform(_rank_to_percentile)
     # 백분율을 Q1~Q5 분위수 라벨로 변환
-    merged["quantile"] = merged["score"].apply(_n_quantile_label, n=5)
+    merged["quantile"] = merged["percentile"].apply(_n_quantile_label, n=5)
     merged = merged.dropna(subset=["quantile"])
 
     # ------------------------------------------------------------------
@@ -629,8 +629,7 @@ def mp(start_date, end_date) -> None:
 
     # 2️⃣ 메타데이터(순서/스타일/이름)와 조인
     t1 = time.time()
-    info_path = DATA_DIR / "factor_info.csv"
-    info = pd.read_csv(info_path)
+    info = pd.read_csv(DATA_DIR / "factor_info.csv")
     meta = query.merge(info, on="factorAbbreviation", how="inner")
 
     abbrs, orders = info.factorAbbreviation.tolist(), info.factorOrder.tolist()
