@@ -664,13 +664,13 @@ def mp(start_date, end_date) -> None:
     kept_abbr, kept_name, kept_style, _, _, cleaned_raw = _filter_grouped(abbrs, names, styles, raw)
 
     # 2. 수익률 행렬, 음의 상관관계 행렬, 메타 순위 테이블 생성
-    rtns, norr, factor_performance_metrics = _generate_meta(kept_abbr, kept_name, kept_style, cleaned_raw)
+    factor_return_matrix, downside_correlation_matrix, factor_performance_metrics = _generate_meta(kept_abbr, kept_name, kept_style, cleaned_raw)
 
     # 3. 각 스타일의 최상위 팩터(팩터들?)에 대해서만 가중치 그리드 생성
     top_metrics = factor_performance_metrics.groupby("styleName", as_index=False).first()  # 스타일별 최상위 팩터
     grids = []
     for _, row in top_metrics.iterrows():  # .iterrows() 가 인덱스, 값으로 반환
-        grid, *_ = _get_wgt(rtns, row.to_frame().T.reset_index(drop=True), norr)
+        grid, *_ = _get_wgt(factor_return_matrix, row.to_frame().T.reset_index(drop=True), downside_correlation_matrix)
         grid["styleName"] = row["styleName"]
         grids.append(grid)
     mix_grid = pd.concat(grids, ignore_index=True)
@@ -696,7 +696,7 @@ def mp(start_date, end_date) -> None:
 
     # 6. 메인 팩터와 보조 팩터로 수익률 행렬 합집합 생성
     cols_to_keep = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel())
-    ret_subset = rtns[cols_to_keep]
+    ret_subset = factor_return_matrix[cols_to_keep]
 
     # 7. factor_list 및 style_list 구성 (정렬된 순서)
     factor_list = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel()).tolist()
