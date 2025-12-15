@@ -62,15 +62,7 @@ def download(
 
     # 1️⃣ 날짜 범위 내 원시 팩터 데이터 가져오기
     t0 = time.time()
-    query = (
-        GenerateQueryStructure(start_date, end_date)
-        .fetch_snp()  # S&P 데이터 가져오기
-        .drop_duplicates(
-            subset=["ddt", "gvkeyiid", "factorAbbreviation", "val"],
-            keep="last",  # 중복 시 마지막 값 유지(그럴까? 쿼리 단계에서 하는 것 보다 빠른가?)
-            ignore_index=True,
-        )
-    )
+    query = GenerateQueryStructure(start_date, end_date).fetch_snp()  # S&P 데이터 가져오기
     logger.info(f"Query fetched in {time.time() - t0:.2f}s")
 
     # 쿼리 데이터를 parquet 파일로 저장 (벤치마크명_시작날짜_종료날짜)
