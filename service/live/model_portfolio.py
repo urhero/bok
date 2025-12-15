@@ -630,7 +630,7 @@ def mp(start_date, end_date) -> None:
     # 2️⃣ 메타데이터(순서/스타일/이름)와 조인
     t1 = time.time()
     info = pd.read_csv(DATA_DIR / "factor_info.csv")
-    meta = query.merge(info, on="factorAbbreviation", how="inner")
+    merged_source_data = query.merge(info, on="factorAbbreviation", how="inner")
 
     abbrs, orders = info.factorAbbreviation.tolist(), info.factorOrder.tolist()
 
@@ -643,15 +643,15 @@ def mp(start_date, end_date) -> None:
     )
 
     # 최적화: meta를 미리 그룹화
-    grouped_meta = meta.groupby("factorAbbreviation")
+    grouped_source_data = merged_source_data.groupby("factorAbbreviation")
 
     data_list: List[Any] = []
     for abbr, order in track(zip(abbrs, orders), total=len(abbrs), description="Assigning factors"):
         # 그룹이 존재하면 가져오고, 없으면 빈 DataFrame 전달
-        if abbr in grouped_meta.groups:
-            fld = grouped_meta.get_group(abbr)
+        if abbr in grouped_source_data.groups:
+            fld = grouped_source_data.get_group(abbr)
         else:
-            fld = pd.DataFrame(columns=meta.columns)
+            fld = pd.DataFrame(columns=merged_source_data.columns)
         
         data_list.append(_assign_factor(abbr, order, fld, m_ret))
     logger.info(f"Factors assigned in {time.time() - t1:.2f}s")
@@ -664,12 +664,12 @@ def mp(start_date, end_date) -> None:
     kept_abbr, kept_name, kept_style, _, _, cleaned_raw = _filter_grouped(abbrs, names, styles, raw)
 
     # 2. 수익률 행렬, 음의 상관관계 행렬, 메타 순위 테이블 생성
-    rtns, norr, meta = _generate_meta(kept_abbr, kept_name, kept_style, cleaned_raw)
+    rtns, norr, factor_performance_metrics = _generate_meta(kept_abbr, kept_name, kept_style, cleaned_raw)
 
     # 3. 각 스타일의 최상위 팩터(팩터들?)에 대해서만 가중치 그리드 생성
-    top_meta = meta.groupby("styleName", as_index=False).first()  # 스타일별 최상위 팩터
+    top_metrics = factor_performance_metrics.groupby("styleName", as_index=False).first()  # 스타일별 최상위 팩터
     grids = []
-    for _, row in top_meta.iterrows():  # .iterrows() 가 인덱스, 값으로 반환
+    for _, row in top_metrics.iterrows():  # .iterrows() 가 인덱스, 값으로 반환
         grid, *_ = _get_wgt(rtns, row.to_frame().T.reset_index(drop=True), norr)
         grid["styleName"] = row["styleName"]
         grids.append(grid)
@@ -686,7 +686,7 @@ def mp(start_date, end_date) -> None:
     # ------------------------------------------------------------------
     # Map factor → style and append to best_sub
     # ------------------------------------------------------------------
-    style_map = meta.set_index("factorAbbreviation")["styleName"]
+    style_map = factor_performance_metrics.set_index("factorAbbreviation")["styleName"]
     best_sub["main_style"] = best_sub["main_factor"].map(style_map)
     best_sub["sub_style"] = best_sub["sub_factor"].map(style_map)
     best_sub = best_sub[["main_factor", "main_style", "sub_factor", "sub_style"]]
