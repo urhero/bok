@@ -114,6 +114,7 @@ def _assign_factor(
 
         팩터의 데이터 포인트가 ≤100개인 경우, 4개 요소 모두 ``None``
     """
+    logger.debug(f"[Trace] Processing factor {abbv}. Data shape: {fld.shape}")
 
     # ------------------------------------------------------------------
     # 1. 팩터 시계열 수집 및 래그 적용
@@ -182,6 +183,7 @@ def _assign_factor(
     spread = pd.DataFrame({abbv: quantile_ret.iloc[:, 0] - quantile_ret.iloc[:, -1]})
     spread = _add_initial_zero(spread)
 
+    logger.debug(f"[Trace] Factor {abbv} assigned. Sector Ret Shape: {sector_ret.shape}, Quantile Ret Shape: {quantile_ret.shape}")
     return sector_ret, quantile_ret, spread, merged
 
 
@@ -360,6 +362,8 @@ def _generate_meta(
     negative_corr = _ncorr(ret_df).loc[order, order]  # 50개 팩터간의 하락 상관계수
 
     logger.info("Return matrix built (%d factors)", len(order))
+    logger.info(f"[Trace] Generated Factor Return Matrix. Shape: {ret_df.shape}")
+    logger.info(f"[Trace] Generated Negative Correlation Matrix. Shape: {negative_corr.shape}")
     return ret_df, negative_corr, meta
 
 # =============================================================================
@@ -433,6 +437,7 @@ def _get_wgt(
     # 4. Concatenate grid & rank
     df_mix = pd.concat(frames, ignore_index=True)
     df_mix["rank_total"] = df_mix["mix_cagr"].rank(ascending=False) * 0.6 + df_mix["mix_mdd"].rank(ascending=False) * 0.4
+    logger.info(f"[Trace] Generated Mix Grid for {main}. Size: {len(df_mix)}")
     best = df_mix.nsmallest(1, "rank_total").iloc[0]
 
     return (
@@ -617,6 +622,7 @@ def random_style_capped_sim(
     #     .reset_index(drop=True)
     # )
 
+    logger.info(f"[Trace] Simulation completed. Best stats: {best_stats.to_dict('records')}")
     return best_stats, weights_tbl
 
 def mp(start_date, end_date) -> None:
@@ -626,11 +632,13 @@ def mp(start_date, end_date) -> None:
     parquet_path = DATA_DIR / f"{PARAM['benchmark']}_{start_date}_{end_date}.parquet"
     query = pd.read_parquet(parquet_path)
     logger.info(f"Query loaded from {parquet_path} in {time.time() - t0:.2f}s")
+    logger.info(f"[Trace] Loaded parquet data. Shape: {query.shape}")
 
     # 2️⃣ 메타데이터(순서/스타일/이름)와 조인
     t1 = time.time()
     info = pd.read_csv(DATA_DIR / "factor_info.csv")
     merged_source_data = query.merge(info, on="factorAbbreviation", how="inner")
+    logger.info(f"[Trace] Merged with factor info. Shape: {merged_source_data.shape}")
 
     abbrs, orders = info.factorAbbreviation.tolist(), info.factorOrder.tolist()
 
@@ -641,9 +649,11 @@ def mp(start_date, end_date) -> None:
         .rename(columns={"val": "M_RETURN"})
         .drop(columns=["factorAbbreviation"])
     )
+    logger.info(f"[Trace] Extracted M_RETURN. DDT distinct: {m_ret['ddt'].nunique()}, GVKeyIID distinct: {m_ret['gvkeyiid'].nunique()}")
 
     # 최적화: meta를 미리 그룹화
     grouped_source_data = merged_source_data.groupby("factorAbbreviation")
+    logger.info(f"[Trace] Grouped source data. Number of groups: {grouped_source_data.ngroups}")
 
     data_list: List[Any] = []
     for abbr, order in track(zip(abbrs, orders), total=len(abbrs), description="Assigning factors"):
