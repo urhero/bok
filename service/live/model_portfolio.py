@@ -51,33 +51,6 @@ logger = logging.getLogger(__name__)
 # 수치 계산 헬퍼 유틸리티
 # =============================================================================
 
-def compute_percentile(series: pd.Series) -> pd.Series:
-    """
-    1~n 순위를 0~100 스케일(백분위)로 변환합니다.
-    (데이터 개수 n <= 10이면 NaN 반환)
-    """
-    n = len(series)
-    
-    if n <= 10:
-        return pd.Series(np.nan, index=series.index)
-    
-    # Min-Max Scaling: Rank 1 -> 0점, Rank n -> 100점
-    return (series - 1) / (n - 1) * 100
-
-
-def get_quantile_label(score: float | int, n: int = 5) -> str | float:
-    """
-    0~100 백분율을 n분위(Q1~Qn) 라벨로 변환합니다.
-    (범위를 벗어나거나 NaN이면 np.nan 반환)
-    """
-    if pd.isna(score) or not (0 <= score <= 100):
-        return np.nan
-
-    # 예: n=5 (20점 단위), 20점 -> 1(Q1), 21점 -> 1.05 -> 2(Q2)
-    q_idx = math.ceil(score * n / 100)
-    
-    return f"Q{int(max(1, q_idx))}" # 0점은 Q1으로 보정(max 1)
-
 def prepend_start_zero(series: pd.DataFrame) -> pd.DataFrame:
     """첫 관측값 한 달 전에 0을 삽입 (기준선 설정)"""
     series.loc[series.index[0] - pd.DateOffset(months=1)] = 0
@@ -147,11 +120,27 @@ def calculate_factor_stats(
     merged_df["rank"] = (
         merged_df.groupby(["ddt", "sec"])[factor_abbr].rank(method="average", ascending=bool(sort_order))
     )
+    # 날짜 및 섹터별 데이터 개수 계산 (vectorized)
+    count_series = merged_df.groupby(["ddt", "sec"])[factor_abbr].transform("count")
 
-    # 순위를 0~100 백분율로 변환
-    merged_df["percentile"] = merged_df.groupby(["ddt", "sec"])["rank"].transform(compute_percentile)
-    # 백분율을 Q1~Q5 분위수 라벨로 변환
-    merged_df["quantile"] = merged_df["percentile"].apply(get_quantile_label, n=5)
+    # Vectorized Percentile: (Rank - 1) / (Count - 1) * 100
+    # 데이터 개수가 10개 이하는 NaN 처리 (기존 로직 유지)
+    merged_df["percentile"] = (merged_df["rank"] - 1) / (count_series - 1) * 100
+    merged_df.loc[count_series <= 10, "percentile"] = np.nan
+    
+    # Vectorized Quantile: pd.cut 사용 (apply 제거)
+    # 0~20: Q1, 20~40: Q2, ..., 80~100: Q5
+    # 기존 logic(math.ceil)과 일치: x=20 -> Q1 / x=20.001 -> Q2.
+    # 따라서 (0, 20], (20, 40] ... 구간이 맞음 -> right=True
+    # 0 포함을 위해 include_lowest=True 사용
+    labels = ["Q1", "Q2", "Q3", "Q4", "Q5"]
+    merged_df["quantile"] = pd.cut(
+        merged_df["percentile"], 
+        bins=[0, 20, 40, 60, 80, 105], # 100 포함
+        labels=labels, 
+        include_lowest=True,
+        right=True
+    )
     merged_df = merged_df.dropna(subset=["quantile"])
     
     # 불필요한 중간 컬럼 제거 (Optimization)
@@ -226,7 +215,16 @@ def filter_and_label_factors(
         q_mean["short"] = (q_mean["mean"] < q_mean.loc["Q5", "mean"] + thresh).astype(int) * -1
         q_mean["short"] = q_mean["short"].abs()[::-1].cumprod()[::-1] * -1
         q_mean["label"] = q_mean["long"] + q_mean["short"]
-        merged = raw_clean.merge(q_mean.reset_index()[["quantile", "label"]], on="quantile")
+        
+        # Optimization: Use map instead of merge
+        label_map = q_mean["label"].to_dict() # {Q1: 1, Q2: 0, ...}
+        # raw_clean은 이미 merged_df의 일부이므로 quantile 컬럼이 있음 (Category or Object)
+        # map을 위해 필요한 경우 str로 변환하거나 인덱스 맞춤
+        
+        # q_mean 인덱스가 quantile인지 확인 (groupby 결과이므로 인덱스임)
+        # raw_clean에 label 컬럼 직접 할당
+        raw_clean["label"] = raw_clean["quantile"].map(label_map)
+        merged = raw_clean.dropna(subset=["label"]) # merge 동작(inner join)과 유사하게 매칭 안되는 것 제외 (혹시나 해서)
 
         kept_factor_abbrs.append(factor_abbr_list[idx]); kept_name.append(factor_name_list[idx]); kept_style.append(style_name_list[idx]); kept_idx.append(idx)
         dropped_sec.append(to_drop); filtered_raw_data_list.append(merged)
