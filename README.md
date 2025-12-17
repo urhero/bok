@@ -26,13 +26,13 @@
 ### (2-1) 백테스트 기간 설정
 - 분석 시작 시점: **2018년**
 - 코드 구현
-  - `_ls_portfolio()` 내 `ddt >= 2017-12-31`
+  - `construct_long_short_df()` 내 `ddt >= 2017-12-31`
   - → 2018년부터 실질적인 성과 반영
 
 ---
 
 ### (2-2) 팩터별 5분위(Quintile) 포트폴리오 구성
-- **핵심 함수:** `_assign_factor()`
+- **핵심 함수:** `calculate_factor_stats()`
 - 절차
   - 종목별 팩터 값에 **1개월 래그 적용** (전월 값으로 당월 투자)
   - 동일 날짜·동일 섹터 내에서 팩터 값 순위 산정
@@ -44,7 +44,7 @@
 ---
 
 ### (2-3) 비투자 섹터 결정
-- **핵심 함수:** `_filter_grouped()`
+- **핵심 함수:** `filter_and_label_factors()`
 - 절차
   - 섹터별 팩터 스프레드 계산  
     - `Spread = Q1 – Q5`
@@ -56,7 +56,7 @@
 ---
 
 ### (2-4) 투자 대상 분위(롱/숏) 결정
-- `_filter_grouped()`에서 재계산
+- `filter_and_label_factors()`에서 재계산
 - 절차
   - 섹터 제거 후 분위별 평균 수익률 재산출
   - Q1–Q5 평균 스프레드를 기준으로 임계값 설정
@@ -72,20 +72,20 @@
 
 ### (2-5) 팩터 스프레드 수익률 측정
 - **핵심 함수 흐름**
-  - `_ls_portfolio()`  
+  - `construct_long_short_df()`  
     - 롱/숏 종목군 구성  
     - 분위 내 **동일가중 포트폴리오**
-  - `_vectorized_bt()`  
+  - `calculate_vectorized_return()`  
     - 리밸런싱 반영  
     - 턴오버 계산  
     - 거래비용(30bp) 차감
-  - `_aggregate_returns()`  
+  - `aggregate_factor_returns()`  
     - 팩터별 **월간 롱–숏 스프레드 수익률** 생성
 
 ---
 
 ### (2-6) 팩터 후보군 최종 선정
-- **핵심 함수:** `_generate_meta()`
+- **핵심 함수:** `evaluate_factor_universe()`
 - 절차
   - 팩터별 월간 스프레드 수익률 행렬 구성
   - 연환산 수익률(CAGR) 계산
@@ -106,7 +106,7 @@
 ---
 
 ### (3-2) 보완 팩터 선정 및 2-팩터 믹스
-- **핵심 함수:** `_get_wgt()`
+- **핵심 함수:** `find_optimal_mix()`
 - 절차
   - 메인 팩터 대비
     - 성과(CAGR)
@@ -122,7 +122,7 @@
 ---
 
 ### (3-3) 스타일 제약 하 최적 비중 결정
-- **핵심 함수:** `random_style_capped_sim()`
+- **핵심 함수:** `simulate_constrained_weights()`
 - 절차
   - 몬테카를로 방식으로 다수의 랜덤 포트폴리오 생성
   - 스타일별 비중 합계가 **최대 25%**를 넘지 않도록 제약
@@ -187,6 +187,11 @@
 
 ---
 
+## 📊 Visualization
+- [Variable Flow Graph](docs/VARIABLE_FLOW.md): `mp` 함수 내 변수 흐름 상세 시각화
+
+---
+
 ## 📎 Appendix: 함수별 Input / Output 정리 (I/O Reference)
 
 > 아래는 본 코드에서 정의된 주요 함수들을 기준으로, **입력(필수 컬럼/형식)**과 **출력(산출물)**을 정리한 섹션입니다.  
@@ -194,7 +199,7 @@
 
 ---
 
-### `_rank_to_percentile(series: pd.Series) -> pd.Series`
+### `compute_percentile(series: pd.Series) -> pd.Series`
 - **Input**
   - `series`: `pd.Series`  
     - 보통 `rank()` 결과(1~n)
@@ -204,7 +209,7 @@
 
 ---
 
-### `_n_quantile_label(score: float|int, n: int = 5) -> str|float`
+### `get_quantile_label(score: float|int, n: int = 5) -> str|float`
 - **Input**
   - `score`: 0~100 범위의 백분위 점수
   - `n`: 분위 개수 (기본 5)
@@ -214,7 +219,7 @@
 
 ---
 
-### `_add_initial_zero(series: pd.DataFrame) -> pd.DataFrame`
+### `prepend_start_zero(series: pd.DataFrame) -> pd.DataFrame`
 - **Input**
   - `series`: `pd.DataFrame`
     - **DatetimeIndex**를 가진 시계열 데이터프레임(예: spread)
@@ -224,7 +229,7 @@
 
 ---
 
-### `_assign_factor(abbv: str, order: int, fld: pd.DataFrame, m_ret: pd.DataFrame)`
+### `calculate_factor_stats(factor_abbr: str, sort_order: int, factor_data_df: pd.DataFrame, market_return_df: pd.DataFrame)`
 `-> Tuple[sector_ret, quantile_ret, spread, merged] | (None, None, None, None)`
 - **Input**
   - `abbv`: 팩터 약어(컬럼명으로 사용)
@@ -236,40 +241,40 @@
     - **필수 컬럼(예상)**:  
       `["gvkeyiid","ticker","isin","ddt","sec","country","M_RETURN"]`
 - **Output**
-  - `sector_ret: pd.DataFrame`
+  - `sector_return_df: pd.DataFrame`
     - 섹터×분위(Q1~Q5) 수익률 요약(가공된 형태)
-  - `quantile_ret: pd.DataFrame`
+  - `quantile_return_df: pd.DataFrame`
     - 날짜×분위(Q1~Q5) 월간 평균 수익률
-  - `spread: pd.DataFrame`
-    - 날짜 인덱스, 열=`abbv`, 값= `Q1 - Q5` 스프레드 시계열 (+ 초기 0 삽입)
-  - `merged: pd.DataFrame`
+  - `spread_series: pd.DataFrame`
+    - 날짜 인덱스, 열=`factor_abbr`, 값= `Q1 - Q5` 스프레드 시계열 (+ 초기 0 삽입)
+  - `merged_df: pd.DataFrame`
     - 종목 단위 병합/가공 데이터(팩터값, M_RETURN, rank/percentile/quantile 포함)
   - 히스토리가 매우 짧으면 `(None, None, None, None)` 반환
 
 ---
 
-### `_filter_grouped(list_abbrs, list_names, list_styles, list_data)`
+### `filter_and_label_factors(factor_abbr_list, factor_name_list, style_name_list, factor_data_list)`
 `-> (kept_abbr, kept_name, kept_style, kept_idx, dropped_sec, new_raw)`
 - **Input**
   - `list_abbrs`: 팩터 약어 리스트
   - `list_names`: 팩터 이름 리스트
   - `list_styles`: 스타일 이름 리스트
   - `list_data`: 각 팩터별 결과 리스트  
-    - 원소 형태: `(sector_ret, quantile_ret, spread, merged)` (=`_assign_factor` 반환)
+    - 원소 형태: `(sector_return_df, quantile_return_df, spread_series, merged_df)` (=`calculate_factor_stats` 반환)
 - **Output**
-  - `kept_abbr: List[str]` / `kept_name: List[str]` / `kept_style: List[str]`
+  - `kept_factor_abbrs: List[str]` / `kept_name: List[str]` / `kept_style: List[str]`
     - 섹터 필터 후 살아남은 팩터 메타
   - `kept_idx: List[int]`
     - 원래 리스트에서 유지된 팩터 인덱스
   - `dropped_sec: List[List[str]]`
     - 팩터별로 제거된 섹터 리스트
-  - `new_raw: List[pd.DataFrame]`
+  - `filtered_raw_data_list: List[pd.DataFrame]`
     - 섹터 필터 반영 후 **종목 단위 raw 데이터**
     - 추가 컬럼 포함: `label` (롱/중립/숏: +1/0/-1)
 
 ---
 
-### `_ncorr(df: pd.DataFrame, min_obs: int = 20) -> pd.DataFrame`
+### `calculate_downside_correlation(df: pd.DataFrame, min_obs: int = 20) -> pd.DataFrame`
 - **Input**
   - `df`: 월간 수익률 행렬(행=날짜, 열=팩터/스타일)
   - `min_obs`: 최소 표본 수(기본 20)
@@ -279,14 +284,14 @@
 
 ---
 
-### `_ls_portfolio(data_raw: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]`
+### `construct_long_short_df(labeled_data_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]`
 - **Input**
-  - `data_raw`: 종목 단위 데이터(라벨 포함)
+  - `labeled_data_df`: 종목 단위 데이터(라벨 포함)
     - **필수 컬럼(예상)**: `["ddt","gvkeyiid","label","M_RETURN", ...]`
 - **Output**
-  - `(raw_df_l, raw_df_s)`:
-    - `raw_df_l`: 롱 종목군 데이터프레임 (`signal=="L"`)
-    - `raw_df_s`: 숏 종목군 데이터프레임 (`signal=="S"`)
+  - `(long_df, short_df)`:
+    - `long_df`: 롱 종목군 데이터프레임 (`signal=="L"`)
+    - `short_df`: 숏 종목군 데이터프레임 (`signal=="S"`)
   - 내부에서 생성되는 주요 컬럼
     - `signal`: L/N/S
     - `num`: 날짜×signal별 종목수
@@ -295,60 +300,62 @@
 
 ---
 
-### `_vectorized_bt(port_raw: pd.DataFrame, abbr_nms: str, cost_bps: float = 30.0)`
-`-> Tuple[gross_df, net_df, tf_df]`
+### `calculate_vectorized_return(portfolio_data_df: pd.DataFrame, factor_abbr: str, cost_bps: float = 30.0)`
+`-> Tuple[gross_return_df, net_return_df, trading_cost_df]`
 - **Input**
-  - `port_raw`: 롱 또는 숏 포지션 raw (=`_ls_portfolio` 결과 중 하나)
+  - `portfolio_data_df`: 롱 또는 숏 포지션 raw (=`construct_long_short_df` 결과 중 하나)
+    - **필수 컬럼(예상)**: `["ddt","gvkeyiid","return_weight","turnover_weight","M_RETURN"]`
+  - `factor_abbr`: 결과 컬럼명(팩터 약어)
     - **필수 컬럼(예상)**: `["ddt","gvkeyiid","wgt_rtn","wgt_tvr","M_RETURN"]`
   - `abbr_nms`: 결과 컬럼명(팩터 약어)
   - `cost_bps`: 거래비용(bps)
 - **Output**
-  - `gross_df: pd.DataFrame`
-    - 날짜별 gross return (열=`abbr_nms`)
-  - `net_df: pd.DataFrame`
-    - 날짜별 net return = gross - trading_friction
-  - `tf_df: pd.DataFrame`
+  - `gross_return_df: pd.DataFrame`
+    - 날짜별 gross return (열=`factor_abbr`)
+  - `net_return_df: pd.DataFrame`
+    - 날짜별 net return = gross - trading_cost
+  - `trading_cost_df: pd.DataFrame`
     - 날짜별 trading_friction(거래비용) 시계열
 
 ---
 
-### `_aggregate_returns(data_raw: List[pd.DataFrame], abbr_nms: List[str])`
-`-> Tuple[df_grs, df_net, df_trc]`
+### `aggregate_factor_returns(factor_data_list: List[pd.DataFrame], factor_abbr_list: List[str])`
+`-> Tuple[gross_return_df, net_return_df, trading_cost_df]`
 - **Input**
-  - `data_raw`: 팩터별 종목 raw 데이터 리스트(라벨 포함)
-  - `abbr_nms`: 해당 raw에 대응하는 팩터 약어 리스트
+  - `factor_data_list`: 팩터별 종목 raw 데이터 리스트(라벨 포함)
+  - `factor_abbr_list`: 해당 raw에 대응하는 팩터 약어 리스트
 - **Output**
-  - `df_grs`: 팩터별 gross return 매트릭스(열=팩터)
-  - `df_net`: 팩터별 net return 매트릭스(열=팩터)
-  - `df_trc`: 팩터별 거래비용 매트릭스(열=팩터)
+  - `gross_return_df`: 팩터별 gross return 매트릭스(열=팩터)
+  - `net_return_df`: 팩터별 net return 매트릭스(열=팩터)
+  - `trading_cost_df`: 팩터별 거래비용 매트릭스(열=팩터)
 
 ---
 
-### `_generate_meta(abbrs, names, styles, data)`
+### `evaluate_factor_universe(factor_abbr_list, factor_name_list, style_name_list, factor_data_list)`
 `-> Tuple[ret_df, negative_corr, meta]`
 - **Input**
-  - `abbrs/names/styles`: 팩터 메타 리스트
-  - `data`: 팩터별 종목 raw 데이터 리스트(=`_filter_grouped` 산출 `cleaned_raw`)
+  - `factor_abbr_list/factor_name_list/style_name_list`: 팩터 메타 리스트
+  - `factor_data_list`: 팩터별 종목 raw 데이터 리스트(=`filter_and_label_factors` 산출 `filtered_factor_data_list`)
 - **Output**
   - `ret_df: pd.DataFrame`
     - 월간 net return 매트릭스(행=월, 열=팩터)
     - 유효성 필터(0 수익률 과다) 반영
     - 상위 50개 팩터로 축소된 결과가 반환됨
   - `negative_corr: pd.DataFrame`
-    - downside(음수 구간) 상관행렬 (`_ncorr(ret_df)`)
+    - downside(음수 구간) 상관행렬 (`calculate_downside_correlation(ret_df)`)
   - `meta: pd.DataFrame`
     - 팩터 성과/랭크 테이블
     - 주요 컬럼: `["factorAbbreviation","factorName","styleName","cagr","rank_style","rank_total"]`
 
 ---
 
-### `_get_wgt(factor_rets: pd.DataFrame, data_raw: pd.DataFrame, data_neg: pd.DataFrame)`
+### `find_optimal_mix(factor_rets: pd.DataFrame, data_raw: pd.DataFrame, data_neg: pd.DataFrame)`
 `-> Tuple[df_mix, ports, main_factor, main_w, sub_factor, sub_w]`
 - **Input**
   - `factor_rets`: 월간 팩터 수익률 행렬(열=팩터)
   - `data_raw`: 메인 팩터 1개를 담은 1행짜리 DataFrame
     - **필수 컬럼**: `["factorAbbreviation"]`
-  - `data_neg`: downside 상관행렬(= `_generate_meta`의 `negative_corr`)
+  - `data_neg`: downside 상관행렬(= `evaluate_factor_universe`의 `negative_corr`)
 - **Output**
   - `df_mix: pd.DataFrame`
     - 메인–서브 조합별(서브 후보×가중치 grid) 성과 및 랭킹 테이블
@@ -360,7 +367,7 @@
 
 ---
 
-### `assemble_top_style_portfolios(factor_rets, meta, neg_corr) -> Tuple[pd.DataFrame, pd.DataFrame]`
+### `construct_style_portfolios(factor_rets, meta, neg_corr) -> Tuple[pd.DataFrame, pd.DataFrame]`
 - **Input**
   - `factor_rets`: 월간 팩터 수익률 행렬
   - `meta`: 팩터 성과/랭크 테이블(상위 팩터 정렬 반영)
@@ -373,7 +380,7 @@
 
 ---
 
-### `random_style_capped_sim(rtn_df, style_list, num_sims=1_000_000, style_cap=0.25, tol=1e-12)`
+### `simulate_constrained_weights(rtn_df, style_list, num_sims=1_000_000, style_cap=0.25, tol=1e-12)`
 `-> Tuple[best_stats, weights_tbl]`
 - **Input**
   - `rtn_df`: 월간 수익률 행렬(행=월, 열=팩터; 최종 후보 팩터 subset)
@@ -405,11 +412,11 @@
       - `pivoted_total_agg_wgt_{end_date}.csv`
 - **주요 내부 흐름(요약)**
   1. parquet + factor_info 로드 및 병합
-  2. `_assign_factor`로 팩터별 분위/스프레드/원천 데이터 생성
-  3. `_filter_grouped`로 섹터 필터 + 롱/숏 라벨링
-  4. `_generate_meta`로 월간 수익률 행렬/랭킹/하락상관 생성
-  5. `_get_wgt`로 스타일별 메인-서브 팩터 믹스 후보 생성
-  6. `random_style_capped_sim`로 스타일 캡 제약 하 비중 최적화
+  2. `calculate_factor_stats`로 팩터별 분위/스프레드/원천 데이터 생성
+  3. `filter_and_label_factors`로 섹터 필터 + 롱/숏 라벨링
+  4. `evaluate_factor_universe`로 월간 수익률 행렬/랭킹/하락상관 생성
+  5. `find_optimal_mix`로 스타일별 메인-서브 팩터 믹스 후보 생성
+  6. `simulate_constrained_weights`로 스타일 캡 제약 하 비중 최적화
   7. 종목별 최종 비중 산출 및 MP 집계, CSV 출력
 
 ---
