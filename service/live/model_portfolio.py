@@ -91,7 +91,6 @@ def calculate_factor_stats(
         factor_abbr: str,
         sort_order: int,
         factor_data_df: pd.DataFrame,
-        market_return_df: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | Tuple[None, None, None, None]:
     """특정 팩터에 대한 섹터/분위수/스프레드 수익률 계산
 
@@ -128,24 +127,15 @@ def calculate_factor_stats(
         return None, None, None, None
 
     # 각 종목별로 1개월 래그 적용 (전월 팩터 값을 당월에 사용)
+    # val은 이미 존재, M_RETURN도 이미 존재
     factor_data_df[factor_abbr] = factor_data_df.groupby("gvkeyiid")["val"].shift(1)
-    factor_data_df = factor_data_df.dropna(subset=[factor_abbr]).drop(columns=["val", "factorAbbreviation"])
-
-    # ------------------------------------------------------------------
-    # 2. 월간 시장 수익률(M_RETURN) 추출
-    # ------------------------------------------------------------------
-    # market_return_df는 이미 추출되어 전달됨
-
-    # ------------------------------------------------------------------
-    # 3. 팩터 + 수익률 병합, 잘못된 섹터 필터링
-    # ------------------------------------------------------------------
+    
+    # 팩터 래그 생성 후 NaN 제거 + 필요한 컬럼 정리
+    # M_RETURN과 필수 Key들은 이미 존재함
     merged_df = (
-        factor_data_df.merge(
-            market_return_df,
-            on=["gvkeyiid", "ticker", "isin", "ddt", "sec", "country"],
-            how="inner",
-        )
-        .query("sec != 'Undefined'")  # 정의되지 않은 섹터 제거
+        factor_data_df
+        .dropna(subset=[factor_abbr, "M_RETURN"])  # 팩터도 있고 수익률도 있는 구간만
+        .drop(columns=["val", "factorAbbreviation"])
         .reset_index(drop=True)
     )
 
@@ -163,6 +153,9 @@ def calculate_factor_stats(
     # 백분율을 Q1~Q5 분위수 라벨로 변환
     merged_df["quantile"] = merged_df["percentile"].apply(get_quantile_label, n=5)
     merged_df = merged_df.dropna(subset=["quantile"])
+    
+    # 불필요한 중간 컬럼 제거 (Optimization)
+    merged_df = merged_df.drop(columns=["rank", "percentile"])
 
     # ------------------------------------------------------------------
     # 5. 섹터 및 시장 분위수 수익률 계산
@@ -645,12 +638,26 @@ def mp(start_date, end_date) -> None:
 
     # 3️⃣ Rich 진행바와 함께 팩터 할당
     # 최적화: M_RETURN 미리 추출
+    # 최적화: M_RETURN 미리 추출
     market_return_df = (
         raw_factor_data_df[raw_factor_data_df["factorAbbreviation"] == "M_RETURN"].reset_index(drop=True)
         .rename(columns={"val": "M_RETURN"})
         .drop(columns=["factorAbbreviation"])
     )
     logger.info(f"[Trace] Extracted M_RETURN. DDT distinct: {market_return_df['ddt'].nunique()}, GVKeyIID distinct: {market_return_df['gvkeyiid'].nunique()}")
+
+    # 최적화: M_RETURN을 전체 데이터에 병합 (Loop 밖에서 수행)
+    # 이를 통해 calculate_factor_stats 내부의 반복적인 병합을 제거함
+    merged_factor_data_df = (
+        merged_factor_data_df
+        .merge(
+            market_return_df,
+            on=["gvkeyiid", "ticker", "isin", "ddt", "sec", "country"],
+            how="inner",
+        )
+        .query("sec != 'Undefined'")  # 정의되지 않은 섹터 전역 필터링
+    )
+    logger.info(f"[Trace] Merged M_RETURN globally. Shape: {merged_factor_data_df.shape}")
 
     # 최적화: meta를 미리 그룹화
     grouped_source_data = merged_factor_data_df.groupby("factorAbbreviation")
@@ -660,11 +667,12 @@ def mp(start_date, end_date) -> None:
     for factor_abbr, order in track(zip(factor_abbr_list, orders), total=len(factor_abbr_list), description="Assigning factors"):
         # 그룹이 존재하면 가져오고, 없으면 빈 DataFrame 전달
         if factor_abbr in grouped_source_data.groups:
-            factor_data_df = grouped_source_data.get_group(factor_abbr)
+            factor_data_df = grouped_source_data.get_group(factor_abbr).copy() # copy to avoid SettingWithCopy
         else:
             factor_data_df = pd.DataFrame(columns=merged_factor_data_df.columns)
         
-        processed_factor_data_list.append(calculate_factor_stats(factor_abbr, order, factor_data_df, market_return_df))
+        # market_return_df 인자 제거 (이미 병합됨)
+        processed_factor_data_list.append(calculate_factor_stats(factor_abbr, order, factor_data_df))
     logger.info(f"Factors assigned in {time.time() - t1:.2f}s")
 
     """Run the full ETL → optimisation → export process."""
