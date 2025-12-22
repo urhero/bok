@@ -176,6 +176,9 @@ def calculate_factor_stats(
 DATA_DIR = Path.cwd() / "data" 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+OUTPUT_DIR = Path.cwd() / "output" 
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # =============================================================================
 # 2️⃣ 섹터 필터링 + 재라벨링
@@ -346,7 +349,7 @@ def evaluate_factor_universe(
     meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
     meta["rank_style"] = meta.groupby("styleName")["cagr"].rank(ascending=False)  # 스타일내에서의 랭크
     meta["rank_total"] = meta["cagr"].rank(ascending=False)  # 전체에서의 랭크
-    meta.to_csv("meta_data.csv")
+    meta.to_csv(OUTPUT_DIR / "meta_data.csv")
     meta = meta.sort_values("rank_total").reset_index(drop=True).rename(columns={"index": "factorAbbreviation"})[:50]  # 팩터 약어를 인덱스에서 컬럼으로 전환, 상위 50개만
 
     order = meta["factorAbbreviation"].tolist()
@@ -709,7 +712,7 @@ def mp(start_date, end_date) -> None:
     best_sub = best_sub[["main_factor", "main_style", "sub_factor", "sub_style"]]
 
     # Save if needed
-    # best_sub.to_csv(DATA_DIR / "best_sub_factor.csv", index=False)
+    # best_sub.to_csv(OUTPUT_DIR / "best_sub_factor.csv", index=False)
 
     # 6. 메인 팩터와 보조 팩터로 수익률 행렬 합집합 생성
     cols_to_keep = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel())
@@ -791,10 +794,10 @@ def mp(start_date, end_date) -> None:
         .sum()
     )
 
-    agg_w.to_csv(DATA_DIR / f"aggregated_weights_{end_date}_test.csv")
-    final_weights.to_csv(DATA_DIR / f"total_aggregated_weights_{end_date}_test.csv")
+    agg_w.to_csv(OUTPUT_DIR / f"aggregated_weights_{end_date}_test.csv")
+    final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test.csv")
 
-    final_style_weight.to_csv(DATA_DIR / f"total_aggregated_weights_style_{end_date}_test.csv")
+    final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_test.csv")
 
     final_weights.loc[final_weights['style'] == 'MP', 'factor_weight'] = 1
     final_weights = final_weights.replace(0, np.nan)
@@ -819,5 +822,5 @@ def mp(start_date, end_date) -> None:
     new_order = cols[~mp_mask].tolist() + cols[mp_mask].tolist()
     pivoted_final = pivoted_final.loc[:, new_order]
 
-    pivoted_final.to_csv(DATA_DIR / f"pivoted_total_agg_wgt_{end_date}.csv")
-    logger.info("Pipeline completed ✓ — files saved in %s", DATA_DIR)
+    pivoted_final.to_csv(OUTPUT_DIR / f"pivoted_total_agg_wgt_{end_date}.csv")
+    logger.info("Pipeline completed ✓ — files saved in %s", OUTPUT_DIR)
