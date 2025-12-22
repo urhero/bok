@@ -152,11 +152,11 @@ def calculate_factor_stats(
 
     # 섹터별 분위수 평균 수익률 계산 (?기하 수익률로 고쳐야함, 하드코딩)
     sector_return_df = (
-        merged_df.groupby(["ddt", "sec", "quantile"])["M_RETURN"].mean().unstack(fill_value=0)
+        merged_df.groupby(["ddt", "sec", "quantile"], observed=False)["M_RETURN"].mean().unstack(fill_value=0)
     ).groupby("sec").mean().T
 
     # 전체 시장의 분위수별 평균 수익률 계산 (모든 섹터 포함?) (?기하 수익률로 고쳐야함, 하드코딩)
-    quantile_return_df = merged_df.groupby(["ddt", "quantile"])["M_RETURN"].mean().unstack(fill_value=0)
+    quantile_return_df = merged_df.groupby(["ddt", "quantile"], observed=False)["M_RETURN"].mean().unstack(fill_value=0)
 
     # ------------------------------------------------------------------
     # 6. Q1‑Q5 스프레드 계산 (롱‑숏 전략)
@@ -210,7 +210,7 @@ def filter_and_label_factors(
             logger.debug("Factor %d discarded – all sectors dropped", idx)
             continue
 
-        q_ret = raw_clean.groupby(["ddt", "quantile"])["M_RETURN"].mean().unstack(fill_value=0)
+        q_ret = raw_clean.groupby(["ddt", "quantile"], observed=False)["M_RETURN"].mean().unstack(fill_value=0)
         q_mean = q_ret.mean(axis=0).to_frame("mean")
         thresh = abs(q_mean.loc["Q1", "mean"] - q_mean.loc["Q5", "mean"]) * 0.10
         # >= <=
