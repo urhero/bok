@@ -168,7 +168,7 @@ def calculate_factor_stats(
     logger.debug(f"[Trace] Factor {factor_abbr} assigned. Sector Ret Shape: {sector_return_df.shape}, Quantile Ret Shape: {quantile_return_df.shape}")
     return sector_return_df, quantile_return_df, spread_series, merged_df
 
-#테스트
+
 
 # ---------------------------------------------------------------------------
 # 전역 경로
