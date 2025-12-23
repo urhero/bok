@@ -350,8 +350,10 @@ def evaluate_factor_universe(
     meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
     meta["rank_style"] = meta.groupby("styleName")["cagr"].rank(ascending=False)  # 스타일내에서의 랭크
     meta["rank_total"] = meta["cagr"].rank(ascending=False)  # 전체에서의 랭크
-    meta.to_csv(OUTPUT_DIR / "meta_data.csv")
-    meta = meta.sort_values("rank_total").reset_index(drop=True).rename(columns={"index": "factorAbbreviation"})[:50]  # 팩터 약어를 인덱스에서 컬럼으로 전환, 상위 50개만
+    # CAGR 내림차순 정렬
+    meta = meta.sort_values("cagr", ascending=False).reset_index(drop=True).rename(columns={"index": "factorAbbreviation"})
+    meta.to_csv(OUTPUT_DIR / "meta_data.csv", index=False)
+    meta = meta[:50]  # 상위 50개만 선택
 
     order = meta["factorAbbreviation"].tolist()
     ret_df = ret_df[order]  # 50개 팩터만
