@@ -150,12 +150,12 @@ def calculate_factor_stats(
     # 5. 섹터 및 시장 분위수 수익률 계산
     # ------------------------------------------------------------------
 
-    # 섹터별 분위수 평균 수익률 계산 (?기하 수익률로 고쳐야함, 하드코딩)
+    # 섹터별 분위수 평균 수익률 계산 (같은 날짜별 평균 수익률은 산술평균 수익률)
     sector_return_df = (
         merged_df.groupby(["ddt", "sec", "quantile"], observed=False)["M_RETURN"].mean().unstack(fill_value=0)
     ).groupby("sec").mean().T
 
-    # 전체 시장의 분위수별 평균 수익률 계산 (모든 섹터 포함?) (?기하 수익률로 고쳐야함, 하드코딩)
+    # 전체 시장의 분위수별 평균 수익률 계산 (같은 날짜별 평균 수익률은 산술평균 수익률)
     quantile_return_df = merged_df.groupby(["ddt", "quantile"], observed=False)["M_RETURN"].mean().unstack(fill_value=0)
 
     # ------------------------------------------------------------------
@@ -211,6 +211,7 @@ def filter_and_label_factors(
             continue
 
         q_ret = raw_clean.groupby(["ddt", "quantile"], observed=False)["M_RETURN"].mean().unstack(fill_value=0)
+        # 한 날짜 아닌 시계열 수익률은 기하 수익률로 수정 필요 (? 하드코딩)
         q_mean = q_ret.mean(axis=0).to_frame("mean")
         thresh = abs(q_mean.loc["Q1", "mean"] - q_mean.loc["Q5", "mean"]) * 0.10
         # >= <=
@@ -642,7 +643,7 @@ def simulate_constrained_weights(
     logger.info(f"[Trace] Simulation completed. Best stats: {best_stats.to_dict('records')}")
     return best_stats, weights_tbl
 
-def mp(start_date, end_date) -> None:
+def mp(start_date, end_date, report: bool = False) -> None:
 
     # parquet 파일 로드하기
     t0 = time.time()
@@ -703,6 +704,15 @@ def mp(start_date, end_date) -> None:
 
     # 1. 피클 로드 및 섹터 필터 적용
     factor_abbr_list, factor_name_list, style_name_list, raw = factor_abbr_list, factor_metadata_df.factorName.tolist(), factor_metadata_df.styleName.tolist(), processed_factor_data_list
+
+ 
+    if report:
+        from service.report.read_pkl import generate_report
+        import sys
+        logger.info("Report generation requested. Invoking read_pkl logic...")
+        generate_report(factor_abbr_list, factor_name_list, style_name_list, raw)
+        logger.info("Report generated. Exiting.")
+        sys.exit(0)
     kept_factor_abbrs, kept_name, kept_style, _, _, filtered_factor_data_list = filter_and_label_factors(factor_abbr_list, factor_name_list, style_name_list, raw)
 
     # 2. 수익률 행렬, 음의 상관관계 행렬, 메타 순위 테이블 생성

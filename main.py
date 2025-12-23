@@ -20,6 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     parser_report = subparsers.add_parser("mp", help="Generate MP from downloaded data.")
     parser_report.add_argument("start_date", type=str, help="Start date in YYYY-MM-DD format.")
     parser_report.add_argument("end_date", type=str, help="End date in YYYY-MM-DD format.")
+    parser_report.add_argument("--report", action="store_true", help="Generate report and exit.")
 
     args = parser.parse_args(argv)
 
@@ -34,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "download":
             download(args.start_date, args.end_date)
         elif args.command == "mp":
-            mp(args.start_date, args.end_date)
+            mp(args.start_date, args.end_date, report=args.report)
         return 0
 
     parser.print_help()
