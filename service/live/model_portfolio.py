@@ -645,7 +645,7 @@ def simulate_constrained_weights(
     logger.info(f"[Trace] Simulation completed. Best stats: {best_stats.to_dict('records')}")
     return best_stats, weights_tbl
 
-def mp(start_date, end_date, report: bool = False) -> None:
+def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> None:
 
     # parquet 파일 로드하기
     t0 = time.time()
