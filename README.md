@@ -397,7 +397,7 @@
 
 ---
 
-### `mp(start_date, end_date) -> None`
+### `run_model_portfolio_pipeline(start_date, end_date) -> None`
 - **Input**
   - `start_date`, `end_date`: 문자열(날짜)  
     - parquet 파일명 및 최종 리밸런싱 시점(`end_date`) 필터에 사용
