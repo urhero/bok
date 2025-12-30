@@ -9,8 +9,8 @@ graph TD
     User([User / Command Line]) -->|python main.py mp ...| Main[main.py: main()]
     
     subgraph "Entry Point"
-        Main -->|Import| MP_Func[service.live.model_portfolio: mp()]
-        Main -->|Import| DL_Func[service.download.write_pkl: download()]
+        Main -->|Import| MP_Func[service.live.model_portfolio: run_model_portfolio_pipeline()]
+        Main -->|Import| DL_Func[service.download.write_pkl: run_download_pipeline()]
     end
 
     subgraph "Data Loading"
@@ -56,7 +56,7 @@ graph TD
 ## Detailed Variable & Function Map
 
 ### 1. **Initialization**
-- **Function**: `mp(start_date, end_date)`
+- **Function**: `run_model_portfolio_pipeline(start_date, end_date)`
 - **Input**: Dates.
 - **Key Variables**:
     - `raw_factor_data_df`: The raw factor data loaded from parquet.

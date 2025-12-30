@@ -3,8 +3,8 @@ import logging
 import sys
 
 from rich.logging import RichHandler
-from service.download.write_pkl import download
-from service.live.model_portfolio import mp
+from service.download.write_pkl import run_download_pipeline
+from service.live.model_portfolio import run_model_portfolio_pipeline
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -33,9 +33,9 @@ def main(argv: list[str] | None = None) -> int:
             handlers=[RichHandler()],
         )
         if args.command == "download":
-            download(args.start_date, args.end_date)
+            run_download_pipeline(args.start_date, args.end_date)
         elif args.command == "mp":
-            mp(args.start_date, args.end_date, report=args.report)
+            run_model_portfolio_pipeline(args.start_date, args.end_date, report=args.report)
         return 0
 
     parser.print_help()
