@@ -19,7 +19,7 @@ from typing import Any, Dict
 import pandas as pd
 import sqlalchemy as sql
 
-import config  # expects PARAM dict
+from config import PARAM
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def _extract_parentheses(text: str) -> str:
 class GenerateQueryStructure:
     """Fetch raw factor data from SQL Server between *start* and *end* dates."""
 
-    _param: Dict[str, Any] = config.PARAM  # centralised DB credentials/settings
+    _param: Dict[str, Any] = PARAM  # centralised DB credentials/settings
 
     def __init__(self, start_date: str, end_date: str) -> None:
         self.start_date = start_date

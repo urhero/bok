@@ -18,18 +18,18 @@ from __future__ import annotations
 * 다른 로직 변경 없음
 """
 
-
-from pathlib import Path
-from typing import Any, List, Tuple
-from port.query_structure import GenerateQueryStructure
-from rich.progress import track
-from config import PARAM
-
-import numpy as np
-import pandas as pd
 import logging
 import pickle
 import time
+from pathlib import Path
+from typing import Any, List, Tuple
+
+import numpy as np
+import pandas as pd
+from rich.progress import track
+
+from config import PARAM
+from port.query_structure import GenerateQueryStructure
 
 # ----------------------------------------------------------------------------
 # 로깅 설정 (스크립트로 실행될 때만 사용)
@@ -60,7 +60,6 @@ def run_download_pipeline(
     out_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Pickles → %s", out_dir)
 
-    # 1️⃣ 날짜 범위 내 원시 팩터 데이터 가져오기
     t0 = time.time()
     query = GenerateQueryStructure(start_date, end_date).fetch_snp()  # S&P 데이터 가져오기
     logger.info(f"Query fetched in {time.time() - t0:.2f}s")

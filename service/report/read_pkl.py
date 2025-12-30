@@ -4,15 +4,17 @@ End-to-End Factor Pipeline (v4-complete)
 =======================================
 """
 from __future__ import annotations
-from service.live.model_portfolio import filter_and_label_factors, evaluate_factor_universe, OUTPUT_DIR
+
+import logging
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Rectangle
 
-import logging
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
+from service.live.model_portfolio import evaluate_factor_universe, filter_and_label_factors, OUTPUT_DIR
 
 logger = logging.getLogger(__name__)
 
