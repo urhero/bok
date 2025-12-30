@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # 다운로드 드라이버 – 쿼리, 처리, 저장 오케스트레이션
 # =============================================================================
 
-def download(
+def run_download_pipeline(
     start_date: str,
     end_date: str,
     *,
