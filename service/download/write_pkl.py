@@ -54,19 +54,23 @@ def run_download_pipeline(
     tuple
         (``abbr_list``, ``name_list``, ``style_list``, ``data_list``)
     """
-
     # 출력 디렉토리 설정 (지정되지 않으면 기본 경로 사용)
-    out_dir = Path(out_dir) if out_dir else Path(__file__).resolve().parent.parent.parent / "data"
+    if out_dir:
+        out_dir = Path(out_dir)
+    else:
+        out_dir = Path(__file__).resolve().parent.parent.parent / "data"
     out_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Pickles → %s", out_dir)
 
     t0 = time.time()
     query = GenerateQueryStructure(start_date, end_date).fetch_snp()  # S&P 데이터 가져오기
-    logger.info(f"Query fetched in {time.time() - t0:.2f}s")
+    elapsed = time.time() - t0
+    logger.info(f"Query fetched in {elapsed:.2f}s")
 
     # 쿼리 데이터를 parquet 파일로 저장 (벤치마크명_시작날짜_종료날짜)
     t0 = time.time()
     benchmark = PARAM["benchmark"]
     parquet_path = out_dir / f"{benchmark}_{start_date}_{end_date}.parquet"
     query.to_parquet(parquet_path, index=False)
-    logger.info(f"Query saved to {parquet_path} in {time.time() - t0:.2f}s")
+    elapsed = time.time() - t0
+    logger.info(f"Query saved to {parquet_path} in {elapsed:.2f}s")
