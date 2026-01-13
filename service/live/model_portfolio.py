@@ -590,38 +590,38 @@ def simulate_constrained_weights(
     #         0.148243451062375,0.10775464398236,0.0577835874187986,0.0524125911883854,0.022689139768980]),
     # })
 
-    # 2025-11-30 기준으로 계산한 팩터 비중
-    weights_tbl = pd.DataFrame({
-        "factor": np.array([
-            'Rev3MFY2C', 'RevMagFY1C', 'TobinQ', 'FCFSales', 'SalesAcc',
-            '52WSlope', 'PM6M', 'FwdEPC', '90DCV'
-        ]),
-        "raw_weight": np.array([
-            0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
-            0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
-        ]),
-        "styleName": np.array([
-            'Analyst Expectations', 'Analyst Expectations', 'Capital Efficiency', 'Earnings Quality', 'Historical Growth',
-            'Price Momentum', 'Price Momentum', 'Valuation', 'Volatility'
-        ]),
-        "fitted_weight": np.array([
-            0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
-            0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
-        ]),
-    })
-
+    # # 2025-11-30 기준으로 계산한 팩터 비중
     # weights_tbl = pd.DataFrame({
-    #     "factor": factors,
-    #     "raw_weight": raw_mat[:, best_idx],
-    #     "styleName": styles,
-    #     "fitted_weight": fitted_mat[:, best_idx],
+    #     "factor": np.array([
+    #         'Rev3MFY2C', 'RevMagFY1C', 'TobinQ', 'FCFSales', 'SalesAcc',
+    #         '52WSlope', 'PM6M', 'FwdEPC', '90DCV'
+    #     ]),
+    #     "raw_weight": np.array([
+    #         0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
+    #         0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
+    #     ]),
+    #     "styleName": np.array([
+    #         'Analyst Expectations', 'Analyst Expectations', 'Capital Efficiency', 'Earnings Quality', 'Historical Growth',
+    #         'Price Momentum', 'Price Momentum', 'Valuation', 'Volatility'
+    #     ]),
+    #     "fitted_weight": np.array([
+    #         0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
+    #         0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
+    #     ]),
     # })
 
-    # weights_tbl = (
-    #     weights_tbl[weights_tbl["raw_weight"] > 0]
-    #     .sort_values("raw_weight", ascending=False)
-    #     .reset_index(drop=True)
-    # )
+    weights_tbl = pd.DataFrame({
+        "factor": factors,
+        "raw_weight": raw_mat[:, best_idx],
+        "styleName": styles,
+        "fitted_weight": fitted_mat[:, best_idx],
+    })
+
+    weights_tbl = (
+        weights_tbl[weights_tbl["raw_weight"] > 0]
+        .sort_values("raw_weight", ascending=False)
+        .reset_index(drop=True)
+    )
 
     logger.info(f"[Trace] Simulation completed. Best stats: {best_stats.to_dict('records')}")
     return best_stats, weights_tbl
