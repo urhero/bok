@@ -640,8 +640,15 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
             return match.group(1) if match else fld_value
         raw_factor_data_df['factorAbbreviation'] = raw_factor_data_df['fld'].apply(extract_abbr)
         raw_factor_data_df = raw_factor_data_df.drop(columns=['fld', 'updated_at'])
+
+        # CSV 파일의 ddt 컬럼에서 날짜 범위 추출
+        raw_factor_data_df['ddt'] = pd.to_datetime(raw_factor_data_df['ddt'])
+        start_date = raw_factor_data_df['ddt'].min().strftime('%Y-%m-%d')
+        end_date = raw_factor_data_df['ddt'].max().strftime('%Y-%m-%d')
+
         logger.info(f"Query loaded from {test_data_path} in {time.time() - t0:.2f}s")
         logger.info(f"[Trace] Loaded test data. Shape: {raw_factor_data_df.shape}")
+        logger.info(f"[Trace] Extracted date range: {start_date} to {end_date}")
     else:
         parquet_path = DATA_DIR / f"{PARAM['benchmark']}_{start_date}_{end_date}.parquet"
         raw_factor_data_df = pd.read_parquet(parquet_path)
