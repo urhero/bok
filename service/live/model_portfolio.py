@@ -317,6 +317,7 @@ def evaluate_factor_universe(
     factor_name_list: List[str],
     style_name_list: List[str],
     factor_data_list: List[pd.DataFrame],
+    test_file: str | None = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     logger.info("Building monthly return matrix")
     ret_df = aggregate_factor_returns(factor_data_list, factor_abbr_list)[1]
@@ -344,7 +345,9 @@ def evaluate_factor_universe(
     meta["rank_total"] = meta["cagr"].rank(ascending=False)  # 전체에서의 랭크
     # CAGR 내림차순 정렬
     meta = meta.sort_values("cagr", ascending=False).reset_index(drop=True).rename(columns={"index": "factorAbbreviation"})
-    meta.to_csv(OUTPUT_DIR / "meta_data.csv", index=False)
+    # 테스트 파일이 제공된 경우, 파일명(확장자 제외)을 suffix로 사용
+    suffix = f"_{Path(test_file).stem}" if test_file else ""
+    meta.to_csv(OUTPUT_DIR / f"meta_data{suffix}.csv", index=False)
     meta = meta[:50]  # 상위 50개만 선택
 
     order = meta["factorAbbreviation"].tolist()
@@ -736,7 +739,7 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
     kept_factor_abbrs, kept_name, kept_style, _, _, filtered_factor_data_list = filter_and_label_factors(factor_abbr_list, factor_name_list, style_name_list, raw)
 
     # 2. 수익률 행렬, 음의 상관관계 행렬, 메타 순위 테이블 생성
-    monthly_return_matrix, downside_correlation_matrix, factor_performance_metrics = evaluate_factor_universe(kept_factor_abbrs, kept_name, kept_style, filtered_factor_data_list)
+    monthly_return_matrix, downside_correlation_matrix, factor_performance_metrics = evaluate_factor_universe(kept_factor_abbrs, kept_name, kept_style, filtered_factor_data_list, test_file)
 
     # 3. 각 스타일의 최상위 팩터(팩터들?)에 대해서만 가중치 그리드 생성
     top_metrics = factor_performance_metrics.groupby("styleName", as_index=False).first()  # 스타일별 최상위 팩터
