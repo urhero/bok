@@ -346,8 +346,11 @@ def evaluate_factor_universe(
     # CAGR 내림차순 정렬
     meta = meta.sort_values("cagr", ascending=False).reset_index(drop=True).rename(columns={"index": "factorAbbreviation"})
     # 테스트 파일이 제공된 경우, 파일명(확장자 제외)을 suffix로 사용
-    suffix = f"_{Path(test_file).stem}" if test_file else ""
-    meta.to_csv(OUTPUT_DIR / f"meta_data{suffix}.csv", index=False)
+    if test_file:
+        suffix = f"_{Path(test_file).stem}"
+        meta.to_csv(OUTPUT_DIR / f"meta_data_test{suffix}.csv", index=False)
+    else:
+        meta.to_csv(OUTPUT_DIR / "meta_data.csv", index=False)
     meta = meta[:50]  # 상위 50개만 선택
 
     order = meta["factorAbbreviation"].tolist()
