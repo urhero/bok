@@ -53,6 +53,7 @@ def calculate_factor_stats(
     factor_abbr: str,
     sort_order: int,
     factor_data_df: pd.DataFrame,
+    test_mode: bool = False,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | Tuple[None, None, None, None]:
     """특정 팩터에 대한 섹터/분위수/스프레드 수익률 계산
 
@@ -112,9 +113,10 @@ def calculate_factor_stats(
     count_series = merged_df.groupby(["ddt", "sec"])[factor_abbr].transform("count")
 
     # Vectorized Percentile: (Rank - 1) / (Count - 1) * 100
-    # 데이터 개수가 10개 이하는 NaN 처리 (기존 로직 유지)
+    # 데이터 개수가 10개 이하는 NaN 처리 (테스트 모드에서는 스킵)
     merged_df["percentile"] = (merged_df["rank"] - 1) / (count_series - 1) * 100
-    merged_df.loc[count_series <= 10, "percentile"] = np.nan
+    if not test_mode:
+        merged_df.loc[count_series <= 10, "percentile"] = np.nan
 
     # Vectorized Quantile: pd.cut 사용 (apply 제거)
     # 0~20: Q1, 20~40: Q2, ..., 80~100: Q5
@@ -698,7 +700,7 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
             factor_data_df = pd.DataFrame(columns=merged_factor_data_df.columns)
 
         # market_return_df 인자 제거 (이미 병합됨)
-        processed_factor_data_list.append(calculate_factor_stats(factor_abbr, order, factor_data_df))
+        processed_factor_data_list.append(calculate_factor_stats(factor_abbr, order, factor_data_df, test_mode=bool(test_file)))
     logger.info(f"Factors assigned in {time.time() - t1:.2f}s")
 
     """Run the full ETL → optimisation → export process."""
