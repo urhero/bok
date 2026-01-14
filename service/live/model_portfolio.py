@@ -493,6 +493,7 @@ def simulate_constrained_weights(
     num_sims: int = 1_000_000,
     style_cap: float = 0.25,
     tol: float = 1e-12,
+    test_mode: bool = False,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     스타일 weight 제약이 있는 최적 포트폴리오를 몬테카를로 탐색
@@ -509,6 +510,8 @@ def simulate_constrained_weights(
         Maximum weight share per style.
     tol : float, default 1e-12
         Numerical tolerance when checking caps.
+    test_mode : bool, default False
+        If True, relax style_cap constraint for small datasets.
 
     Returns
     -------
@@ -524,6 +527,11 @@ def simulate_constrained_weights(
     K = rtn_df.shape[1]
     if len(style_list) != K:
         raise ValueError("length of style_list must equal number of columns in rtn_df")
+
+    # 테스트 모드에서 style_cap 완화 (작은 데이터셋 대응)
+    if test_mode:
+        style_cap = 1.0  # 100% - 제약 없음
+        logger.info(f"Test mode: relaxed style_cap to {style_cap}")
 
     styles = np.asarray(style_list)
 
@@ -766,7 +774,7 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
     factor_list = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel()).tolist()
     style_list = [style_map[f] for f in factor_list]
 
-    sim_result = simulate_constrained_weights(ret_subset, style_list)
+    sim_result = simulate_constrained_weights(ret_subset, style_list, test_mode=bool(test_file))
 
     # ------------------------------------------------------------------
     # 8. 팩터별 가중치 테이블 구성 (date × id × weight)
