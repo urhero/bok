@@ -196,6 +196,3 @@ cython_debug/
 data/
 #config.py
 .cursorindexingignore
-
-# Test output files
-output/*test_data*.csv
