@@ -323,6 +323,11 @@ def evaluate_factor_universe(
     ret_df.loc[ret_df.index[0]] = 0.0
     ret_df = ret_df.sort_index()  # 날짜 오름차순, 혹시나 싶어서 함 #?
 
+    # 중복된 컬럼 제거 (테스트 모드에서 발생 가능)
+    if ret_df.columns.duplicated().any():
+        logger.warning("Duplicate factor columns detected, removing duplicates")
+        ret_df = ret_df.loc[:, ~ret_df.columns.duplicated(keep='first')]
+
     valid = ret_df.columns[(ret_df == 0).sum() <= 10]  # 컬럼이 팩터, 수익률 0인 애들이 10개 이하인 팩터가 valid
     ret_df = ret_df[valid]
 
@@ -394,6 +399,10 @@ def find_optimal_mix(
     for sub in track(
         negative_corr["factorAbbreviation"], description=f"Mixing {main} with sub-factors"
     ):
+        # Skip if main and sub are the same factor
+        if main == sub:
+            logger.warning(f"Skipping mix of {main} with itself")
+            continue
         port = factor_rets[[main, sub]]
         mix_ret = port[main].to_numpy()[:, None] * w_grid + port[sub].to_numpy()[:, None] * w_inv
         mix_cum = np.cumprod(1 + mix_ret, axis=0)
