@@ -627,13 +627,26 @@ def simulate_constrained_weights(
     return best_stats, weights_tbl
 
 
-def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> None:
-    # parquet 파일 로드하기
+def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, test_mode: bool = False) -> None:
+    # parquet 파일 또는 test_data.csv 로드하기
     t0 = time.time()
-    parquet_path = DATA_DIR / f"{PARAM['benchmark']}_{start_date}_{end_date}.parquet"
-    raw_factor_data_df = pd.read_parquet(parquet_path)
-    logger.info(f"Query loaded from {parquet_path} in {time.time() - t0:.2f}s")
-    logger.info(f"[Trace] Loaded parquet data. Shape: {raw_factor_data_df.shape}")
+    if test_mode:
+        import re
+        test_data_path = Path.cwd() / "test_data.csv"
+        raw_factor_data_df = pd.read_csv(test_data_path)
+        # fld 컬럼에서 factorAbbreviation 추출 (예: "Sales Acceleration (SalesAcc)" -> "SalesAcc")
+        def extract_abbr(fld_value):
+            match = re.search(r'\(([^)]+)\)$', fld_value)
+            return match.group(1) if match else fld_value
+        raw_factor_data_df['factorAbbreviation'] = raw_factor_data_df['fld'].apply(extract_abbr)
+        raw_factor_data_df = raw_factor_data_df.drop(columns=['fld', 'updated_at'])
+        logger.info(f"Query loaded from {test_data_path} in {time.time() - t0:.2f}s")
+        logger.info(f"[Trace] Loaded test data. Shape: {raw_factor_data_df.shape}")
+    else:
+        parquet_path = DATA_DIR / f"{PARAM['benchmark']}_{start_date}_{end_date}.parquet"
+        raw_factor_data_df = pd.read_parquet(parquet_path)
+        logger.info(f"Query loaded from {parquet_path} in {time.time() - t0:.2f}s")
+        logger.info(f"[Trace] Loaded parquet data. Shape: {raw_factor_data_df.shape}")
 
     # 2️⃣ 메타데이터(순서/스타일/이름)와 조인
     t1 = time.time()
@@ -806,10 +819,11 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
         .sum()
     )
 
-    agg_w.to_csv(OUTPUT_DIR / f"aggregated_weights_{end_date}_test.csv")
-    final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test.csv")
+    suffix = "_TEST_DATA" if test_mode else ""
+    agg_w.to_csv(OUTPUT_DIR / f"aggregated_weights_{end_date}_test{suffix}.csv")
+    final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test{suffix}.csv")
 
-    final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_test.csv")
+    final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_test{suffix}.csv")
 
     final_weights.loc[final_weights['style'] == 'MP', 'factor_weight'] = 1
     final_weights = final_weights.replace(0, np.nan)
@@ -840,5 +854,5 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
     new_order = cols[~mp_mask].tolist() + cols[mp_mask].tolist()
     pivoted_final = pivoted_final.loc[:, new_order]
 
-    pivoted_final.to_csv(OUTPUT_DIR / f"pivoted_total_agg_wgt_{end_date}.csv")
+    pivoted_final.to_csv(OUTPUT_DIR / f"pivoted_total_agg_wgt_{end_date}{suffix}.csv")
     logger.info("Pipeline completed ✓ — files saved in %s", OUTPUT_DIR)
