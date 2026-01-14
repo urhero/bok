@@ -53,6 +53,7 @@ def calculate_factor_stats(
     factor_abbr: str,
     sort_order: int,
     factor_data_df: pd.DataFrame,
+    test_mode: bool = False,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | Tuple[None, None, None, None]:
     """특정 팩터에 대한 섹터/분위수/스프레드 수익률 계산
 
@@ -112,9 +113,10 @@ def calculate_factor_stats(
     count_series = merged_df.groupby(["ddt", "sec"])[factor_abbr].transform("count")
 
     # Vectorized Percentile: (Rank - 1) / (Count - 1) * 100
-    # 데이터 개수가 10개 이하는 NaN 처리 (기존 로직 유지)
+    # 데이터 개수가 10개 이하는 NaN 처리 (테스트 모드에서는 스킵)
     merged_df["percentile"] = (merged_df["rank"] - 1) / (count_series - 1) * 100
-    merged_df.loc[count_series <= 10, "percentile"] = np.nan
+    if not test_mode:
+        merged_df.loc[count_series <= 10, "percentile"] = np.nan
 
     # Vectorized Quantile: pd.cut 사용 (apply 제거)
     # 0~20: Q1, 20~40: Q2, ..., 80~100: Q5
@@ -321,6 +323,11 @@ def evaluate_factor_universe(
     ret_df.loc[ret_df.index[0]] = 0.0
     ret_df = ret_df.sort_index()  # 날짜 오름차순, 혹시나 싶어서 함 #?
 
+    # 중복된 컬럼 제거 (테스트 모드에서 발생 가능)
+    if ret_df.columns.duplicated().any():
+        logger.warning("Duplicate factor columns detected, removing duplicates")
+        ret_df = ret_df.loc[:, ~ret_df.columns.duplicated(keep='first')]
+
     valid = ret_df.columns[(ret_df == 0).sum() <= 10]  # 컬럼이 팩터, 수익률 0인 애들이 10개 이하인 팩터가 valid
     ret_df = ret_df[valid]
 
@@ -392,6 +399,10 @@ def find_optimal_mix(
     for sub in track(
         negative_corr["factorAbbreviation"], description=f"Mixing {main} with sub-factors"
     ):
+        # Skip if main and sub are the same factor
+        if main == sub:
+            logger.warning(f"Skipping mix of {main} with itself")
+            continue
         port = factor_rets[[main, sub]]
         mix_ret = port[main].to_numpy()[:, None] * w_grid + port[sub].to_numpy()[:, None] * w_inv
         mix_cum = np.cumprod(1 + mix_ret, axis=0)
@@ -482,6 +493,7 @@ def simulate_constrained_weights(
     num_sims: int = 1_000_000,
     style_cap: float = 0.25,
     tol: float = 1e-12,
+    test_mode: bool = False,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     스타일 weight 제약이 있는 최적 포트폴리오를 몬테카를로 탐색
@@ -498,6 +510,8 @@ def simulate_constrained_weights(
         Maximum weight share per style.
     tol : float, default 1e-12
         Numerical tolerance when checking caps.
+    test_mode : bool, default False
+        If True, relax style_cap constraint for small datasets.
 
     Returns
     -------
@@ -513,6 +527,11 @@ def simulate_constrained_weights(
     K = rtn_df.shape[1]
     if len(style_list) != K:
         raise ValueError("length of style_list must equal number of columns in rtn_df")
+
+    # 테스트 모드에서 style_cap 완화 (작은 데이터셋 대응)
+    if test_mode:
+        style_cap = 1.0  # 100% - 제약 없음
+        logger.info(f"Test mode: relaxed style_cap to {style_cap}")
 
     styles = np.asarray(style_list)
 
@@ -627,13 +646,33 @@ def simulate_constrained_weights(
     return best_stats, weights_tbl
 
 
-def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> None:
-    # parquet 파일 로드하기
+def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, test_file: str | None = None) -> None:
+    # parquet 파일 또는 테스트 CSV 파일 로드하기
     t0 = time.time()
-    parquet_path = DATA_DIR / f"{PARAM['benchmark']}_{start_date}_{end_date}.parquet"
-    raw_factor_data_df = pd.read_parquet(parquet_path)
-    logger.info(f"Query loaded from {parquet_path} in {time.time() - t0:.2f}s")
-    logger.info(f"[Trace] Loaded parquet data. Shape: {raw_factor_data_df.shape}")
+    if test_file:
+        import re
+        test_data_path = Path.cwd() / test_file
+        raw_factor_data_df = pd.read_csv(test_data_path)
+        # fld 컬럼에서 factorAbbreviation 추출 (예: "Sales Acceleration (SalesAcc)" -> "SalesAcc")
+        def extract_abbr(fld_value):
+            match = re.search(r'\(([^)]+)\)$', fld_value)
+            return match.group(1) if match else fld_value
+        raw_factor_data_df['factorAbbreviation'] = raw_factor_data_df['fld'].apply(extract_abbr)
+        raw_factor_data_df = raw_factor_data_df.drop(columns=['fld', 'updated_at'])
+
+        # CSV 파일의 ddt 컬럼에서 날짜 범위 추출
+        raw_factor_data_df['ddt'] = pd.to_datetime(raw_factor_data_df['ddt'])
+        start_date = raw_factor_data_df['ddt'].min().strftime('%Y-%m-%d')
+        end_date = raw_factor_data_df['ddt'].max().strftime('%Y-%m-%d')
+
+        logger.info(f"Query loaded from {test_data_path} in {time.time() - t0:.2f}s")
+        logger.info(f"[Trace] Loaded test data. Shape: {raw_factor_data_df.shape}")
+        logger.info(f"[Trace] Extracted date range: {start_date} to {end_date}")
+    else:
+        parquet_path = DATA_DIR / f"{PARAM['benchmark']}_{start_date}_{end_date}.parquet"
+        raw_factor_data_df = pd.read_parquet(parquet_path)
+        logger.info(f"Query loaded from {parquet_path} in {time.time() - t0:.2f}s")
+        logger.info(f"[Trace] Loaded parquet data. Shape: {raw_factor_data_df.shape}")
 
     # 2️⃣ 메타데이터(순서/스타일/이름)와 조인
     t1 = time.time()
@@ -678,7 +717,7 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
             factor_data_df = pd.DataFrame(columns=merged_factor_data_df.columns)
 
         # market_return_df 인자 제거 (이미 병합됨)
-        processed_factor_data_list.append(calculate_factor_stats(factor_abbr, order, factor_data_df))
+        processed_factor_data_list.append(calculate_factor_stats(factor_abbr, order, factor_data_df, test_mode=bool(test_file)))
     logger.info(f"Factors assigned in {time.time() - t1:.2f}s")
 
     """Run the full ETL → optimisation → export process."""
@@ -735,7 +774,7 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
     factor_list = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel()).tolist()
     style_list = [style_map[f] for f in factor_list]
 
-    sim_result = simulate_constrained_weights(ret_subset, style_list)
+    sim_result = simulate_constrained_weights(ret_subset, style_list, test_mode=bool(test_file))
 
     # ------------------------------------------------------------------
     # 8. 팩터별 가중치 테이블 구성 (date × id × weight)
@@ -806,10 +845,12 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
         .sum()
     )
 
-    agg_w.to_csv(OUTPUT_DIR / f"aggregated_weights_{end_date}_test.csv")
-    final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test.csv")
+    # 테스트 파일이 제공된 경우, 파일명(확장자 제외)을 suffix로 사용
+    suffix = f"_{Path(test_file).stem}" if test_file else ""
+    agg_w.to_csv(OUTPUT_DIR / f"aggregated_weights_{end_date}_test{suffix}.csv")
+    final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test{suffix}.csv")
 
-    final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_test.csv")
+    final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_test{suffix}.csv")
 
     final_weights.loc[final_weights['style'] == 'MP', 'factor_weight'] = 1
     final_weights = final_weights.replace(0, np.nan)
@@ -840,5 +881,5 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
     new_order = cols[~mp_mask].tolist() + cols[mp_mask].tolist()
     pivoted_final = pivoted_final.loc[:, new_order]
 
-    pivoted_final.to_csv(OUTPUT_DIR / f"pivoted_total_agg_wgt_{end_date}.csv")
+    pivoted_final.to_csv(OUTPUT_DIR / f"pivoted_total_agg_wgt_{end_date}{suffix}.csv")
     logger.info("Pipeline completed ✓ — files saved in %s", OUTPUT_DIR)
