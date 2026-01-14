@@ -7,9 +7,6 @@ CAGR로 팩터 순위를 매기고, 2-팩터 믹스를 최적화하며, CSV 결�
 
 **`meta['factorAbbreviation']`에 지정된 컬럼 순서를 유지합니다.**
 
-
-
-
 주요 출력물
 -----------
 | File                          | Description                                                      |
@@ -22,16 +19,16 @@ CAGR로 팩터 순위를 매기고, 2-팩터 믹스를 최적화하며, CSV 결�
 from __future__ import annotations
 
 import logging
+import math
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
-from config import PARAM
 
 import numpy as np
 import pandas as pd
-import time
-import math
 from rich.progress import track
 
+from config import PARAM
 
 # ---------------------------------------------------------------------------
 # 로깅 설정
@@ -39,42 +36,35 @@ from rich.progress import track
 logger = logging.getLogger(__name__)
 
 
-
-# =============================================================================
-# 범용 헬퍼 함수
-# =============================================================================
-
-
-
-
 # =============================================================================
 # 수치 계산 헬퍼 유틸리티
 # =============================================================================
-
 def prepend_start_zero(series: pd.DataFrame) -> pd.DataFrame:
     """첫 관측값 한 달 전에 0을 삽입 (기준선 설정)"""
     series.loc[series.index[0] - pd.DateOffset(months=1)] = 0
     return series.sort_index()
+
 
 # ----------------------------------------------------------------------------
 # 핵심 팩터 할당 로직
 # ----------------------------------------------------------------------------
 
 def calculate_factor_stats(
-        factor_abbr: str,
-        sort_order: int,
-        factor_data_df: pd.DataFrame,
+    factor_abbr: str,
+    sort_order: int,
+    factor_data_df: pd.DataFrame,
+    test_mode: bool = False,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | Tuple[None, None, None, None]:
     """특정 팩터에 대한 섹터/분위수/스프레드 수익률 계산
 
     Parameters
     ----------
-    abbv, order
-        팩터 약어 및 순위 방향 (1=오름차순, 0/-1=내림차순)
-    fld
-        해당 팩터의 데이터프레임 (이미 필터링됨)
-    m_ret
-        시장 수익률 데이터프레임 (이미 추출됨)
+    factor_abbr : str
+        팩터 약어
+    sort_order : int
+        순위 방향 (1=오름차순, 0/-1=내림차순)
+    factor_data_df : pd.DataFrame
+        해당 팩터의 데이터프레임 (이미 필터링됨, M_RETURN 포함)
 
     Returns
     -------
@@ -102,7 +92,7 @@ def calculate_factor_stats(
     # 각 종목별로 1개월 래그 적용 (전월 팩터 값을 당월에 사용)
     # val은 이미 존재, M_RETURN도 이미 존재
     factor_data_df[factor_abbr] = factor_data_df.groupby("gvkeyiid")["val"].shift(1)
-    
+
     # 팩터 래그 생성 후 NaN 제거 + 필요한 컬럼 정리
     # M_RETURN과 필수 Key들은 이미 존재함
     merged_df = (
@@ -115,7 +105,6 @@ def calculate_factor_stats(
     # ------------------------------------------------------------------
     # 4. 섹터 내 순위 매기기, 점수화, 분위수 버킷 할당
     # ------------------------------------------------------------------
-
     # 날짜 및 섹터별로 팩터 값에 대한 순위 계산
     merged_df["rank"] = (
         merged_df.groupby(["ddt", "sec"])[factor_abbr].rank(method="average", ascending=bool(sort_order))
@@ -124,10 +113,11 @@ def calculate_factor_stats(
     count_series = merged_df.groupby(["ddt", "sec"])[factor_abbr].transform("count")
 
     # Vectorized Percentile: (Rank - 1) / (Count - 1) * 100
-    # 데이터 개수가 10개 이하는 NaN 처리 (기존 로직 유지)
+    # 데이터 개수가 10개 이하는 NaN 처리 (테스트 모드에서는 스킵)
     merged_df["percentile"] = (merged_df["rank"] - 1) / (count_series - 1) * 100
-    merged_df.loc[count_series <= 10, "percentile"] = np.nan
-    
+    if not test_mode:
+        merged_df.loc[count_series <= 10, "percentile"] = np.nan
+
     # Vectorized Quantile: pd.cut 사용 (apply 제거)
     # 0~20: Q1, 20~40: Q2, ..., 80~100: Q5
     # 기존 logic(math.ceil)과 일치: x=20 -> Q1 / x=20.001 -> Q2.
@@ -135,21 +125,20 @@ def calculate_factor_stats(
     # 0 포함을 위해 include_lowest=True 사용
     labels = ["Q1", "Q2", "Q3", "Q4", "Q5"]
     merged_df["quantile"] = pd.cut(
-        merged_df["percentile"], 
-        bins=[0, 20, 40, 60, 80, 105], # 100 포함
-        labels=labels, 
+        merged_df["percentile"],
+        bins=[0, 20, 40, 60, 80, 105],  # 100 포함
+        labels=labels,
         include_lowest=True,
         right=True
     )
     merged_df = merged_df.dropna(subset=["quantile"])
-    
+
     # 불필요한 중간 컬럼 제거 (Optimization)
     merged_df = merged_df.drop(columns=["rank", "percentile"])
 
     # ------------------------------------------------------------------
     # 5. 섹터 및 시장 분위수 수익률 계산
     # ------------------------------------------------------------------
-
     # 섹터별 분위수 평균 수익률 계산 (같은 날짜별 평균 수익률은 산술평균 수익률)
     sector_return_df = (
         merged_df.groupby(["ddt", "sec", "quantile"], observed=False)["M_RETURN"].mean().unstack(fill_value=0)
@@ -169,21 +158,19 @@ def calculate_factor_stats(
     return sector_return_df, quantile_return_df, spread_series, merged_df
 
 
-
 # ---------------------------------------------------------------------------
 # 전역 경로
 # ---------------------------------------------------------------------------
-DATA_DIR = Path.cwd() / "data" 
+DATA_DIR = Path.cwd() / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_DIR = Path.cwd() / "output" 
+OUTPUT_DIR = Path.cwd() / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # =============================================================================
 # 2️⃣ 섹터 필터링 + 재라벨링
 # =============================================================================
-
 def filter_and_label_factors(
     factor_abbr_list: List[str],
     factor_name_list: List[str],
@@ -219,27 +206,31 @@ def filter_and_label_factors(
         q_mean["short"] = (q_mean["mean"] < q_mean.loc["Q5", "mean"] + thresh).astype(int) * -1
         q_mean["short"] = q_mean["short"].abs()[::-1].cumprod()[::-1] * -1
         q_mean["label"] = q_mean["long"] + q_mean["short"]
-        
+
         # Optimization: Use map instead of merge
-        label_map = q_mean["label"].to_dict() # {Q1: 1, Q2: 0, ...}
+        label_map = q_mean["label"].to_dict()  # {Q1: 1, Q2: 0, ...}
         # raw_clean은 이미 merged_df의 일부이므로 quantile 컬럼이 있음 (Category or Object)
         # map을 위해 필요한 경우 str로 변환하거나 인덱스 맞춤
-        
+
         # q_mean 인덱스가 quantile인지 확인 (groupby 결과이므로 인덱스임)
         # raw_clean에 label 컬럼 직접 할당
         raw_clean["label"] = raw_clean["quantile"].map(label_map)
-        merged = raw_clean.dropna(subset=["label"]) # merge 동작(inner join)과 유사하게 매칭 안되는 것 제외 (혹시나 해서)
+        merged = raw_clean.dropna(subset=["label"])  # merge 동작(inner join)과 유사하게 매칭 안되는 것 제외 (혹시나 해서)
 
-        kept_factor_abbrs.append(factor_abbr_list[idx]); kept_name.append(factor_name_list[idx]); kept_style.append(style_name_list[idx]); kept_idx.append(idx)
-        dropped_sec.append(to_drop); filtered_raw_data_list.append(merged)
+        kept_factor_abbrs.append(factor_abbr_list[idx])
+        kept_name.append(factor_name_list[idx])
+        kept_style.append(style_name_list[idx])
+        kept_idx.append(idx)
+        dropped_sec.append(to_drop)
+        filtered_raw_data_list.append(merged)
 
     logger.info("Sector filter retained %d / %d factors", len(kept_idx), len(factor_abbr_list))
     return kept_factor_abbrs, kept_name, kept_style, kept_idx, dropped_sec, filtered_raw_data_list
 
+
 # =============================================================================
 # 3️⃣ 수익률 행렬 · 순위 · 하락 상관관계
 # =============================================================================
-
 def calculate_downside_correlation(df: pd.DataFrame, min_obs: int = 20) -> pd.DataFrame:
     """음의 수익률 기간 동안의 상관관계 계산(Downside Correlation 에 가깝지만 기준 자산 수익률이 음수인 모든 기간을 포함)"""
     out = pd.DataFrame(index=df.columns, columns=df.columns, dtype=float)
@@ -248,11 +239,9 @@ def calculate_downside_correlation(df: pd.DataFrame, min_obs: int = 20) -> pd.Da
         out.loc[col] = df.loc[mask].corr()[col] if mask.sum() >= min_obs else np.nan
     return out
 
-
 def construct_long_short_df(
-        labeled_data_df: pd.DataFrame
+    labeled_data_df: pd.DataFrame
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-
     raw_df = labeled_data_df[labeled_data_df["ddt"] >= "2017-12-31"].reset_index(drop=True).copy()
     raw_df["signal"] = raw_df["label"].map({1: "L", 0: "N", -1: "S"})
     raw_df["num"] = raw_df.groupby(["ddt", "signal"])["signal"].transform("count")
@@ -266,9 +255,9 @@ def construct_long_short_df(
 
 
 def calculate_vectorized_return(
-        portfolio_data_df: pd.DataFrame,
-        factor_abbr: str,
-        cost_bps: float = 30.0
+    portfolio_data_df: pd.DataFrame,
+    factor_abbr: str,
+    cost_bps: float = 30.0
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     weight_matrix_df = portfolio_data_df.pivot_table(index="ddt", columns="gvkeyiid", values="return_weight")
@@ -281,21 +270,21 @@ def calculate_vectorized_return(
     r = rtn_df.sort_index()
     w = turnover_weight_df.reindex(r.index)
     w0 = turnover_weight_df.copy()
-    is_rebal = w.notna().any(axis=1).fillna(False)  #? # 각 날짜별 NA가 아닌게 하나라도 있으면 True
-    block_id = is_rebal.cumsum().astype(int)  #? 리밸런싱 블럭 1,2,3,....
-    cumulative_growth_block = (1 + sgn_df * r).groupby(block_id).cumprod() # 블럭내에서 누적 곱
+    is_rebal = w.notna().any(axis=1).fillna(False)  # 각 날짜별 NA가 아닌게 하나라도 있으면 True #?
+    block_id = is_rebal.cumsum().astype(int)  # 리밸런싱 블럭 1,2,3,.... #?
+    cumulative_growth_block = (1 + sgn_df * r).groupby(block_id).cumprod()  # 블럭내에서 누적 곱
 
-    denom = (w0 * cumulative_growth_block).sum(axis=1)  #각 날짜 비중 합
+    denom = (w0 * cumulative_growth_block).sum(axis=1)  # 각 날짜 비중 합
     w_pre = (w0 * cumulative_growth_block).div(denom, axis=0)  # 각 날짜 비중 100%로 조정
 
-    weight_matrix_df.iloc[0] = w0.loc[weight_matrix_df.index[0]] # 첫날 비중
+    weight_matrix_df.iloc[0] = w0.loc[weight_matrix_df.index[0]]  # 첫날 비중
     rebal_in_r = r.index.intersection(turnover_weight_df.index)  # 리밸런싱 웨이트와 수익률 날짜(인덱스) 교집합으로 리밸런싱 날짜 선택
     turnover = 1 * (w.shift(-1).loc[rebal_in_r] - w_pre.loc[rebal_in_r]).abs().sum(axis=1)  # 리밸런싱 날짜의 웨이트 차이
     turnover = turnover.reindex(r.index).fillna(0)  # 리밸런싱 날짜 외의 날짜는 0으로 채움
     trading_friction = (cost_bps / 1e4) * turnover  # 거래비용
 
     _gross = (weight_matrix_df * r).sum(axis=1)  # 날짜별 수익률 (이미 시프트 되어 있음)
-    gross_return_df = _gross.to_frame().rename(columns={0: factor_abbr})  # 날짜별 수익률(거래비용 차감전) 
+    gross_return_df = _gross.to_frame().rename(columns={0: factor_abbr})  # 날짜별 수익률(거래비용 차감전)
 
     trading_cost_df = trading_friction.to_frame().rename(columns={0: factor_abbr})  # 날짜별 거래비용, 시리즈를 데이터프레임으로 변환
     _net_df = gross_return_df - trading_cost_df  # 날짜별 수익률(거래비용 차감전) - 거래비용
@@ -304,12 +293,11 @@ def calculate_vectorized_return(
 
 
 def aggregate_factor_returns(
-        factor_data_list: List[pd.DataFrame],
-        factor_abbr_list: List[str]) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-
+    factor_data_list: List[pd.DataFrame],
+    factor_abbr_list: List[str]
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     list_grs, list_net, list_trc = [], [], []
     for list_raw, factor_abbr in zip(factor_data_list, factor_abbr_list):
-
         long_port_df, short_port_df = construct_long_short_df(list_raw)
         res_grs_l, res_net_l, res_trc_l = calculate_vectorized_return(long_port_df, factor_abbr)
         res_grs_s, res_net_s, res_trc_s = calculate_vectorized_return(short_port_df, factor_abbr)
@@ -318,11 +306,10 @@ def aggregate_factor_returns(
         list_trc.append(res_trc_l + res_trc_s)
 
     gross_return_df = pd.concat(list_grs, axis=1).dropna(axis=1)
-    # _net_df = pd.concat(list_net, axis=1).dropna(axis=1) # Original variable name was not replaced in plan but let's be consistent if logic allows. Original was df_net.
     net_return_df = pd.concat(list_net, axis=1).dropna(axis=1)
     trading_cost_df = pd.concat(list_trc, axis=1).dropna(axis=1)
 
-    return gross_return_df, net_return_df, trading_cost_df  # gross returns, net returns, trading costs?
+    return gross_return_df, net_return_df, trading_cost_df
 
 
 def evaluate_factor_universe(
@@ -336,6 +323,11 @@ def evaluate_factor_universe(
     ret_df.loc[ret_df.index[0]] = 0.0
     ret_df = ret_df.sort_index()  # 날짜 오름차순, 혹시나 싶어서 함 #?
 
+    # 중복된 컬럼 제거 (테스트 모드에서 발생 가능)
+    if ret_df.columns.duplicated().any():
+        logger.warning("Duplicate factor columns detected, removing duplicates")
+        ret_df = ret_df.loc[:, ~ret_df.columns.duplicated(keep='first')]
+
     valid = ret_df.columns[(ret_df == 0).sum() <= 10]  # 컬럼이 팩터, 수익률 0인 애들이 10개 이하인 팩터가 valid
     ret_df = ret_df[valid]
 
@@ -344,7 +336,7 @@ def evaluate_factor_universe(
         .set_index("factorAbbreviation")
         .loc[valid]
         .reset_index()
-    ) # 롱 형식
+    )  # 롱 형식
 
     months = len(ret_df) - 1
     meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
@@ -364,15 +356,14 @@ def evaluate_factor_universe(
     logger.info(f"[Trace] Generated Negative Correlation Matrix. Shape: {negative_corr.shape}")
     return ret_df, negative_corr, meta
 
+
 # =============================================================================
 # 4️⃣ 2-팩터 믹스 최적화
 # =============================================================================
-
-
 def find_optimal_mix(
-        factor_rets: pd.DataFrame,
-        data_raw: pd.DataFrame,
-        data_neg: pd.DataFrame,
+    factor_rets: pd.DataFrame,
+    data_raw: pd.DataFrame,
+    data_neg: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, List[pd.Series], str, float, str, float]:
     """
     메인/서브 팩터 쌍에 대한 최적 가중치 분할을 그리드 탐색
@@ -408,6 +399,10 @@ def find_optimal_mix(
     for sub in track(
         negative_corr["factorAbbreviation"], description=f"Mixing {main} with sub-factors"
     ):
+        # Skip if main and sub are the same factor
+        if main == sub:
+            logger.warning(f"Skipping mix of {main} with itself")
+            continue
         port = factor_rets[[main, sub]]
         mix_ret = port[main].to_numpy()[:, None] * w_grid + port[sub].to_numpy()[:, None] * w_inv
         mix_cum = np.cumprod(1 + mix_ret, axis=0)
@@ -447,10 +442,10 @@ def find_optimal_mix(
         round(best["sub_wgt"], 2),
     )
 
+
 # =============================================================================
 # 5️⃣ 스타일 포트폴리오 조립
 # =============================================================================
-
 def construct_style_portfolios(
     factor_rets: pd.DataFrame,
     meta: pd.DataFrame,
@@ -489,17 +484,16 @@ def construct_style_portfolios(
     return style_df, style_neg_corr
 
 
-
 # =============================================================================
 # 6️⃣ 팩터 노출도 시뮬레이션
 # =============================================================================
-
 def simulate_constrained_weights(
     rtn_df: pd.DataFrame,
     style_list: List[str],
     num_sims: int = 1_000_000,
     style_cap: float = 0.25,
     tol: float = 1e-12,
+    test_mode: bool = False,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     스타일 weight 제약이 있는 최적 포트폴리오를 몬테카를로 탐색
@@ -516,6 +510,8 @@ def simulate_constrained_weights(
         Maximum weight share per style.
     tol : float, default 1e-12
         Numerical tolerance when checking caps.
+    test_mode : bool, default False
+        If True, relax style_cap constraint for small datasets.
 
     Returns
     -------
@@ -531,6 +527,11 @@ def simulate_constrained_weights(
     K = rtn_df.shape[1]
     if len(style_list) != K:
         raise ValueError("length of style_list must equal number of columns in rtn_df")
+
+    # 테스트 모드에서 style_cap 완화 (작은 데이터셋 대응)
+    if test_mode:
+        style_cap = 1.0  # 100% - 제약 없음
+        logger.info(f"Test mode: relaxed style_cap to {style_cap}")
 
     styles = np.asarray(style_list)
 
@@ -595,64 +596,83 @@ def simulate_constrained_weights(
     best_stats = stats.loc[[best_idx]]
 
     factors = rtn_df.columns.to_numpy()
-    
+
     # ~2025-12 포트폴리오까지 적용
     # weights_tbl = pd.DataFrame({
-    #     "factor": np.array(['SalesAcc', '6MTTMSalesMom', 'PM6M', '52WSlope', '90DCV', 
+    #     "factor": np.array(['SalesAcc', '6MTTMSalesMom', 'PM6M', '52WSlope', '90DCV',
     #         'CashEV', 'RevMagFY1C', 'SalesToEPSChg', 'Rev3MFY1C', 'TobinQ']),
     #     "raw_weight": np.array([0.199298652556654,0.00842206236153488,0.196025173956866,0.0326737859629076,0.174696911741135,
     #         0.148243451062375,0.10775464398236,0.0577835874187986,0.0524125911883854,0.022689139768980]),
-    #     "styleName": np.array(['Historical Growth', 'Historical Growth', 'Price Momentum', 'Price Momentum', 'Volatility', 
+    #     "styleName": np.array(['Historical Growth', 'Historical Growth', 'Price Momentum', 'Price Momentum', 'Volatility',
     #         'Valuation', 'Analyst Expectations', 'Earnings Quality', 'Analyst Expectations', 'Capital Efficiency']),
     #     "fitted_weight": np.array([0.199298652556654,0.00842206236153488,0.196025173956866,0.0326737859629076,0.174696911741135,
     #         0.148243451062375,0.10775464398236,0.0577835874187986,0.0524125911883854,0.022689139768980]),
     # })
 
-    # 2025-11-30 기준으로 계산한 팩터 비중
-    weights_tbl = pd.DataFrame({
-        "factor": np.array([
-            'Rev3MFY2C', 'RevMagFY1C', 'TobinQ', 'FCFSales', 'SalesAcc', 
-            '52WSlope', 'PM6M', 'FwdEPC', '90DCV'
-        ]),
-        "raw_weight": np.array([
-            0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991, 
-            0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
-        ]),
-        "styleName": np.array([
-            'Analyst Expectations', 'Analyst Expectations', 'Capital Efficiency', 'Earnings Quality', 'Historical Growth', 
-            'Price Momentum', 'Price Momentum', 'Valuation', 'Volatility'
-        ]),
-        "fitted_weight": np.array([
-            0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991, 
-            0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
-        ]),
-    })
-
-
+    # # 2025-11-30 기준으로 계산한 팩터 비중
     # weights_tbl = pd.DataFrame({
-    #     "factor": factors,
-    #     "raw_weight": raw_mat[:, best_idx],
-    #     "styleName": styles,
-    #     "fitted_weight": fitted_mat[:, best_idx],
+    #     "factor": np.array([
+    #         'Rev3MFY2C', 'RevMagFY1C', 'TobinQ', 'FCFSales', 'SalesAcc',
+    #         '52WSlope', 'PM6M', 'FwdEPC', '90DCV'
+    #     ]),
+    #     "raw_weight": np.array([
+    #         0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
+    #         0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
+    #     ]),
+    #     "styleName": np.array([
+    #         'Analyst Expectations', 'Analyst Expectations', 'Capital Efficiency', 'Earnings Quality', 'Historical Growth',
+    #         'Price Momentum', 'Price Momentum', 'Valuation', 'Volatility'
+    #     ]),
+    #     "fitted_weight": np.array([
+    #         0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
+    #         0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
+    #     ]),
     # })
 
-    # weights_tbl = (
-    #     weights_tbl[weights_tbl["raw_weight"] > 0]
-    #     .sort_values("raw_weight", ascending=False)
-    #     .reset_index(drop=True)
-    # )
+    weights_tbl = pd.DataFrame({
+        "factor": factors,
+        "raw_weight": raw_mat[:, best_idx],
+        "styleName": styles,
+        "fitted_weight": fitted_mat[:, best_idx],
+    })
+
+    weights_tbl = (
+        weights_tbl[weights_tbl["raw_weight"] > 0]
+        .sort_values("raw_weight", ascending=False)
+        .reset_index(drop=True)
+    )
 
     logger.info(f"[Trace] Simulation completed. Best stats: {best_stats.to_dict('records')}")
     return best_stats, weights_tbl
 
-def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> None:
 
-    # parquet 파일 로드하기
+def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, test_file: str | None = None) -> None:
+    # parquet 파일 또는 테스트 CSV 파일 로드하기
     t0 = time.time()
-    parquet_path = DATA_DIR / f"{PARAM['benchmark']}_{start_date}_{end_date}.parquet"
-    raw_factor_data_df = pd.read_parquet(parquet_path)
-    logger.info(f"Query loaded from {parquet_path} in {time.time() - t0:.2f}s")
-    logger.info(f"[Trace] Loaded parquet data. Shape: {raw_factor_data_df.shape}")
+    if test_file:
+        import re
+        test_data_path = Path.cwd() / test_file
+        raw_factor_data_df = pd.read_csv(test_data_path)
+        # fld 컬럼에서 factorAbbreviation 추출 (예: "Sales Acceleration (SalesAcc)" -> "SalesAcc")
+        def extract_abbr(fld_value):
+            match = re.search(r'\(([^)]+)\)$', fld_value)
+            return match.group(1) if match else fld_value
+        raw_factor_data_df['factorAbbreviation'] = raw_factor_data_df['fld'].apply(extract_abbr)
+        raw_factor_data_df = raw_factor_data_df.drop(columns=['fld', 'updated_at'])
+
+        # CSV 파일의 ddt 컬럼에서 날짜 범위 추출
+        raw_factor_data_df['ddt'] = pd.to_datetime(raw_factor_data_df['ddt'])
+        start_date = raw_factor_data_df['ddt'].min().strftime('%Y-%m-%d')
+        end_date = raw_factor_data_df['ddt'].max().strftime('%Y-%m-%d')
+
+        logger.info(f"Query loaded from {test_data_path} in {time.time() - t0:.2f}s")
+        logger.info(f"[Trace] Loaded test data. Shape: {raw_factor_data_df.shape}")
+        logger.info(f"[Trace] Extracted date range: {start_date} to {end_date}")
+    else:
+        parquet_path = DATA_DIR / f"{PARAM['benchmark']}_{start_date}_{end_date}.parquet"
+        raw_factor_data_df = pd.read_parquet(parquet_path)
+        logger.info(f"Query loaded from {parquet_path} in {time.time() - t0:.2f}s")
+        logger.info(f"[Trace] Loaded parquet data. Shape: {raw_factor_data_df.shape}")
 
     # 2️⃣ 메타데이터(순서/스타일/이름)와 조인
     t1 = time.time()
@@ -663,7 +683,6 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
     factor_abbr_list, orders = factor_metadata_df.factorAbbreviation.tolist(), factor_metadata_df.factorOrder.tolist()
 
     # 3️⃣ Rich 진행바와 함께 팩터 할당
-    # 최적화: M_RETURN 미리 추출
     # 최적화: M_RETURN 미리 추출
     market_return_df = (
         raw_factor_data_df[raw_factor_data_df["factorAbbreviation"] == "M_RETURN"].reset_index(drop=True)
@@ -693,12 +712,12 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
     for factor_abbr, order in track(zip(factor_abbr_list, orders), total=len(factor_abbr_list), description="Assigning factors"):
         # 그룹이 존재하면 가져오고, 없으면 빈 DataFrame 전달
         if factor_abbr in grouped_source_data.groups:
-            factor_data_df = grouped_source_data.get_group(factor_abbr).copy() # copy to avoid SettingWithCopy
+            factor_data_df = grouped_source_data.get_group(factor_abbr).copy()  # copy to avoid SettingWithCopy
         else:
             factor_data_df = pd.DataFrame(columns=merged_factor_data_df.columns)
-        
+
         # market_return_df 인자 제거 (이미 병합됨)
-        processed_factor_data_list.append(calculate_factor_stats(factor_abbr, order, factor_data_df))
+        processed_factor_data_list.append(calculate_factor_stats(factor_abbr, order, factor_data_df, test_mode=bool(test_file)))
     logger.info(f"Factors assigned in {time.time() - t1:.2f}s")
 
     """Run the full ETL → optimisation → export process."""
@@ -707,7 +726,6 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
     # 1. 피클 로드 및 섹터 필터 적용
     factor_abbr_list, factor_name_list, style_name_list, raw = factor_abbr_list, factor_metadata_df.factorName.tolist(), factor_metadata_df.styleName.tolist(), processed_factor_data_list
 
- 
     if report:
         from service.report.read_pkl import generate_report
         import sys
@@ -756,7 +774,7 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
     factor_list = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel()).tolist()
     style_list = [style_map[f] for f in factor_list]
 
-    sim_result = simulate_constrained_weights(ret_subset, style_list)
+    sim_result = simulate_constrained_weights(ret_subset, style_list, test_mode=bool(test_file))
 
     # ------------------------------------------------------------------
     # 8. 팩터별 가중치 테이블 구성 (date × id × weight)
@@ -785,7 +803,6 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
     # ------------------------------------------------------------------
     # 9. 팩터 간 집계 (Σ weights per date × security)
     # ------------------------------------------------------------------
-
     weight_raw = pd.concat(weight_frames, ignore_index=True)
     # weight_raw = weight_raw[weight_raw['factor'] != 'SalesAcc'].reset_index(drop=True)
     weight_raw['factor_weight'] = weight_raw['factor_weight'] * np.sign(weight_raw['weight']) ** 2
@@ -810,7 +827,7 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
     )
     agg_w['name'] = 'MXCN1A_MP'
     agg_w = agg_w[agg_w['ddt'] == end_date].reset_index(drop=True)
-    agg_w['count'] =(
+    agg_w['count'] = (
         agg_w.groupby(['ddt', agg_w['weight'] > 0])['weight']
         .transform('size')
     )
@@ -828,17 +845,22 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
         .sum()
     )
 
-    agg_w.to_csv(OUTPUT_DIR / f"aggregated_weights_{end_date}_test.csv")
-    final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test.csv")
+    # 테스트 파일이 제공된 경우, 파일명(확장자 제외)을 suffix로 사용
+    suffix = f"_{Path(test_file).stem}" if test_file else ""
+    agg_w.to_csv(OUTPUT_DIR / f"aggregated_weights_{end_date}_test{suffix}.csv")
+    final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test{suffix}.csv")
 
-    final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_test.csv")
+    final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_test{suffix}.csv")
 
     final_weights.loc[final_weights['style'] == 'MP', 'factor_weight'] = 1
     final_weights = final_weights.replace(0, np.nan)
 
-    pivoted_final = final_weights.pivot_table(index=['ddt', 'ticker', 'isin', 'gvkeyiid'],
-                                              columns=['style', 'factor_weight', 'factor'], values='weight',
-                                              aggfunc='sum').reset_index()
+    pivoted_final = final_weights.pivot_table(
+        index=['ddt', 'ticker', 'isin', 'gvkeyiid'],
+        columns=['style', 'factor_weight', 'factor'],
+        values='weight',
+        aggfunc='sum'
+    ).reset_index()
 
     sample_df = pd.DataFrame({"factor": pivoted_final.columns.get_level_values(2).tolist()[4:]})
     sum_df = pd.merge(sim_result[1], sample_df, on='factor', how='inner')
@@ -846,9 +868,12 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
     final_weights.loc[final_weights['style'] == 'MP', 'factor_weight'] = sum_df['fitted_weight'].sum(axis=0)
     final_weights = final_weights.replace(0, np.nan)
 
-    pivoted_final = final_weights.pivot_table(index=['ddt', 'ticker', 'isin', 'gvkeyiid'],
-                                                    columns=['style', 'factor_weight', 'factor'], values='weight',
-                                                    aggfunc='sum').reset_index()
+    pivoted_final = final_weights.pivot_table(
+        index=['ddt', 'ticker', 'isin', 'gvkeyiid'],
+        columns=['style', 'factor_weight', 'factor'],
+        values='weight',
+        aggfunc='sum'
+    ).reset_index()
 
     cols = pivoted_final.columns
     mp_mask = cols.get_level_values('style') == 'MP'
@@ -856,5 +881,5 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False) -> 
     new_order = cols[~mp_mask].tolist() + cols[mp_mask].tolist()
     pivoted_final = pivoted_final.loc[:, new_order]
 
-    pivoted_final.to_csv(OUTPUT_DIR / f"pivoted_total_agg_wgt_{end_date}.csv")
+    pivoted_final.to_csv(OUTPUT_DIR / f"pivoted_total_agg_wgt_{end_date}{suffix}.csv")
     logger.info("Pipeline completed ✓ — files saved in %s", OUTPUT_DIR)
