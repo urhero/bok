@@ -627,12 +627,12 @@ def simulate_constrained_weights(
     return best_stats, weights_tbl
 
 
-def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, test_mode: bool = False) -> None:
-    # parquet 파일 또는 test_data.csv 로드하기
+def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, test_file: str | None = None) -> None:
+    # parquet 파일 또는 테스트 CSV 파일 로드하기
     t0 = time.time()
-    if test_mode:
+    if test_file:
         import re
-        test_data_path = Path.cwd() / "test_data.csv"
+        test_data_path = Path.cwd() / test_file
         raw_factor_data_df = pd.read_csv(test_data_path)
         # fld 컬럼에서 factorAbbreviation 추출 (예: "Sales Acceleration (SalesAcc)" -> "SalesAcc")
         def extract_abbr(fld_value):
@@ -819,7 +819,8 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
         .sum()
     )
 
-    suffix = "_TEST_DATA" if test_mode else ""
+    # 테스트 파일이 제공된 경우, 파일명(확장자 제외)을 suffix로 사용
+    suffix = f"_{Path(test_file).stem}" if test_file else ""
     agg_w.to_csv(OUTPUT_DIR / f"aggregated_weights_{end_date}_test{suffix}.csv")
     final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test{suffix}.csv")
 

@@ -18,7 +18,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Report command
     parser_report = subparsers.add_parser("mp", help="Generate MP from downloaded data.")
-    parser_report.add_argument("test", type=str, nargs="?", default=None, help="Use 'test' to load test_data.csv instead of parquet.")
+    parser_report.add_argument("test_file", type=str, nargs="?", default=None, help="Optional test CSV file (e.g., test_data.csv) instead of parquet.")
     parser_report.add_argument("start_date", type=str, help="Start date in YYYY-MM-DD format.")
     parser_report.add_argument("end_date", type=str, help="End date in YYYY-MM-DD format.")
     parser_report.add_argument("--report", action="store_true", help="Generate report and exit.")
@@ -36,8 +36,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "download":
             run_download_pipeline(args.start_date, args.end_date)
         elif args.command == "mp":
-            test_mode = args.test == "test" if hasattr(args, "test") else False
-            run_model_portfolio_pipeline(args.start_date, args.end_date, report=args.report, test_mode=test_mode)
+            test_file = args.test_file if hasattr(args, "test_file") else None
+            run_model_portfolio_pipeline(args.start_date, args.end_date, report=args.report, test_file=test_file)
         return 0
 
     parser.print_help()
