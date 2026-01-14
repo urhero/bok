@@ -232,12 +232,30 @@ def filter_and_label_factors(
 # 3️⃣ 수익률 행렬 · 순위 · 하락 상관관계
 # =============================================================================
 def calculate_downside_correlation(df: pd.DataFrame, min_obs: int = 20) -> pd.DataFrame:
-    """음의 수익률 기간 동안의 상관관계 계산(Downside Correlation 에 가깝지만 기준 자산 수익률이 음수인 모든 기간을 포함)"""
-    out = pd.DataFrame(index=df.columns, columns=df.columns, dtype=float)
-    for col in df.columns:
-        mask = df[col] < 0
-        out.loc[col] = df.loc[mask].corr()[col] if mask.sum() >= min_obs else np.nan
-    return out
+    """음의 수익률 기간 동안의 상관관계 계산(Downside Correlation 에 가깝지만 기준 자산 수익률이 음수인 모든 기간을 포함)
+
+    Vectorized implementation using NumPy for better performance.
+    """
+    data = df.to_numpy(dtype=np.float64)
+    n_cols = data.shape[1]
+    cols = df.columns
+
+    out = np.full((n_cols, n_cols), np.nan, dtype=np.float64)
+
+    for i in range(n_cols):
+        mask = data[:, i] < 0
+        if mask.sum() >= min_obs:
+            subset = data[mask, :]
+            # 각 컬럼의 평균과 표준편차 계산
+            means = np.nanmean(subset, axis=0)
+            stds = np.nanstd(subset, axis=0, ddof=1)
+            # 상관계수 계산: corr(X, Y) = cov(X, Y) / (std(X) * std(Y))
+            centered = subset - means
+            cov_with_i = np.nanmean(centered * centered[:, i:i+1], axis=0)
+            corr_row = cov_with_i / (stds * stds[i])
+            out[i, :] = corr_row
+
+    return pd.DataFrame(out, index=cols, columns=cols)
 
 def construct_long_short_df(
     labeled_data_df: pd.DataFrame
@@ -500,6 +518,7 @@ def simulate_constrained_weights(
     style_cap: float = 0.25,
     tol: float = 1e-12,
     test_mode: bool = False,
+    batch_size: int = 100_000,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     스타일 weight 제약이 있는 최적 포트폴리오를 몬테카를로 탐색
@@ -510,7 +529,7 @@ def simulate_constrained_weights(
         Monthly spread return matrix (rows = dates, cols = factorAbbreviation).
     style_list : list[str]
         Style name for every column in `rtn_df`, in the same order.
-    num_sims : int, default 20_000_000
+    num_sims : int, default 1_000_000
         Number of random portfolios to draw.
     style_cap : float, default 0.25
         Maximum weight share per style.
@@ -518,6 +537,8 @@ def simulate_constrained_weights(
         Numerical tolerance when checking caps.
     test_mode : bool, default False
         If True, relax style_cap constraint for small datasets.
+    batch_size : int, default 100_000
+        Batch size for memory-efficient processing.
 
     Returns
     -------
@@ -531,6 +552,7 @@ def simulate_constrained_weights(
     # 0. Basic checks & prep
     # ------------------------------------------------------------------
     K = rtn_df.shape[1]
+    T = rtn_df.shape[0]
     if len(style_list) != K:
         raise ValueError("length of style_list must equal number of columns in rtn_df")
 
@@ -542,104 +564,123 @@ def simulate_constrained_weights(
     styles = np.asarray(style_list)
 
     # ------------------------------------------------------------------
-    # 1. Random raw weights (Σ w = 1 per column)
-    # ------------------------------------------------------------------
-    raw_mat = np.random.rand(K, num_sims).astype(np.float64)
-    raw_mat /= raw_mat.sum(axis=0, keepdims=True)
-
-    # ------------------------------------------------------------------
-    # 2. Build style mask (S × K)
+    # 2. Build style mask (S × K) - float32 for memory efficiency
     # ------------------------------------------------------------------
     uniq_styles = np.unique(styles)
     S = len(uniq_styles)
 
-    mask = np.zeros((S, K), dtype=int)
+    mask = np.zeros((S, K), dtype=np.float32)
     for i, s in enumerate(uniq_styles):
         mask[i, styles == s] = 1
 
-    # ------------------------------------------------------------------
-    # 3. Apply style caps (shrink & redistribute)
-    # ------------------------------------------------------------------
-    share = mask @ raw_mat
-    excess = np.clip(share - style_cap, a_min=0, a_max=None)
-    scale = np.where(share > style_cap, style_cap / share, 1.0)
-    shrink = mask.T @ scale
-    mat_scaled = raw_mat * shrink
-
-    room = np.where(share < style_cap, style_cap - share, 0)
-    room_sum = room.sum(axis=0, keepdims=True)
-    ratio = np.divide(room, room_sum, where=room_sum != 0)
-    add = excess.sum(axis=0, keepdims=True) * ratio
-    fitted_mat = mat_scaled + (mask.T @ add)
-    fitted_mat /= fitted_mat.sum(axis=0, keepdims=True)
-
-    # Feasibility filter
-    ok = (mask @ fitted_mat <= style_cap + tol).all(axis=0)
-    raw_mat = raw_mat[:, ok]
-    fitted_mat = fitted_mat[:, ok]
-
-    # ------------------------------------------------------------------
-    # 4. Simulate returns
-    # ------------------------------------------------------------------
+    # Precompute return matrix once
     port_np = rtn_df.to_numpy(dtype=np.float32)
-    sim = port_np @ fitted_mat                         # (T × sims)
-    sim = pd.DataFrame(sim, index=rtn_df.index)
-
-    ann_exp = 12 / len(sim)
-    cum = (1 + sim).cumprod()
-    cagr = cum.iloc[-1].pow(ann_exp) - 1
-    mdd = (cum / cum.cummax() - 1).min()
-
-    stats = pd.DataFrame({"cagr": cagr, "mdd": mdd})
-    stats["rank_cagr"] = stats["cagr"].rank(ascending=False)
-    stats["rank_mdd"] = stats["mdd"].rank(ascending=False)
-    stats["rank_total"] = stats["rank_cagr"] * 0.6 + stats["rank_mdd"] * 0.4
+    ann_exp = 12 / T
 
     # ------------------------------------------------------------------
-    # 5. Pick the best portfolio & build weight table
+    # Batch processing for memory efficiency
     # ------------------------------------------------------------------
-    best_idx = stats["rank_total"].idxmin()
-    best_stats = stats.loc[[best_idx]]
+    best_cagr = -np.inf
+    best_mdd = -np.inf
+    best_rank = np.inf
+    best_raw_weights = None
+    best_fitted_weights = None
+
+    all_cagrs = []
+    all_mdds = []
+    all_raw_weights = []
+    all_fitted_weights = []
+
+    n_batches = (num_sims + batch_size - 1) // batch_size
+
+    for batch_idx in range(n_batches):
+        start_idx = batch_idx * batch_size
+        end_idx = min((batch_idx + 1) * batch_size, num_sims)
+        current_batch_size = end_idx - start_idx
+
+        # ------------------------------------------------------------------
+        # 1. Random raw weights (Σ w = 1 per column) - float32
+        # ------------------------------------------------------------------
+        raw_mat = np.random.rand(K, current_batch_size).astype(np.float32)
+        raw_mat /= raw_mat.sum(axis=0, keepdims=True)
+
+        # ------------------------------------------------------------------
+        # 3. Apply style caps (shrink & redistribute)
+        # ------------------------------------------------------------------
+        share = mask @ raw_mat
+        excess = np.clip(share - style_cap, a_min=0, a_max=None)
+        scale = np.where(share > style_cap, style_cap / share, 1.0).astype(np.float32)
+        shrink = mask.T @ scale
+        mat_scaled = raw_mat * shrink
+
+        room = np.where(share < style_cap, style_cap - share, 0).astype(np.float32)
+        room_sum = room.sum(axis=0, keepdims=True)
+        ratio = np.divide(room, room_sum, out=np.zeros_like(room), where=room_sum != 0)
+        add = excess.sum(axis=0, keepdims=True) * ratio
+        fitted_mat = mat_scaled + (mask.T @ add)
+        fitted_mat /= fitted_mat.sum(axis=0, keepdims=True)
+
+        # Feasibility filter
+        ok = (mask @ fitted_mat <= style_cap + tol).all(axis=0)
+        raw_mat_ok = raw_mat[:, ok]
+        fitted_mat_ok = fitted_mat[:, ok]
+
+        if fitted_mat_ok.shape[1] == 0:
+            continue
+
+        # ------------------------------------------------------------------
+        # 4. Simulate returns - vectorized NumPy operations
+        # ------------------------------------------------------------------
+        sim = port_np @ fitted_mat_ok  # (T × sims)
+
+        # Vectorized cumulative product and metrics
+        cum = np.cumprod(1 + sim, axis=0)
+        cagr_batch = np.power(cum[-1, :], ann_exp) - 1
+
+        # Vectorized MDD calculation
+        running_max = np.maximum.accumulate(cum, axis=0)
+        drawdown = cum / running_max - 1
+        mdd_batch = drawdown.min(axis=0)
+
+        # Store results
+        all_cagrs.append(cagr_batch)
+        all_mdds.append(mdd_batch)
+        all_raw_weights.append(raw_mat_ok)
+        all_fitted_weights.append(fitted_mat_ok)
+
+    # ------------------------------------------------------------------
+    # 5. Combine all batches and find best portfolio
+    # ------------------------------------------------------------------
+    if len(all_cagrs) == 0:
+        raise ValueError("No feasible portfolios found")
+
+    all_cagrs = np.concatenate(all_cagrs)
+    all_mdds = np.concatenate(all_mdds)
+    all_raw_weights = np.concatenate(all_raw_weights, axis=1)
+    all_fitted_weights = np.concatenate(all_fitted_weights, axis=1)
+
+    # Calculate ranks
+    rank_cagr = np.argsort(np.argsort(-all_cagrs)) + 1  # descending rank
+    rank_mdd = np.argsort(np.argsort(-all_mdds)) + 1    # descending rank (less negative is better)
+    rank_total = rank_cagr * 0.6 + rank_mdd * 0.4
+
+    best_idx = np.argmin(rank_total)
+
+    best_stats = pd.DataFrame({
+        "cagr": [all_cagrs[best_idx]],
+        "mdd": [all_mdds[best_idx]],
+        "rank_cagr": [float(rank_cagr[best_idx])],
+        "rank_mdd": [float(rank_mdd[best_idx])],
+        "rank_total": [float(rank_total[best_idx])]
+    })
 
     factors = rtn_df.columns.to_numpy()
 
-    # ~2025-12 포트폴리오까지 적용
-    # weights_tbl = pd.DataFrame({
-    #     "factor": np.array(['SalesAcc', '6MTTMSalesMom', 'PM6M', '52WSlope', '90DCV',
-    #         'CashEV', 'RevMagFY1C', 'SalesToEPSChg', 'Rev3MFY1C', 'TobinQ']),
-    #     "raw_weight": np.array([0.199298652556654,0.00842206236153488,0.196025173956866,0.0326737859629076,0.174696911741135,
-    #         0.148243451062375,0.10775464398236,0.0577835874187986,0.0524125911883854,0.022689139768980]),
-    #     "styleName": np.array(['Historical Growth', 'Historical Growth', 'Price Momentum', 'Price Momentum', 'Volatility',
-    #         'Valuation', 'Analyst Expectations', 'Earnings Quality', 'Analyst Expectations', 'Capital Efficiency']),
-    #     "fitted_weight": np.array([0.199298652556654,0.00842206236153488,0.196025173956866,0.0326737859629076,0.174696911741135,
-    #         0.148243451062375,0.10775464398236,0.0577835874187986,0.0524125911883854,0.022689139768980]),
-    # })
-
-    # # 2025-11-30 기준으로 계산한 팩터 비중
-    # weights_tbl = pd.DataFrame({
-    #     "factor": np.array([
-    #         'Rev3MFY2C', 'RevMagFY1C', 'TobinQ', 'FCFSales', 'SalesAcc',
-    #         '52WSlope', 'PM6M', 'FwdEPC', '90DCV'
-    #     ]),
-    #     "raw_weight": np.array([
-    #         0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
-    #         0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
-    #     ]),
-    #     "styleName": np.array([
-    #         'Analyst Expectations', 'Analyst Expectations', 'Capital Efficiency', 'Earnings Quality', 'Historical Growth',
-    #         'Price Momentum', 'Price Momentum', 'Valuation', 'Volatility'
-    #     ]),
-    #     "fitted_weight": np.array([
-    #         0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
-    #         0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
-    #     ]),
-    # })
-
     weights_tbl = pd.DataFrame({
         "factor": factors,
-        "raw_weight": raw_mat[:, best_idx],
+        "raw_weight": all_raw_weights[:, best_idx],
         "styleName": styles,
-        "fitted_weight": fitted_mat[:, best_idx],
+        "fitted_weight": all_fitted_weights[:, best_idx],
     })
 
     weights_tbl = (
@@ -783,28 +824,40 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
     sim_result = simulate_constrained_weights(ret_subset, style_list, test_mode=bool(test_file))
 
     # ------------------------------------------------------------------
-    # 8. 팩터별 가중치 테이블 구성 (date × id × weight)
+    # 8. 팩터별 가중치 테이블 구성 (date × id × weight) - Optimized
     # ------------------------------------------------------------------
+    # 팩터 인덱스 맵 생성 (list.index() 반복 호출 제거)
+    factor_idx_map = {fac: idx for idx, fac in enumerate(kept_factor_abbrs)}
+
+    # sim_result[1]을 딕셔너리로 변환하여 반복 접근 최적화
+    sim_factors = sim_result[1][['factor', 'fitted_weight', 'styleName']].to_dict('records')
+
     weight_frames = []
-    for _, row in sim_result[1].iterrows():
+    for row in sim_factors:
         fac = row['factor']
         w = row['fitted_weight']
         s = row['styleName']
 
-        j = kept_factor_abbrs.index(fac)
+        j = factor_idx_map[fac]
         df = filtered_factor_data_list[j][['ddt', 'ticker', 'isin', 'gvkeyiid', 'label']].copy()
-        df['weight'] = df['label'] * w / df.groupby(['ddt', 'label'])['label'].transform('count')
-        df['ls_weight'] = df['label'] / df.groupby(['ddt', 'label'])['label'].transform('count')
+
+        # groupby transform 한 번만 호출하고 재사용
+        count_per_group = df.groupby(['ddt', 'label'])['label'].transform('count')
+
+        df['weight'] = df['label'] * w / count_per_group
+        df['ls_weight'] = df['label'] / count_per_group
         df['factor_weight'] = w
         df['style'] = s
         df['name'] = f'MXCN1A_{s}'
         df['factor'] = fac
-        df['count'] = df.groupby(['ddt', 'label'])['label'].transform('count')
+        df['count'] = count_per_group
         df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
-        end_date_df = df[df['ddt'] == end_date].reset_index(drop=True)
-        weight_frames.append(end_date_df[['ddt', 'ticker', 'isin', 'gvkeyiid', 'weight',
-                                          'ls_weight', 'factor_weight',
-                                          'factor', 'style', 'name', 'count']])
+
+        # end_date 필터링 후 필요한 컬럼만 선택
+        end_date_df = df.loc[df['ddt'] == end_date, ['ddt', 'ticker', 'isin', 'gvkeyiid', 'weight',
+                                                      'ls_weight', 'factor_weight',
+                                                      'factor', 'style', 'name', 'count']].reset_index(drop=True)
+        weight_frames.append(end_date_df)
 
     # ------------------------------------------------------------------
     # 9. 팩터 간 집계 (Σ weights per date × security)
