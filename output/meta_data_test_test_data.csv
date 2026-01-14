@@ -1,0 +1,5 @@
+factorAbbreviation,factorName,styleName,cagr,rank_style,rank_total
+SalesAcc,Sales Acceleration,Historical Growth,1.017770890613435,1.0,1.0
+InvToAsset,Asset Adjusted Capital Investments,Earnings Quality,0.4680899778071521,1.0,2.0
+InvTurn,Inventory Turnover,Earnings Quality,0.10438518761510185,2.0,3.0
+BP,Book to Price,Valuation,-0.04967777955355468,1.0,4.0
