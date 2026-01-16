@@ -23,6 +23,10 @@ awesome-cohen/
 ├── meta_data.csv                   # Test output: factor performance metrics
 ├── test_data.csv                   # Test dataset for pipeline validation
 │
+├── data/                           # Data storage (parquet files, intermediate outputs)
+│   ├── {benchmark}_{start}_{end}.parquet  # Raw factor data from SQL Server
+│   └── factor_info.csv             # Factor metadata copy
+│
 ├── port/                           # Database & query layer
 │   └── query_structure.py          # MS SQL Server data fetching (MS SQL ODBC)
 │
@@ -30,7 +34,7 @@ awesome-cohen/
 │   ├── download/
 │   │   └── write_pkl.py            # Raw data pipeline (download & save parquets)
 │   ├── live/
-│   │   └── model_portfolio.py      # Main MP generation (890 lines, 12 core functions)
+│   │   └── model_portfolio.py      # Main MP generation (1356 lines, 12 core functions)
 │   └── report/
 │       └── read_pkl.py             # Report generation utilities
 │
@@ -41,6 +45,16 @@ awesome-cohen/
 │   ├── FLOW_VISUALIZATION.md       # Mermaid diagrams of execution flow
 │   ├── VARIABLE_FLOW.md            # Variable transformation diagrams
 │   └── old_new_variable.md         # Refactoring changelog
+│
+├── application/                    # Clean Architecture: Use cases (placeholder)
+│   └── use_cases/
+│
+├── domain/                         # Clean Architecture: Business entities (placeholder)
+│   ├── entities/
+│   └── services/
+│
+├── infrastructure/                 # Clean Architecture: External adapters (placeholder)
+│   └── repositories/
 │
 └── output/
     └── {YYYYMMDD}/                 # Date-stamped output folders
@@ -69,20 +83,21 @@ awesome-cohen/
 - **`config.py`**: Centralized config: DB credentials, benchmark name, ODBC driver
 
 ### Core Model Portfolio Pipeline
-- **`service/live/model_portfolio.py`** (890 lines): Main logic for all factor processing, optimization, and MP generation
+- **`service/live/model_portfolio.py`** (1356 lines): Main logic for all factor processing, optimization, and MP generation
 
 #### Key Functions in model_portfolio.py:
-1. `calculate_factor_stats()` - Quantile analysis, sector returns, spread calculation
-2. `filter_and_label_factors()` - Removes negative-spread sectors; labels Long/Short/Neutral
-3. `calculate_downside_correlation()` - Correlation in down markets only
-4. `construct_long_short_df()` - Segregates long/short positions
-5. `calculate_vectorized_return()` - Portfolio returns with trading cost (30bp default)
-6. `aggregate_factor_returns()` - Combines returns across all factors
-7. `evaluate_factor_universe()` - Returns matrix, correlations, performance metrics
-8. `find_optimal_mix()` - Grid search for best main+sub factor combinations
-9. `construct_style_portfolios()` - Builds style-level portfolios from best factors
-10. `simulate_constrained_weights()` - Monte Carlo: 1M simulations with style cap ≤25%
-11. `run_model_portfolio_pipeline()` - Main orchestrator that glues all steps together
+1. `prepend_start_zero()` - Adds zero return at start of series for cumulative calculations (line 65)
+2. `calculate_factor_stats()` - Quantile analysis, sector returns, spread calculation (line 105)
+3. `filter_and_label_factors()` - Removes negative-spread sectors; labels Long/Short/Neutral (line 353)
+4. `calculate_downside_correlation()` - Correlation in down markets only (line 517)
+5. `construct_long_short_df()` - Segregates long/short positions (line 624)
+6. `calculate_vectorized_return()` - Portfolio returns with trading cost (30bp default) (line 639)
+7. `aggregate_factor_returns()` - Combines returns across all factors (line 677)
+8. `evaluate_factor_universe()` - Returns matrix, correlations, performance metrics (line 697)
+9. `find_optimal_mix()` - Grid search for best main+sub factor combinations (line 751)
+10. `construct_style_portfolios()` - Builds style-level portfolios from best factors (line 837)
+11. `simulate_constrained_weights()` - Monte Carlo: 1M simulations with style cap ≤25% (line 878)
+12. `run_model_portfolio_pipeline()` - Main orchestrator that glues all steps together (line 1060)
 
 ### Data Layer
 - **`port/query_structure.py`**: Fetches factor data from MS SQL Server; parses factor abbreviations
@@ -139,9 +154,9 @@ main.py → run_model_portfolio_pipeline()
 ## Data Specifications
 
 ### Input Data
-- **Source:** `{BENCHMARK}_{START_DATE}_{END_DATE}.parquet`
+- **Source:** `data/{BENCHMARK}_{START_DATE}_{END_DATE}.parquet`
 - **Schema:** `gvkeyiid, ticker, isin, ddt, sec, country, factorAbbreviation, val, M_RETURN`
-- **Factor Metadata:** `factor_info.csv` (factorId, factorAbbreviation, factorName, styleName, factorOrder)
+- **Factor Metadata:** `data/factor_info.csv` (factorId, factorAbbreviation, factorName, styleName, factorOrder)
 
 ### Output Data
 - **Location:** `output/{YYYYMMDD}/`
@@ -172,6 +187,37 @@ main.py → run_model_portfolio_pipeline()
 - Example: `python main.py mp test test_data.csv`
 - Output files tagged with `_test` suffix
 
+### Code Change Verification Process (IMPORTANT)
+코드 변경 시 반드시 다음 검증 프로세스를 따를 것:
+
+1. **변경 전 베이스라인 생성**
+   ```bash
+   python main.py mp test test_data.csv
+   # output/ 폴더의 결과물을 백업 (예: output_before/)
+   ```
+
+2. **코드 변경 적용**
+
+3. **변경 후 결과 생성**
+   ```bash
+   python main.py mp test test_data.csv
+   # 새로운 output/ 결과물 생성
+   ```
+
+4. **비교 검증**
+   - 의도한 변경사항이 출력에 반영되었는지 확인
+   - 의도하지 않은 부작용이 없는지 확인
+   - 주요 비교 대상 파일:
+     - `aggregated_weights_*_test.csv` - 종목별 팩터 가중치
+     - `total_aggregated_weights_*_test.csv` - 전체 가중치
+     - `meta_data.csv` - 팩터 성과 지표
+
+5. **검증 체크리스트**
+   - [ ] 파이프라인이 에러 없이 완료되는가?
+   - [ ] 출력 파일이 정상적으로 생성되는가?
+   - [ ] 의도한 변경이 결과에 반영되었는가?
+   - [ ] 변경하지 않은 부분은 동일한가?
+
 ### Test Files
 - **`test_data.csv`**: Sample dataset for validation (Chinese equity factors, Nov-Dec 2025)
 - **`test_data.sql`**: SQL reference for test data structure
@@ -200,6 +246,8 @@ main.py → run_model_portfolio_pipeline()
 - Downside correlation matrix generation
 - 2-factor mix optimization
 - Style-constrained weight simulation
+- Clean Architecture scaffold (application/domain/infrastructure directories)
+- Data directory reorganization (`data/` for parquet and intermediate files)
 
 ## Architecture Highlights
 
@@ -251,10 +299,12 @@ python main.py mp test test_data.csv
 ## Notes for Claude Code
 
 - **Primary Language:** Code is in English, but domain-specific documentation and comments are in Korean
-- **Main Entry Point:** `service/live/model_portfolio.py:run_model_portfolio_pipeline()`
-- **Critical Functions:** Focus on the 11 key functions listed in the Key Files section
+- **Main Entry Point:** `service/live/model_portfolio.py:run_model_portfolio_pipeline()` (line 1060)
+- **Critical Functions:** Focus on the 12 key functions listed in the Key Files section
 - **Data Flow:** Follow `docs/FLOW_VISUALIZATION.md` and `docs/VARIABLE_FLOW.md` for understanding transformations
 - **Testing:** Always use test mode when validating changes with small datasets
 - **Output Validation:** Check `output/{date}/` folder for generated CSV files after pipeline runs
 - **Performance:** Operations are vectorized; avoid introducing loops where possible
 - **Style Constraints:** The 25% style cap is a hard requirement in production
+- **Clean Architecture:** Placeholder directories exist for future refactoring (application/domain/infrastructure)
+- **CRITICAL - 코드 변경 검증:** 코드 수정 전후로 반드시 `test_data.csv`로 파이프라인을 실행하여 결과를 비교할 것. 변경 의도대로 작동하는지 확인 필수. (Testing 섹션의 "Code Change Verification Process" 참조)
