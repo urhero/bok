@@ -196,3 +196,7 @@ cython_debug/
 data/
 #config.py
 .cursorindexingignore
+
+# Claude Code temporary files
+tmpclaude-*
+nul

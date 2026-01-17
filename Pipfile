@@ -27,6 +27,9 @@ qpsolvers = {extras = ["osqp"], version = "*"}
 osqp = "*"
 
 [dev-packages]
+pytest = "*"
+pytest-cov = "*"
+pytest-xdist = "*"
 
 [requires]
 python_version = "3.10"
