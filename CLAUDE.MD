@@ -39,7 +39,14 @@ awesome-cohen/
 │       └── read_pkl.py             # Report generation utilities
 │
 ├── utils/
-│   └── util.py                     # Helper functions (rank, percentile, quantiles)
+│   ├── __init__.py                 # Utils package exports
+│   ├── util.py                     # Helper functions (rank, percentile, quantiles)
+│   └── validation.py               # Data validation functions (16 functions)
+│
+├── tests/                          # pytest test suite
+│   ├── conftest.py                 # Shared fixtures
+│   ├── test_unit/                  # Unit tests (65 tests)
+│   └── test_integration/           # Integration tests
 │
 ├── docs/
 │   ├── FLOW_VISUALIZATION.md       # Mermaid diagrams of execution flow
@@ -181,7 +188,64 @@ main.py → run_model_portfolio_pipeline()
 
 ## Testing
 
-### Test Mode
+### 자동화된 테스트 (pytest)
+
+프로젝트에는 pytest 기반의 자동화된 테스트 스위트가 포함되어 있습니다.
+
+#### 테스트 구조
+```
+tests/
+├── conftest.py                      # 공유 fixtures (테스트 데이터 생성)
+├── test_unit/                       # 유닛 테스트 (65개 테스트)
+│   ├── test_prepend_start_zero.py   # 시계열 초기화 함수 테스트
+│   ├── test_calculate_factor_stats.py  # 팩터 분석 함수 테스트
+│   ├── test_downside_correlation.py # 하락 상관관계 함수 테스트
+│   └── test_simulate_constrained_weights.py  # 가중치 시뮬레이션 테스트
+└── test_integration/                # 통합 테스트
+    └── test_pipeline_end_to_end.py  # E2E 파이프라인 테스트
+```
+
+#### 테스트 실행 명령어
+
+```bash
+# 모든 유닛 테스트 실행
+pipenv run python -m pytest tests/test_unit/ -v
+
+# 커버리지 리포트와 함께 실행
+pipenv run python -m pytest tests/test_unit/ --cov=service --cov-report=term-missing
+
+# 특정 테스트 파일만 실행
+pipenv run python -m pytest tests/test_unit/test_prepend_start_zero.py -v
+
+# 특정 테스트 클래스만 실행
+pipenv run python -m pytest tests/test_unit/test_calculate_factor_stats.py::TestCalculateFactorStatsBasic -v
+
+# 특정 테스트 함수만 실행
+pipenv run python -m pytest tests/test_unit/test_prepend_start_zero.py::TestPrependStartZero::test_basic_functionality -v
+
+# 통합 테스트 실행 (test_data.csv 필요)
+pipenv run python -m pytest tests/test_integration/ -v
+
+# 모든 테스트 실행 (유닛 + 통합)
+pipenv run python -m pytest tests/ -v
+```
+
+#### 테스트 커버리지
+- 현재 커버리지: **34%** (`model_portfolio.py` 기준)
+- 테스트된 핵심 함수:
+  - `prepend_start_zero()` - 13개 테스트
+  - `calculate_factor_stats()` - 18개 테스트
+  - `calculate_downside_correlation()` - 17개 테스트
+  - `simulate_constrained_weights()` - 17개 테스트
+
+#### 데이터 검증 유틸리티
+`utils/validation.py`에 데이터 품질 검사 함수들이 포함되어 있습니다:
+- `validate_required_columns()` - 필수 컬럼 존재 확인
+- `validate_no_null_in_columns()` - NULL 값 검사
+- `validate_weights_sum_to_one()` - 가중치 합계 검증
+- `validate_style_cap_constraint()` - 스타일 제약 검증
+
+### Test Mode (수동 테스트)
 - Activated via: `python main.py mp test <filename>`
 - Allows small dataset processing without minimum count validation
 - Example: `python main.py mp test test_data.csv`
@@ -212,11 +276,19 @@ main.py → run_model_portfolio_pipeline()
      - `total_aggregated_weights_*_test.csv` - 전체 가중치
      - `meta_data.csv` - 팩터 성과 지표
 
-5. **검증 체크리스트**
+5. **pytest 테스트 수정/추가**
+   - 변경된 함수에 해당하는 테스트 파일 확인
+   - 기존 테스트가 통과하는지 확인: `pipenv run python -m pytest tests/test_unit/ -v`
+   - 필요시 새 테스트 케이스 추가 또는 기존 테스트 수정
+   - 테스트 파일 위치: `tests/test_unit/test_{function_name}.py`
+
+6. **검증 체크리스트**
    - [ ] 파이프라인이 에러 없이 완료되는가?
    - [ ] 출력 파일이 정상적으로 생성되는가?
    - [ ] 의도한 변경이 결과에 반영되었는가?
    - [ ] 변경하지 않은 부분은 동일한가?
+   - [ ] **기존 pytest 테스트가 모두 통과하는가?**
+   - [ ] **변경된 로직에 대한 테스트가 추가/수정되었는가?**
 
 ### Test Files
 - **`test_data.csv`**: Sample dataset for validation (Chinese equity factors, Nov-Dec 2025)
@@ -248,6 +320,7 @@ main.py → run_model_portfolio_pipeline()
 - Style-constrained weight simulation
 - Clean Architecture scaffold (application/domain/infrastructure directories)
 - Data directory reorganization (`data/` for parquet and intermediate files)
+- **pytest 테스트 스위트 추가 (Jan 2025)**: 65개 유닛 테스트, 데이터 검증 유틸리티
 
 ## Architecture Highlights
 
@@ -272,6 +345,7 @@ polars, dask                           # Alternative data processing
 rich, tabulate                         # Terminal formatting
 qpsolvers[osqp], osqp                  # Optimization
 pyarrow, reportlab, plotly             # Data I/O & visualization
+pytest, pytest-cov, pytest-xdist       # Testing (dev dependencies)
 ```
 
 ### Installation
@@ -307,4 +381,8 @@ python main.py mp test test_data.csv
 - **Performance:** Operations are vectorized; avoid introducing loops where possible
 - **Style Constraints:** The 25% style cap is a hard requirement in production
 - **Clean Architecture:** Placeholder directories exist for future refactoring (application/domain/infrastructure)
-- **CRITICAL - 코드 변경 검증:** 코드 수정 전후로 반드시 `test_data.csv`로 파이프라인을 실행하여 결과를 비교할 것. 변경 의도대로 작동하는지 확인 필수. (Testing 섹션의 "Code Change Verification Process" 참조)
+- **CRITICAL - 코드 변경 검증:** 코드 수정 시 반드시 다음을 수행할 것:
+  1. `test_data.csv`로 파이프라인 실행하여 결과 비교 (변경 전후)
+  2. `pipenv run python -m pytest tests/test_unit/ -v`로 기존 테스트 통과 확인
+  3. 변경된 함수에 대한 pytest 테스트 추가/수정
+  4. (Testing 섹션의 "Code Change Verification Process" 참조)
