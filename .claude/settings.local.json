@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(python -c:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(dir /B \"C:\\\\Users\\\\IKM\\\\bok\")",
+      "Bash(pipenv run pip:*)",
+      "Bash(pipenv run pytest:*)",
+      "Bash(pipenv run python:*)",
+      "Bash(pipenv install:*)",
+      "Bash(git reset:*)"
     ]
   }
 }
