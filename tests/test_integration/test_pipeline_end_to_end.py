@@ -125,16 +125,16 @@ class TestPipelineDataValidation:
             test_file=str(TEST_DATA_PATH),
         )
 
-        # aggregated_weights 파일 확인
-        weight_files = list(OUTPUT_DIR.glob("aggregated_weights*_test*.csv"))
+        # total_aggregated_weights 파일 확인
+        weight_files = list(OUTPUT_DIR.glob("total_aggregated_weights*_test*.csv"))
         if weight_files:
             weights_df = pd.read_csv(weight_files[0])
 
-            # ticker, weight 컬럼에 NaN이 없어야 함
+            # ticker, ls_weight 컬럼에 NaN이 없어야 함
             if "ticker" in weights_df.columns:
                 assert weights_df["ticker"].notna().all(), "NaN found in ticker column"
-            if "weight" in weights_df.columns:
-                assert weights_df["weight"].notna().all(), "NaN found in weight column"
+            if "ls_weight" in weights_df.columns:
+                assert weights_df["ls_weight"].notna().all(), "NaN found in ls_weight column"
 
     @pytest.mark.skipif(
         not TEST_DATA_PATH.exists(),
@@ -155,9 +155,9 @@ class TestPipelineDataValidation:
         if total_weight_files:
             weights_df = pd.read_csv(total_weight_files[0])
 
-            if "weight" in weights_df.columns:
+            if "ls_weight" in weights_df.columns:
                 # 가중치가 무한대가 아닌지
-                assert not np.isinf(weights_df["weight"]).any(), "Infinite weights found"
+                assert not np.isinf(weights_df["ls_weight"]).any(), "Infinite weights found"
 
 
 class TestPipelineOutputConsistency:
@@ -263,6 +263,144 @@ class TestPipelineErrorHandling:
             # 정리
             if empty_csv.exists():
                 empty_csv.unlink()
+
+
+class TestStyleLsWeightCalculation:
+    """style_ls_weight 계산 검증 테스트"""
+
+    @staticmethod
+    def _get_latest_style_file() -> Path:
+        """가장 최근 수정된 style 출력 파일 반환"""
+        style_files = list(OUTPUT_DIR.glob("total_aggregated_weights_style*_test*.csv"))
+        if not style_files:
+            return None
+        # 수정 시간 기준 정렬하여 가장 최근 파일 반환
+        return max(style_files, key=lambda f: f.stat().st_mtime)
+
+    @pytest.mark.skipif(
+        not TEST_DATA_PATH.exists(),
+        reason="test_data.csv not found"
+    )
+    def test_style_ls_weight_column_exists(self) -> None:
+        """style_ls_weight 컬럼이 출력에 존재하는지 확인"""
+        from service.live.model_portfolio import run_model_portfolio_pipeline
+
+        run_model_portfolio_pipeline(
+            start_date=None,
+            end_date=None,
+            test_file=str(TEST_DATA_PATH),
+        )
+
+        # total_aggregated_weights_style 파일 확인 (가장 최근 파일)
+        style_file = self._get_latest_style_file()
+        assert style_file is not None, "Style output file not found"
+
+        style_df = pd.read_csv(style_file)
+        assert "style_ls_weight" in style_df.columns, "style_ls_weight column missing"
+        assert "ls_weight" in style_df.columns, "ls_weight column missing"
+        assert "factor_weight" in style_df.columns, "factor_weight column missing"
+
+    @pytest.mark.skipif(
+        not TEST_DATA_PATH.exists(),
+        reason="test_data.csv not found"
+    )
+    def test_style_ls_weight_is_valid(self) -> None:
+        """style_ls_weight가 유효한 값인지 확인
+
+        검증 항목:
+        1. |style_ls_weight| <= |ls_weight| (가중평균이므로 원본보다 작거나 같음)
+        2. style_ls_weight와 ls_weight의 부호가 같음
+        3. factor_weight=0이면 style_ls_weight=0
+        """
+        from service.live.model_portfolio import run_model_portfolio_pipeline
+
+        run_model_portfolio_pipeline(
+            start_date=None,
+            end_date=None,
+            test_file=str(TEST_DATA_PATH),
+        )
+
+        style_file = self._get_latest_style_file()
+        if not style_file:
+            pytest.skip("Style output file not found")
+
+        style_df = pd.read_csv(style_file)
+
+        # MP 행 제외 (MP는 style_ls_weight = mp_ls_weight)
+        non_mp_df = style_df[style_df["style"] != "MP"].copy()
+
+        if non_mp_df.empty:
+            pytest.skip("No non-MP rows to validate")
+
+        # 1. |style_ls_weight| <= |ls_weight| (스타일이 하나뿐이면 같을 수 있음)
+        assert (np.abs(non_mp_df["style_ls_weight"]) <= np.abs(non_mp_df["ls_weight"]) + 1e-10).all(), \
+            "style_ls_weight magnitude should be <= ls_weight magnitude"
+
+        # 2. 부호 일치 (0이 아닌 경우)
+        non_zero_mask = (non_mp_df["style_ls_weight"] != 0) & (non_mp_df["ls_weight"] != 0)
+        if non_zero_mask.any():
+            signs_match = np.sign(non_mp_df.loc[non_zero_mask, "style_ls_weight"]) == \
+                         np.sign(non_mp_df.loc[non_zero_mask, "ls_weight"])
+            assert signs_match.all(), "style_ls_weight and ls_weight should have same sign"
+
+        # 3. factor_weight=0이면 style_ls_weight=0
+        zero_fw_mask = non_mp_df["factor_weight"] == 0
+        if zero_fw_mask.any():
+            assert (non_mp_df.loc[zero_fw_mask, "style_ls_weight"] == 0).all(), \
+                "style_ls_weight should be 0 when factor_weight is 0"
+
+    @pytest.mark.skipif(
+        not TEST_DATA_PATH.exists(),
+        reason="test_data.csv not found"
+    )
+    def test_style_ls_weight_no_nan(self) -> None:
+        """style_ls_weight에 NaN이 없는지 확인"""
+        from service.live.model_portfolio import run_model_portfolio_pipeline
+
+        run_model_portfolio_pipeline(
+            start_date=None,
+            end_date=None,
+            test_file=str(TEST_DATA_PATH),
+        )
+
+        style_file = self._get_latest_style_file()
+        if not style_file:
+            pytest.skip("Style output file not found")
+
+        style_df = pd.read_csv(style_file)
+        assert style_df["style_ls_weight"].notna().all(), "NaN found in style_ls_weight"
+
+    @pytest.mark.skipif(
+        not TEST_DATA_PATH.exists(),
+        reason="test_data.csv not found"
+    )
+    def test_mp_style_ls_weight_equals_mp_ls_weight(self) -> None:
+        """MP 행의 style_ls_weight가 mp_ls_weight와 동일한지 확인"""
+        from service.live.model_portfolio import run_model_portfolio_pipeline
+
+        run_model_portfolio_pipeline(
+            start_date=None,
+            end_date=None,
+            test_file=str(TEST_DATA_PATH),
+        )
+
+        style_file = self._get_latest_style_file()
+        if not style_file:
+            pytest.skip("Style output file not found")
+
+        style_df = pd.read_csv(style_file)
+        mp_df = style_df[style_df["style"] == "MP"]
+
+        if mp_df.empty:
+            pytest.skip("No MP rows found")
+
+        # MP 행에서 style_ls_weight = ls_weight 확인
+        np.testing.assert_allclose(
+            mp_df["style_ls_weight"].values,
+            mp_df["ls_weight"].values,
+            rtol=1e-10,
+            err_msg="MP rows should have style_ls_weight == ls_weight"
+        )
 
 
 class TestPipelineInputValidation:

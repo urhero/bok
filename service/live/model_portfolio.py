@@ -170,7 +170,7 @@ def calculate_factor_stats(
     # 날짜가 2개 이하면 분석 불가 (최소 3개월 필요)
     # 예: 2024-01, 2024-02 만 있으면 스킵
     if len(factor_data_df['ddt'].unique()) <= 2:
-        logger.warning("Skipping %s – insufficient history", factor_abbr)
+        logger.warning("Skipping %s - insufficient history", factor_abbr)
         return None, None, None, None
 
     # ───────────────────────────────────────────────────────────────────────────
@@ -1040,12 +1040,45 @@ def simulate_constrained_weights(
 
     factors = rtn_df.columns.to_numpy()
 
+    # ~2025-12 포트폴리오까지 적용 (이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!)
+    # weights_tbl = pd.DataFrame({
+    #     "factor": np.array(['SalesAcc', '6MTTMSalesMom', 'PM6M', '52WSlope', '90DCV',
+    #         'CashEV', 'RevMagFY1C', 'SalesToEPSChg', 'Rev3MFY1C', 'TobinQ']),
+    #     "raw_weight": np.array([0.199298652556654,0.00842206236153488,0.196025173956866,0.0326737859629076,0.174696911741135,
+    #         0.148243451062375,0.10775464398236,0.0577835874187986,0.0524125911883854,0.022689139768980]),
+    #     "styleName": np.array(['Historical Growth', 'Historical Growth', 'Price Momentum', 'Price Momentum', 'Volatility',
+    #         'Valuation', 'Analyst Expectations', 'Earnings Quality', 'Analyst Expectations', 'Capital Efficiency']),
+    #     "fitted_weight": np.array([0.199298652556654,0.00842206236153488,0.196025173956866,0.0326737859629076,0.174696911741135,
+    #         0.148243451062375,0.10775464398236,0.0577835874187986,0.0524125911883854,0.022689139768980]),
+    # })
+
+    # 2025-11-30 기준으로 계산한 팩터 비중(이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!)
     weights_tbl = pd.DataFrame({
-        "factor": factors,
-        "raw_weight": all_raw_weights[:, best_idx],
-        "styleName": styles,
-        "fitted_weight": all_fitted_weights[:, best_idx],
+        "factor": np.array([
+            'Rev3MFY2C', 'RevMagFY1C', 'TobinQ', 'FCFSales', 'SalesAcc',
+            '52WSlope', 'PM6M', 'FwdEPC', '90DCV'
+        ]),
+        "raw_weight": np.array([
+            0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
+            0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
+        ]),
+        "styleName": np.array([
+            'Analyst Expectations', 'Analyst Expectations', 'Capital Efficiency', 'Earnings Quality', 'Historical Growth',
+            'Price Momentum', 'Price Momentum', 'Valuation', 'Volatility'
+        ]),
+        "fitted_weight": np.array([
+            0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
+            0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
+        ]),
     })
+
+    # 이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!
+    # weights_tbl = pd.DataFrame({
+    #     "factor": factors,
+    #     "raw_weight": all_raw_weights[:, best_idx],
+    #     "styleName": styles,
+    #     "fitted_weight": all_fitted_weights[:, best_idx],
+    # })
 
     weights_tbl = (
         weights_tbl[weights_tbl["raw_weight"] > 0]
@@ -1249,13 +1282,18 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
         w = row['fitted_weight']
         s = row['styleName']
 
+        # 팩터가 필터링된 데이터에 없으면 스킵
+        if fac not in factor_idx_map:
+            logger.warning("Factor %s not in filtered data, skipping", fac)
+            continue
+
         j = factor_idx_map[fac]
         df = filtered_factor_data_list[j][['ddt', 'ticker', 'isin', 'gvkeyiid', 'label']].copy()
 
         # groupby transform 한 번만 호출하고 재사용
         count_per_group = df.groupby(['ddt', 'label'])['label'].transform('count')
 
-        df['weight'] = df['label'] * w / count_per_group
+        df['mp_ls_weight'] = df['label'] * w / count_per_group
         df['ls_weight'] = df['label'] / count_per_group
         df['factor_weight'] = w
         df['style'] = s
@@ -1265,7 +1303,7 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
         df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
 
         # end_date 필터링 후 필요한 컬럼만 선택
-        end_date_df = df.loc[df['ddt'] == end_date, ['ddt', 'ticker', 'isin', 'gvkeyiid', 'weight',
+        end_date_df = df.loc[df['ddt'] == end_date, ['ddt', 'ticker', 'isin', 'gvkeyiid', 'mp_ls_weight',
                                                       'ls_weight', 'factor_weight',
                                                       'factor', 'style', 'name', 'count']].reset_index(drop=True)
         weight_frames.append(end_date_df)
@@ -1275,10 +1313,13 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
     # ═══════════════════════════════════════════════════════════════════════════
     weight_raw = pd.concat(weight_frames, ignore_index=True)
     # weight_raw = weight_raw[weight_raw['factor'] != 'SalesAcc'].reset_index(drop=True)
-    weight_raw['factor_weight'] = weight_raw['factor_weight'] * np.sign(weight_raw['weight']) ** 2
+    
+    # mp_ls_weight=0인 종목(Neutral, 포트폴리오에 포함 안 됨)의 factor_weight를 강제로 0으로 만드는 안전장치
+    weight_raw['factor_weight'] = weight_raw['factor_weight'] * np.sign(weight_raw['mp_ls_weight']) ** 2
+
     agg_w = (
         weight_raw
-        .groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)["weight"]
+        .groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)["mp_ls_weight"]
         .sum()
     )
 
@@ -1298,20 +1339,43 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
     agg_w['name'] = 'MXCN1A_MP'
     agg_w = agg_w[agg_w['ddt'] == end_date].reset_index(drop=True)
     agg_w['count'] = (
-        agg_w.groupby(['ddt', agg_w['weight'] > 0])['weight']
+        agg_w.groupby(['ddt', agg_w['mp_ls_weight'] > 0])['mp_ls_weight']
         .transform('size')
     )
     agg_w['factor'] = 'AGG'
-    agg_w = agg_w[['ddt', 'ticker', 'isin', 'gvkeyiid', 'weight', 'factor_weight', 'factor', 'style', 'name', 'count']]
+    agg_w['ls_weight'] = agg_w['mp_ls_weight']  # MP 행은 mp_ls_weight와 ls_weight 동일
+    agg_w = agg_w[['ddt', 'ticker', 'isin', 'gvkeyiid', 'mp_ls_weight', 'ls_weight', 'factor_weight', 'factor', 'style', 'name', 'count']]
 
-    weight_raw = weight_raw.drop(columns=['weight'])
-    weight_raw = weight_raw.rename(columns={'ls_weight': 'weight'})
+    # style_ls_weight 계산: 스타일 내 고유 팩터들의 factor_weight 합계를 100%로 보고 가중평균
+    # 예) Analyst Expectations 스타일의 팩터들 factor_weight 합계 = 0.2259
+    #     CNE000000TK5의 Rev3MFY2C: ls_weight × (0.0216 / 0.2259) = -0.00113
+    # 고유 팩터별 factor_weight 합계 (ddt, style, factor 기준으로 first 값 사용)
+    # factor_weight > 0 인 것만 사용 (Neutral 종목의 factor_weight=0 제외)
+    non_zero_fw = weight_raw[weight_raw['factor_weight'] > 0]
+    unique_factor_fw = non_zero_fw.groupby(['ddt', 'style', 'factor'])['factor_weight'].first().reset_index()
+    style_fw_sum_df = unique_factor_fw.groupby(['ddt', 'style'])['factor_weight'].sum().reset_index()
+    style_fw_sum_df = style_fw_sum_df.rename(columns={'factor_weight': '_style_fw_sum'})
+    # weight_raw에 스타일별 factor_weight 합계 매핑 (merge 사용)
+    weight_raw = weight_raw.merge(style_fw_sum_df, on=['ddt', 'style'], how='left')
+    weight_raw['_style_fw_sum'] = weight_raw['_style_fw_sum'].fillna(0)
+    weight_raw['style_ls_weight'] = np.where(
+        weight_raw['_style_fw_sum'] != 0,
+        weight_raw['ls_weight'] * weight_raw['factor_weight'] / weight_raw['_style_fw_sum'],
+        0
+    )
+    weight_raw = weight_raw.drop(columns=['_style_fw_sum'])
+    # agg_w(MP)의 style_ls_weight = mp_ls_weight (MP는 스타일 개념 없으므로)
+    agg_w['style_ls_weight'] = agg_w['mp_ls_weight']
+
+    # weight_raw = weight_raw.drop(columns=['mp_ls_weight'])
     final_weights = pd.concat([weight_raw, agg_w],
                               axis=0,
                               ignore_index=True)
 
+    # style_ls_weight는 이미 weight_raw와 agg_w에서 계산됨
+    # 스타일별 합산 시 style_ls_weight를 sum하면 가중평균 결과가 됨
     final_style_weight = (
-        final_weights.groupby(['ddt', 'ticker', 'isin', 'gvkeyiid', 'style'])[['weight', 'factor_weight']]
+        final_weights.groupby(['ddt', 'ticker', 'isin', 'gvkeyiid', 'style'])[['ls_weight', 'style_ls_weight', 'factor_weight']]
         .sum()
     )
 
@@ -1319,7 +1383,6 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
     # [4️⃣-3] 결과물 산출 (여기서 직접 실행)
     # ═══════════════════════════════════════════════════════════════════════════
     suffix = f"_{Path(test_file).stem}" if test_file else ""
-    agg_w.to_csv(OUTPUT_DIR / f"aggregated_weights_{end_date}_test{suffix}.csv")
     final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test{suffix}.csv")
 
     final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_test{suffix}.csv")
@@ -1330,7 +1393,7 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
     pivoted_final = final_weights.pivot_table(
         index=['ddt', 'ticker', 'isin', 'gvkeyiid'],
         columns=['style', 'factor_weight', 'factor'],
-        values='weight',
+        values='ls_weight',
         aggfunc='sum'
     ).reset_index()
 
@@ -1343,7 +1406,7 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
     pivoted_final = final_weights.pivot_table(
         index=['ddt', 'ticker', 'isin', 'gvkeyiid'],
         columns=['style', 'factor_weight', 'factor'],
-        values='weight',
+        values='ls_weight',
         aggfunc='sum'
     ).reset_index()
 
@@ -1354,4 +1417,4 @@ def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, tes
     pivoted_final = pivoted_final.loc[:, new_order]
 
     pivoted_final.to_csv(OUTPUT_DIR / f"pivoted_total_agg_wgt_{end_date}{suffix}.csv")
-    logger.info("Pipeline completed ✓ — files saved in %s", OUTPUT_DIR)
+    logger.info("Pipeline completed - files saved in %s", OUTPUT_DIR)
