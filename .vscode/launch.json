@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Generate MP (2017-2025)",
+            "name": "Python: Generate MP (2017-2026)",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
@@ -10,12 +10,12 @@
             "args": [
                 "mp",
                 "2017-12-31",
-                "2025-12-31"
+                "2026-01-31"
             ],
             "justMyCode": true
         },
         {
-            "name": "Python: MP Report (2017-2025)",
+            "name": "Python: MP Report (2017-2026)",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
@@ -23,7 +23,7 @@
             "args": [
                 "mp",
                 "2017-12-31",
-                "2025-12-31",
+                "2026-01-31",
                 "--report"
             ],
             "justMyCode": true
@@ -37,7 +37,7 @@
             "args": [
                 "download",
                 "2017-12-31",
-                "2025-12-31"
+                "2026-01-31"
             ],
             "justMyCode": true
         }

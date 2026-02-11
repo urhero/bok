@@ -1040,6 +1040,19 @@ def simulate_constrained_weights(
 
     factors = rtn_df.columns.to_numpy()
 
+
+#  ~2026-01 포트폴리오까지 적용, Valuation 강제로 4% 로 내림 (이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!)
+    weights_tbl = pd.DataFrame({
+        "factor": np.array(['SalesAcc', '6MTTMSalesMom', 'PM6M', '52WSlope', '90DCV',
+            'CashEV', 'RevMagFY1C', 'SalesToEPSChg', 'Rev3MFY1C', 'TobinQ']),
+        "raw_weight": np.array([0.22462604683583082, 0.00949236008476596, 0.22093656600974726, 0.03682605618179807, 0.19689785242117552,
+            0.04, 0.12144838610526651, 0.06512687691246523, 0.059073320426603355, 0.025572535022347066]),
+        "styleName": np.array(['Historical Growth', 'Historical Growth', 'Price Momentum', 'Price Momentum', 'Volatility',
+            'Valuation', 'Analyst Expectations', 'Earnings Quality', 'Analyst Expectations', 'Capital Efficiency']),
+        "fitted_weight": np.array([0.22462604683583082, 0.00949236008476596, 0.22093656600974726, 0.03682605618179807, 0.19689785242117552,
+            0.04, 0.12144838610526651, 0.06512687691246523, 0.059073320426603355, 0.025572535022347066]),
+    })
+
     # ~2025-12 포트폴리오까지 적용 (이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!)
     # weights_tbl = pd.DataFrame({
     #     "factor": np.array(['SalesAcc', '6MTTMSalesMom', 'PM6M', '52WSlope', '90DCV',
@@ -1052,25 +1065,26 @@ def simulate_constrained_weights(
     #         0.148243451062375,0.10775464398236,0.0577835874187986,0.0524125911883854,0.022689139768980]),
     # })
 
-    # 2025-11-30 기준으로 계산한 팩터 비중(이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!)
-    weights_tbl = pd.DataFrame({
-        "factor": np.array([
-            'Rev3MFY2C', 'RevMagFY1C', 'TobinQ', 'FCFSales', 'SalesAcc',
-            '52WSlope', 'PM6M', 'FwdEPC', '90DCV'
-        ]),
-        "raw_weight": np.array([
-            0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
-            0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
-        ]),
-        "styleName": np.array([
-            'Analyst Expectations', 'Analyst Expectations', 'Capital Efficiency', 'Earnings Quality', 'Historical Growth',
-            'Price Momentum', 'Price Momentum', 'Valuation', 'Volatility'
-        ]),
-        "fitted_weight": np.array([
-            0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
-            0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
-        ]),
-    })
+
+    # # 2025-11-30 기준으로 계산한 팩터 비중(이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!)
+    # weights_tbl = pd.DataFrame({
+    #     "factor": np.array([
+    #         'Rev3MFY2C', 'RevMagFY1C', 'TobinQ', 'FCFSales', 'SalesAcc',
+    #         '52WSlope', 'PM6M', 'FwdEPC', '90DCV'
+    #     ]),
+    #     "raw_weight": np.array([
+    #         0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
+    #         0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
+    #     ]),
+    #     "styleName": np.array([
+    #         'Analyst Expectations', 'Analyst Expectations', 'Capital Efficiency', 'Earnings Quality', 'Historical Growth',
+    #         'Price Momentum', 'Price Momentum', 'Valuation', 'Volatility'
+    #     ]),
+    #     "fitted_weight": np.array([
+    #         0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
+    #         0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
+    #     ]),
+    # })
 
     # 이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!
     # weights_tbl = pd.DataFrame({
