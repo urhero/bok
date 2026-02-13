@@ -1,0 +1,765 @@
+[11:39:41] INFO     Query loaded from                   model_portfolio.py:1105
+                    C:\Users\IKM\bok\data\MXCN1A_2017-1                        
+                    2-31_2025-12-31.parquet in 4.14s                           
+           INFO     [Trace] Loaded parquet data. Shape: model_portfolio.py:1106
+                    (20042067, 10)                                             
+[11:39:44] INFO     [Trace] Merged with factor info.    model_portfolio.py:1114
+                    Shape: (18916586, 15)                                      
+           INFO     [Trace] Extracted M_RETURN. DDT     model_portfolio.py:1129
+                    distinct: 97, GVKeyIID distinct:                           
+                    1313                                                       
+[11:39:53] INFO     [Trace] Merged M_RETURN globally.   model_portfolio.py:1142
+                    Shape: (18914886, 18)                                      
+           INFO     [Trace] Grouped source data. Number model_portfolio.py:1146
+                    of groups: 286                                             
+[11:40:01] WARNING  Skipping ShortIntRatio -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping ShortIntTrdVol -            model_portfolio.py:173
+                    insufficient history                                       
+[11:40:04] WARNING  Skipping IndiDivP - insufficient     model_portfolio.py:173
+                    history                                                    
+[11:40:06] WARNING  Skipping FL - insufficient history   model_portfolio.py:173
+[11:40:07] WARNING  Skipping IndRel_ROIC - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_ROIC - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_ROE - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_ROE - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_ROA - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_ROA - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_CFROIC -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_DA - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_LTDE - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_CapAcqRatio -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_IntCovRatio -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_ShareChg -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_BuyBackChg -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_CashCycle -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_NetProfitMargin -    model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_NetProfitMargin -     model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_WCAccruals -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_TotalAccruals -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_ChgDeprCapex -       model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_InvToAsset -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_ChgSalesMargin -     model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_ChgSalesMargin -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_BP - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_BP - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_CashAst -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_CashAst -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_AssetTurn -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_InvTurn -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_PM12M1M -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_PM1M - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_FCFP - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_FCFP - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_FCFEV - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_FCFEV - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_OCFEV - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_OCFEV - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_OEP - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_OCFP - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_FCFEqt -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_FCFEqt - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_EBITDAEV -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_EBITDAEV -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_EP - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_EP - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_CFEV - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_CFEV - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_CFP - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_CFP - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_EBITDAP -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_EBITDAP -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_PTIP - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_PTIP - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_Chg1YEPS -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_Chg1YEPS -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_Chg1YFCF -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_Chg1YOCF -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_Chg1YOPM -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_PAdjChg1YCF -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_PAdjChg1YEPS -       model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_PAdjChg1YFCF -       model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_PM9M - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_ShortIntRatio -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_ShortIntTrdVol -     model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_SusGrwRate -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_PAdjChg1YSales -     model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_PAdjChg3YSales -     model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_CapExToAst -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_OPM - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_OPM - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_SGAToSales -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_WCapToSales -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_AstP - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_AstP - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_CashEV -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_CashP - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_GFP - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_GFP - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_IndiDivP -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_IndiDivP -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_NCAP - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_OEP - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_SEV - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_SEV - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_SP - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_SP - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_NCAP - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_OCFP - insufficient  model_portfolio.py:173
+                    history                                                    
+[11:40:08] WARNING  Skipping OCFStab - insufficient      model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping AdjAstAdjChg1YFCF -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping AdjAstAdjChg3YFCF -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping AdjChgEPS - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping AdjFCFP - insufficient      model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping AdjEBITDAEV - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping AdjGFP - insufficient       model_portfolio.py:173
+                    history                                                    
+[11:40:09] WARNING  Skipping ChgNonPerfLnGL -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping ProvChgOffSales -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping FCFStab - insufficient      model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping CashAdjEV - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping RelPrStr_12M - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping ChgNonPerAsttoAst -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping ChgChgOfftoGL -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping ChgNonPerAsttoResLnLos -    model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping OCFAst - insufficient       model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping OCFIC - insufficient        model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping ChgATO - insufficient       model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping FCFP_BK - insufficient      model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BVEV - insufficient history model_portfolio.py:173
+           WARNING  Skipping IndRelEBITP - insufficient  model_portfolio.py:173
+                    history                                                    
+[11:40:10] WARNING  Skipping EBITDAMargin - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping NonPerfAstResLnLs -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRelRtn4W - insufficient  model_portfolio.py:173
+                    history                                                    
+[11:40:11] WARNING  Skipping IndRel_CACL - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_QuickRatio -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_CashRatio -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_RecTurn -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_EBITMargin -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_GPMargin -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_WCA - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_OEA - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_PTMargin -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_TobinQ -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_WCTurn -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_DepToCapex -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_InvToAst -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_AccrualRatioBS -     model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_AccrualRatioCF -     model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_DebtChg1Y -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_PM6M - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_SGAToSalesChg1Y -    model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_InvToAstChg1Y -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_EPSToSalesChg1Y -    model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_AdjAccruals -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_MaxRetPayoff -       model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_50DVolSig -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_LTDA - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_SolvencyRatio -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_RONA - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_CACL - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_QuickRatio -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_CashRatio -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_RecTurn -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_EBITMargin -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_GPMargin -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_WCA - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_OEA - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_PTMargin -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_TobinQ - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_WCTurn - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_DepToCapex -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_InvToAst -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_AccrualRatioBS -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_AccrualRatioCF -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_AdjAccruals -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_LTDA - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping 5YRel_SolvencyRatio -       model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_RONA - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping Chg4QSalesTrend -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 12QTTMCFTrend -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 12QTrendTTMEPS -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping ConsQPosChginTTMCF -        model_portfolio.py:173
+                    insufficient history                                       
+[11:40:12] WARNING  Skipping ConsQPosChgTTMEPS -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping CQDOHtoSales - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping CQDRItoSales - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping CQPTTMCFtoSales -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping TTMEPStoTTMSales -          model_portfolio.py:173
+                    insufficient history                                       
+[11:40:13] WARNING  Skipping 5DRtn - insufficient        model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping EBITP - insufficient        model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_DivP - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_PM5D - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_LossAbsorpPower -       model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_LoanLossInd -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_LoanFund - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_YoYChg30DLTL -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_ProbLoans -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_TBVP - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_NonPerAstEA -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_TexasRatio -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_Tier1Cap - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_LnDiverse -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_OpIncAst - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_DepCost - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_CoreDepMix -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_ProvRate - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_PPPP - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_CostEff - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_DemandDepMix -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_TimeDepMix -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_PPPEA - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_PPPA - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_ROTCE - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping RET_CompSalesG -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_YoYGrwSqFt -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_ChgEPSChgSqFT -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_ChgSalesChgSqFT -       model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_NetProfitSqFt -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_NetSalesSqFt -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_TTMStoresOP -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_TTMStoresCLS -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_1YChgNumStores -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_ChgSSSGrw -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_ChgSalesPerSQFT -       model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_SSSGrwAcc -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_StoreCLSMOM -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RET_StoreOPMOM -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping stdRR36M - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping OG_ChgDCFMktCap -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping OG_DCFMktCap - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping OG_FCFMktCap - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping OG_ChgFCFMktCap -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping OG_ChgFCFTotAst -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping OG_ChgFCFPerShare -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping OG_ChgResvExhRate -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping OG_ResvExhRate -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping OG_ChgResvExpDevC -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping OG_ChgResvTotCost -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping OG_ChgResvMktCap -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping OG_PrvdResvMktCap -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping OG_ResvPerShrG -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping OG_ResvRep - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping OG_OilMgn - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping OG_GasMgn - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping GM_ReserveGrowth -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping GM_ReserveAcqYield -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping GM_PPRestoMktCap -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping GM_ProdtoMktCap -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping GM_ProductionGrowth -       model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping GM_MineLife - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping RES_RestaurantsCLSMOM -     model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RES_RestaurantsOPMOM -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RES_TTMRestaurantsOP_Acq -  model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RES_TTMRestaurantCLS_Sold - model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RES_1YChgNumRestaurants -   model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RES_1YChgSRSGrowth -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RES_SameRestSalesGrw -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping RES_RestaurantOperMargin -  model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HG_1YChgRevperRoom -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HG_1YChgNumRooms -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HG_1YChgNumProperties -     model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HG_ProfitperRoom -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HG_RoomMargin -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HG_RevperRoom -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HG_HotelCasinoRevtoOpExp -  model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping INS_UwMargin - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping INS_1YGrwUwProfit -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping INS_1YGrwNPE - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping INS_1YGrwTotInvestments -   model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping INS_RetentionRatio -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping INS_NPWtoStatSurp -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping INS_NPWtoNetAssets -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping INS_ClaimsRatio -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping INS_ExpenseRatio -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping INS_CombinedRatio -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HB_1YGTotHRevConstinProg -  model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HB_DelivHomeValGrtoMktCap - model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HB_1YrGrTotHomeRevtoInv -   model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HB_HomeGM - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping HB_1YGrHouseSalesRev -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HB_1YGrNetNewOrders -       model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HB_BacklogHomesValueGr -    model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping AIR_1YGrRPC - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping AIR_1YGrRPM - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping AIR_PassengerLF -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping AIR_TotProfittoASM -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping AIR_OpExptoASM -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping AIR_FuelConstoASM -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping AIR_AvgAgeofAircraft -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping TEL_1YrGrBroadbandSubs -    model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping TEL_1YrGrNetSubsAdds -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping TEL_WirelessPenetrateRate - model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping TEL_ChurnRate -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping TEL_1YrGrChurnRate -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping PB_PatentstoMktCap -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping PB_1YGrNumPatents -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping PB_1YGrNumPatentApps -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping PB_1YGrNumProdsinPh3 -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HF_1YChgAdmissions -        model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HF_PatientDaysGr -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HF_1YGrAvgLengthofStay -    model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HF_FacilitiesGr -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HF_TotRevperFacility -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HF_SurgeriesGr -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping HF_LicensedBedsGr -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping MH_MedicalLossRatio -       model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping MH_1YGrHealthcarePremiums - model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping MH_1YGrEnrollment -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping UT_1YGrFuelCostElecGas -    model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping UT_1YGrElecGasWaterSales -  model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping UT_1YGrAvgRevperKWh -       model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping UT_1YGrOpRevElecGasWater -  model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping TEL_1YrGrWirelessSubs -     model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping ROEStab - insufficient      model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping ROASTAB - insufficient      model_portfolio.py:173
+                    history                                                    
+[11:40:15] WARNING  Skipping AdjRev3MFY1C - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping PM-style - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping HG-style - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping CE-style - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping Val-style - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping EQ-style - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping Sz-style - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping Vol-style - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping AE-style - insufficient     model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping AdjFwdFCFPC - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping AdjInvPEGC - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_LTGC - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_SUEC - insufficient  model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping IndRel_EPSEstDispFY1C -     model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_EPSSurpC -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_InvPEGC -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_FwdEPC -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_FwdFCFPC -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping IndRel_InvPEGYC -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_FwdEPC - insufficient model_portfolio.py:173
+                    history                                                    
+[11:40:16] WARNING  Skipping 5YRel_FwdFCFPC -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping 5YRel_InvPEGYC -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping ROAStddev - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping ROEStddev - insufficient    model_portfolio.py:173
+                    history                                                    
+[11:40:17] WARNING  Skipping IO_ChgofIO_HF -             model_portfolio.py:173
+                    insufficient history                                       
+[11:40:18] WARNING  Skipping IO_NAT - insufficient       model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_LossAbsorpPowerS -      model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_LoanLossIndS -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_LoanFundS -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_YoYChg30DLTLS -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_ProbLoansS -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_TBVPS - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_NonPerAstEAS -          model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_TexasRatioS -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_Tier1CapS -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_LnDiverseS -            model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_OpIncAstS -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_DepCostS - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_CoreDepMixS -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_ProvRateS -             model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_PPPPS - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_CostEffS - insufficient model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_DemandDepMixS -         model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_TimeDepMixS -           model_portfolio.py:173
+                    insufficient history                                       
+           WARNING  Skipping BNK_PPPEAS - insufficient   model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_PPPAS - insufficient    model_portfolio.py:173
+                    history                                                    
+           WARNING  Skipping BNK_ROTCES - insufficient   model_portfolio.py:173
+                    history                                                    
+Assigning factors ---------------------------------------- 100% 0:00:25
+[11:40:19] INFO     Factors assigned in 37.52s          model_portfolio.py:1158
+           INFO     Report generation started for       model_portfolio.py:1161
+                    period: 2017-12-31 to 2025-12-31                           
+Filtering sectors ---------------------------------------- 100% 0:00:03
+[11:40:22] INFO     Sector filter retained 244 / 587     model_portfolio.py:509
+                    factors                                                    
+           INFO     Building monthly return matrix       model_portfolio.py:704
+[11:40:35] INFO     Return matrix built (50 factors)     model_portfolio.py:742
+           INFO     [Trace] Generated Factor Return      model_portfolio.py:743
+                    Matrix. Shape: (96, 50)                                    
+           INFO     [Trace] Generated Negative           model_portfolio.py:744
+                    Correlation Matrix. Shape: (50, 50)                        
+           INFO     Completed main=Rev3MFY2C ¡ê sub=PM6M  model_portfolio.py:816
+           INFO     Completed main=Rev3MFY2C ¡ê           model_portfolio.py:816
+                    sub=SalesAcc                                               
+           INFO     Completed main=Rev3MFY2C ¡ê sub=OEP   model_portfolio.py:816
+Mixing Rev3MFY2C with sub-factors -------------------------------- 100% 0:00:00
+           INFO     [Trace] Generated Mix Grid for       model_portfolio.py:821
+                    Rev3MFY2C. Size: 303                                       
+           INFO     Completed main=EbitToAst ¡ê sub=PM6M  model_portfolio.py:816
+           INFO     Completed main=EbitToAst ¡ê           model_portfolio.py:816
+                    sub=BuyToSellRecLess3MEMA                                  
+           INFO     Completed main=EbitToAst ¡ê           model_portfolio.py:816
+                    sub=Rev3MFY2C                                              
+Mixing EbitToAst with sub-factors -------------------------------- 100% 0:00:00
+           INFO     [Trace] Generated Mix Grid for       model_portfolio.py:821
+                    EbitToAst. Size: 303                                       
+           INFO     Completed main=FCFSales ¡ê sub=PM6M   model_portfolio.py:816
+           INFO     Completed main=FCFSales ¡ê            model_portfolio.py:816
+                    sub=52WSlope                                               
+           INFO     Completed main=FCFSales ¡ê sub=FwdEPC model_portfolio.py:816
+Mixing FCFSales with sub-factors --------------------------------- 100% 0:00:00
+           INFO     [Trace] Generated Mix Grid for       model_portfolio.py:821
+                    FCFSales. Size: 303                                        
+           INFO     Completed main=SalesAcc ¡ê sub=PM6M   model_portfolio.py:816
+           INFO     Completed main=SalesAcc ¡ê sub=OEP    model_portfolio.py:816
+           INFO     Completed main=SalesAcc ¡ê sub=FwdEPC model_portfolio.py:816
+Mixing SalesAcc with sub-factors --------------------------------- 100% 0:00:00
+           INFO     [Trace] Generated Mix Grid for       model_portfolio.py:821
+                    SalesAcc. Size: 303                                        
+           INFO     Completed main=PM6M ¡ê sub=52WSlope   model_portfolio.py:816
+           INFO     Completed main=PM6M ¡ê sub=SalesAcc   model_portfolio.py:816
+           INFO     Completed main=PM6M ¡ê sub=HL52W      model_portfolio.py:816
+Mixing PM6M with sub-factors ------------------------------------- 100% 0:00:00
+           INFO     [Trace] Generated Mix Grid for PM6M. model_portfolio.py:821
+                    Size: 303                                                  
+           INFO     Completed main=OEP ¡ê sub=PM6M        model_portfolio.py:816
+           INFO     Completed main=OEP ¡ê sub=52WSlope    model_portfolio.py:816
+           INFO     Completed main=OEP ¡ê sub=RevMagFY1C  model_portfolio.py:816
+Mixing OEP with sub-factors -------------------------------------- 100% 0:00:00
+           INFO     [Trace] Generated Mix Grid for OEP.  model_portfolio.py:821
+                    Size: 303                                                  
+           INFO     Completed main=90DCV ¡ê sub=PM6M      model_portfolio.py:816
+           INFO     Completed main=90DCV ¡ê sub=SalesAcc  model_portfolio.py:816
+           INFO     Completed main=90DCV ¡ê sub=OEP       model_portfolio.py:816
+Mixing 90DCV with sub-factors ------------------------------------ 100% 0:00:00
+           INFO     [Trace] Generated Mix Grid for       model_portfolio.py:821
+                    90DCV. Size: 303                                           
+[11:40:36] INFO     [Trace] Simulation completed. Best  model_portfolio.py:1056
+                    stats: [{'cagr':                                           
+                    0.10708761215209961, 'mdd':                                
+                    -0.02275317907333374, 'rank_cagr':                         
+                    1021.0, 'rank_mdd': 1546.0,                                
+                    'rank_total': 1231.0}]                                     
+[11:40:37] INFO     Pipeline completed - files saved in model_portfolio.py:1370
+                    C:\Users\IKM\bok\output                                    
