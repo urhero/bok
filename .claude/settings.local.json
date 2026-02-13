@@ -8,7 +8,8 @@
       "Bash(pipenv run pytest:*)",
       "Bash(pipenv run python:*)",
       "Bash(pipenv install:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(set:*)"
     ]
   }
 }
