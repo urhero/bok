@@ -8,9 +8,9 @@ This repository contains a Python-based pipeline for factor analysis, including 
 - `config.py`: Stores configuration parameters such as database connection details, benchmark information, and field/factor keys.
 - `insert_quantile_data.py`: Processes pickled factor data to extract and format quantile return data into a JSON format, suitable for database insertion.
 - `read_list_abbv.py`: A utility script to read and print the contents of `list_abbv.pkl`, which likely contains factor abbreviations.
-- `port/query_structure.py`: Provides a `GenerateQueryStructure` class to fetch raw factor data from an MS SQL Server database.
-- `service/download/write_pkl.py`: Contains functions for downloading raw factor data, assigning factors, and persisting processed data into pickle files. It includes utilities for ranking and quantile labeling.
-- `service/report/read_pkl.py`: Orchestrates the ETL (Extract, Transform, Load) process for generating various reports, including factor return matrices, negative correlation matrices, and optimized two-factor mixes. It also simulates factor exposures.
+- `db/factor_query.py`: Provides a `GenerateQueryStructure` class to fetch raw factor data from an MS SQL Server database.
+- `service/download/download_factors.py`: Contains functions for downloading raw factor data, assigning factors, and persisting processed data into pickle files. It includes utilities for ranking and quantile labeling.
+- `service/report/report_generator.py`: Orchestrates the ETL (Extract, Transform, Load) process for generating various reports, including factor return matrices, negative correlation matrices, and optimized two-factor mixes. It also simulates factor exposures.
 - `utils/util.py`: Contains helper functions used across the project, such as pickle dumping, numeric utilities for ranking and quantile labeling, and core factor assignment logic.
 - `docs/FLOW_VISUALIZATION.md`: Visual guide and mermaid diagram explaining the data flow and execution logic of the model portfolio generation.
 

@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from service.live.model_portfolio import simulate_constrained_weights
+from service.pipeline.optimization import simulate_constrained_weights
 
 
 class TestSimulateConstrainedWeightsBasic:
@@ -32,6 +32,7 @@ class TestSimulateConstrainedWeightsBasic:
         best_stats, weights_tbl = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,  # 테스트용으로 적은 시뮬레이션
             test_mode=True,
         )
@@ -48,6 +49,7 @@ class TestSimulateConstrainedWeightsBasic:
         best_stats, _ = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             test_mode=True,
         )
@@ -64,6 +66,7 @@ class TestSimulateConstrainedWeightsBasic:
         _, weights_tbl = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             test_mode=True,
         )
@@ -93,6 +96,7 @@ class TestSimulateConstrainedWeightsValidation:
             simulate_constrained_weights(
                 rtn_df=rtn_df,
                 style_list=style_list,
+                mode="simulation",
                 num_sims=100,
             )
 
@@ -116,6 +120,7 @@ class TestSimulateConstrainedWeightsStyleCap:
             _, weights_tbl = simulate_constrained_weights(
                 rtn_df=rtn_df,
                 style_list=style_list,
+                mode="simulation",
                 num_sims=10000,
                 style_cap=0.40,  # 더 완화된 제약
                 test_mode=False,
@@ -141,6 +146,7 @@ class TestSimulateConstrainedWeightsStyleCap:
         _, weights_tbl_test = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             style_cap=0.25,
             test_mode=True,
@@ -165,6 +171,7 @@ class TestSimulateConstrainedWeightsNumSims:
         best_stats_low, _ = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=100,
             test_mode=True,
         )
@@ -174,6 +181,7 @@ class TestSimulateConstrainedWeightsNumSims:
         best_stats_high, _ = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=10000,
             test_mode=True,
         )
@@ -198,6 +206,7 @@ class TestSimulateConstrainedWeightsBatchProcessing:
         best_stats_small, weights_small = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             batch_size=100,
             test_mode=True,
@@ -208,6 +217,7 @@ class TestSimulateConstrainedWeightsBatchProcessing:
         best_stats_large, weights_large = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             batch_size=1000,
             test_mode=True,
@@ -235,6 +245,7 @@ class TestSimulateConstrainedWeightsEdgeCases:
         best_stats, weights_tbl = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=100,
             test_mode=True,
         )
@@ -257,6 +268,7 @@ class TestSimulateConstrainedWeightsEdgeCases:
         best_stats, weights_tbl = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             test_mode=True,
         )
@@ -277,6 +289,7 @@ class TestSimulateConstrainedWeightsEdgeCases:
         best_stats, weights_tbl = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             test_mode=True,
         )
@@ -301,6 +314,7 @@ class TestSimulateConstrainedWeightsEdgeCases:
         best_stats, weights_tbl = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             test_mode=True,
         )
@@ -320,6 +334,7 @@ class TestSimulateConstrainedWeightsOutputValidation:
         _, weights_tbl = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             test_mode=True,
         )
@@ -341,6 +356,7 @@ class TestSimulateConstrainedWeightsOutputValidation:
         _, weights_tbl = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             test_mode=True,
         )
@@ -360,6 +376,7 @@ class TestSimulateConstrainedWeightsOutputValidation:
         best_stats, _ = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             test_mode=True,
         )
@@ -384,6 +401,7 @@ class TestSimulateConstrainedWeightsReproducibility:
         best_stats_1, weights_1 = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             test_mode=True,
         )
@@ -392,6 +410,7 @@ class TestSimulateConstrainedWeightsReproducibility:
         best_stats_2, weights_2 = simulate_constrained_weights(
             rtn_df=rtn_df,
             style_list=style_list,
+            mode="simulation",
             num_sims=1000,
             test_mode=True,
         )

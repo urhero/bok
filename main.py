@@ -10,8 +10,8 @@ import logging   # 실행 로그 기록 (에러, 진행상황 등)
 import sys       # 시스템 종료 코드 반환 (0=성공, 1=실패)
 
 from rich.logging import RichHandler  # Rich: 터미널에 색상/진행바 예쁘게 표시
-from service.download.write_pkl import run_download_pipeline  # DB에서 데이터 다운로드
-from service.live.model_portfolio import run_model_portfolio_pipeline  # MP 생성
+from service.download.download_factors import run_download_pipeline  # DB에서 데이터 다운로드
+from service.pipeline.model_portfolio import run_model_portfolio_pipeline  # MP 생성
 
 
 def main(argv: list[str] | None = None) -> int:
