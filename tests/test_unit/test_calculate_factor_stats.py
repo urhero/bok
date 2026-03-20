@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from service.live.model_portfolio import calculate_factor_stats
+from service.pipeline.factor_analysis import calculate_factor_stats
 
 
 class TestCalculateFactorStatsBasic:

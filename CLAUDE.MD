@@ -18,29 +18,33 @@
 ```
 awesome-cohen/
 ├── main.py                          # CLI entry point (download, mp commands)
-├── config.py                        # Database credentials & benchmark config
+├── config.py                        # 환경변수 기반 설정 (.env에서 로드)
+├── .env                             # DB 비밀번호 등 민감정보 (git 미추적)
 ├── factor_info.csv                 # 200+ factor metadata (name, style, sort order)
-├── meta_data.csv                   # Test output: factor performance metrics
 ├── test_data.csv                   # Test dataset for pipeline validation
 │
 ├── data/                           # Data storage (parquet files, intermediate outputs)
 │   ├── {benchmark}_{start}_{end}.parquet  # Raw factor data from SQL Server
 │   └── factor_info.csv             # Factor metadata copy
 │
-├── port/                           # Database & query layer
-│   └── query_structure.py          # MS SQL Server data fetching (MS SQL ODBC)
+├── db/                             # Database & query layer
+│   └── factor_query.py            # MS SQL Server data fetching (MS SQL ODBC)
 │
 ├── service/
 │   ├── download/
-│   │   └── write_pkl.py            # Raw data pipeline (download & save parquets)
-│   ├── live/
-│   │   └── model_portfolio.py      # Main MP generation (1356 lines, 12 core functions)
+│   │   └── download_factors.py    # Raw data pipeline (download & save parquets)
+│   ├── pipeline/
+│   │   ├── model_portfolio.py      # Pipeline orchestrator (ModelPortfolioPipeline 클래스)
+│   │   ├── factor_analysis.py      # 5분위 분석 + 섹터 필터링
+│   │   ├── correlation.py          # 하락 상관관계 계산
+│   │   ├── optimization.py         # 2-팩터 믹스 + 가중치 시뮬레이션 (듀얼 모드)
+│   │   ├── weight_construction.py  # 롱/숏 포트폴리오 수익률 계산
+│   │   └── pipeline_utils.py       # 시계열 유틸리티 (prepend_start_zero 등)
 │   └── report/
-│       └── read_pkl.py             # Report generation utilities
+│       └── report_generator.py     # Report generation utilities
 │
 ├── utils/
 │   ├── __init__.py                 # Utils package exports
-│   ├── util.py                     # Helper functions (rank, percentile, quantiles)
 │   └── validation.py               # Data validation functions (16 functions)
 │
 ├── tests/                          # pytest test suite
@@ -53,23 +57,11 @@ awesome-cohen/
 │   ├── VARIABLE_FLOW.md            # Variable transformation diagrams
 │   └── old_new_variable.md         # Refactoring changelog
 │
-├── application/                    # Clean Architecture: Use cases (placeholder)
-│   └── use_cases/
-│
-├── domain/                         # Clean Architecture: Business entities (placeholder)
-│   ├── entities/
-│   └── services/
-│
-├── infrastructure/                 # Clean Architecture: External adapters (placeholder)
-│   └── repositories/
-│
-└── output/
-    └── {YYYYMMDD}/                 # Date-stamped output folders
-        ├── aggregated_weights_*.csv
-        ├── total_aggregated_weights_*.csv
-        ├── total_aggregated_weights_style_*.csv
-        ├── pivoted_total_agg_wgt_*.csv
-        └── meta_data.csv
+└── output/                         # Pipeline output files
+    ├── total_aggregated_weights_*.csv
+    ├── total_aggregated_weights_style_*.csv
+    ├── pivoted_total_agg_wgt_*.csv
+    └── meta_data.csv
 ```
 
 ## Technology Stack
@@ -87,27 +79,33 @@ awesome-cohen/
 
 ### Entry Point & Configuration
 - **`main.py`**: CLI dispatcher - routes `download`, `mp`, `report` commands
-- **`config.py`**: Centralized config: DB credentials, benchmark name, ODBC driver
+- **`config.py`**: 환경변수 기반 설정 (`python-dotenv`로 `.env`에서 로드)
+- **`.env`**: DB 비밀번호 등 민감정보 (git 미추적, `.gitignore`에 포함)
 
-### Core Model Portfolio Pipeline
-- **`service/live/model_portfolio.py`** (1356 lines): Main logic for all factor processing, optimization, and MP generation
+### Core Model Portfolio Pipeline (모듈별 함수 위치)
 
-#### Key Functions in model_portfolio.py:
-1. `prepend_start_zero()` - Adds zero return at start of series for cumulative calculations (line 65)
-2. `calculate_factor_stats()` - Quantile analysis, sector returns, spread calculation (line 105)
-3. `filter_and_label_factors()` - Removes negative-spread sectors; labels Long/Short/Neutral (line 353)
-4. `calculate_downside_correlation()` - Correlation in down markets only (line 517)
-5. `construct_long_short_df()` - Segregates long/short positions (line 624)
-6. `calculate_vectorized_return()` - Portfolio returns with trading cost (30bp default) (line 639)
-7. `aggregate_factor_returns()` - Combines returns across all factors (line 677)
-8. `evaluate_factor_universe()` - Returns matrix, correlations, performance metrics (line 697)
-9. `find_optimal_mix()` - Grid search for best main+sub factor combinations (line 751)
-10. `construct_style_portfolios()` - Builds style-level portfolios from best factors (line 837)
-11. `simulate_constrained_weights()` - Monte Carlo: 1M simulations with style cap ≤25% (line 878)
-12. `run_model_portfolio_pipeline()` - Main orchestrator that glues all steps together (line 1060)
+| 모듈 | 함수 | 설명 |
+|------|------|------|
+| `model_portfolio.py` | `ModelPortfolioPipeline` 클래스 | 파이프라인 오케스트레이터 |
+| `model_portfolio.py` | `run_model_portfolio_pipeline()` | backward compatibility wrapper |
+| `factor_analysis.py` | `calculate_factor_stats()` | 5분위 분석, 섹터별 수익률, 스프레드 |
+| `factor_analysis.py` | `filter_and_label_factors()` | 음의 스프레드 섹터 제거, L/N/S 라벨 |
+| `correlation.py` | `calculate_downside_correlation()` | 하락 국면 상관관계 |
+| `correlation.py` | `construct_style_portfolios()` | 스타일별 포트폴리오 (미사용, 향후 활용) |
+| `optimization.py` | `find_optimal_mix()` | 2-팩터 믹스 그리드 서치 |
+| `optimization.py` | `simulate_constrained_weights()` | 스타일 제약 가중치 (듀얼 모드) |
+| `weight_construction.py` | `construct_long_short_df()` | 롱/숏 포지션 분리 |
+| `weight_construction.py` | `calculate_vectorized_return()` | 포트폴리오 수익률 (거래비용 30bp) |
+| `pipeline_utils.py` | `prepend_start_zero()` | 시계열 0 추가 |
+| `pipeline_utils.py` | `aggregate_factor_returns()` | 팩터별 수익률 집계 |
+
+### 듀얼 모드 (simulate_constrained_weights)
+- `mode="hardcoded"` (기본값): 사전 결정된 가중치 사용 (프로덕션)
+- `mode="simulation"`: 몬테카를로 시뮬레이션으로 최적 가중치 탐색
+- 테스트에서는 `mode="simulation"`으로 호출
 
 ### Data Layer
-- **`port/query_structure.py`**: Fetches factor data from MS SQL Server; parses factor abbreviations
+- **`db/factor_query.py`**: Fetches factor data from MS SQL Server; parses factor abbreviations
 
 ### Metadata
 - **`factor_info.csv`**: Master factor list with 200+ factors (abbr, name, style, sort order)
@@ -119,41 +117,40 @@ awesome-cohen/
 ```
 User Command: python main.py mp <start_date> <end_date>
     ↓
-main.py → run_model_portfolio_pipeline()
+main.py → run_model_portfolio_pipeline() → ModelPortfolioPipeline.run()
     ↓
-[1] Load Data
-    - Read parquet: {benchmark}_{start}_{end}.parquet
-    - Read factor_info.csv
-    - Merge on factor abbreviation
+[1] Load Data (_load_data)
+    - Read parquet or test CSV
+    - Read factor_info.csv, merge metadata
     ↓
-[2] Factor Assignment (calculate_factor_stats loop)
+[2] Factor Assignment (_analyze_factors → factor_analysis.calculate_factor_stats)
     For each factor:
     - Apply 1-month lag to factor values
     - Compute 5-quantile buckets (Q1~Q5) within sectors
     - Calculate Q1-Q5 spread (Long-Short returns)
     ↓
-[3] Filtering (filter_and_label_factors)
+[3] Filtering (factor_analysis.filter_and_label_factors)
     - Remove sectors where spread < 0 (economically inconsistent)
     - Recalculate quantiles and label L/S/N for each symbol
     ↓
-[4] Factor Universe Evaluation (evaluate_factor_universe)
-    - Aggregate into monthly return matrix (Date × Factor)
-    - Compute CAGR, Sharpe, downside correlation
+[4] Factor Universe Evaluation (_evaluate_universe)
+    - pipeline_utils.aggregate_factor_returns → monthly return matrix
+    - Compute CAGR, downside correlation
     - Rank factors; select top 50
     ↓
-[5] Style-Based Optimization (find_optimal_mix loop)
-    For each of 5 styles:
+[5] Style-Based Optimization (_optimize_mixes → optimization.find_optimal_mix)
+    For each style:
     - Pick top factor (main)
     - Grid search 2-factor mixes (main + sub @ 0-100%)
     - Evaluate each combo: CAGR, MDD
     ↓
-[6] Constrained Simulation (simulate_constrained_weights)
-    - Monte Carlo 1M random portfolio samples
-    - Constraint: Each style ≤ 25% total weight
-    - Maximize: CAGR / Sharpe or custom metric
+[6] Weight Determination (optimization.simulate_constrained_weights)
+    - mode="hardcoded": 사전 결정된 가중치 사용 (기본값)
+    - mode="simulation": Monte Carlo 1M 랜덤 포트폴리오
+    - Constraint: Each style <= 25% total weight
     ↓
-[7] Weight Construction & Output
-    - Assign sampled weights to ticker level (equal-weight within quantiles)
+[7] Weight Construction & Output (_construct_and_export)
+    - Assign weights to ticker level (equal-weight within quantiles)
     - Aggregate by factor, style, and MP
     - Export CSV files
 ```
@@ -231,12 +228,11 @@ pipenv run python -m pytest tests/ -v
 ```
 
 #### 테스트 커버리지
-- 현재 커버리지: **34%** (`model_portfolio.py` 기준)
-- 테스트된 핵심 함수:
-  - `prepend_start_zero()` - 13개 테스트
-  - `calculate_factor_stats()` - 18개 테스트
-  - `calculate_downside_correlation()` - 17개 테스트
-  - `simulate_constrained_weights()` - 17개 테스트
+- 테스트된 핵심 함수 (모듈별):
+  - `pipeline_utils.prepend_start_zero()` - 13개 테스트
+  - `factor_analysis.calculate_factor_stats()` - 18개 테스트
+  - `correlation.calculate_downside_correlation()` - 17개 테스트
+  - `optimization.simulate_constrained_weights()` - 17개 테스트
 
 #### 데이터 검증 유틸리티
 `utils/validation.py`에 데이터 품질 검사 함수들이 포함되어 있습니다:
@@ -318,18 +314,27 @@ pipenv run python -m pytest tests/ -v
 - Downside correlation matrix generation
 - 2-factor mix optimization
 - Style-constrained weight simulation
-- Clean Architecture scaffold (application/domain/infrastructure directories)
-- Data directory reorganization (`data/` for parquet and intermediate files)
 - **pytest 테스트 스위트 추가 (Jan 2025)**: 65개 유닛 테스트, 데이터 검증 유틸리티
+- **모듈 분리 리팩토링 (Mar 2026)**: model_portfolio.py를 6개 모듈로 분리
+  - `model_portfolio.py` → Pipeline 오케스트레이터 (~400줄)
+  - `factor_analysis.py` → 5분위 분석 + 섹터 필터링
+  - `correlation.py` → 하락 상관관계
+  - `optimization.py` → 2-팩터 믹스 + 가중치 시뮬레이션 (듀얼 모드)
+  - `weight_construction.py` → 롱/숏 포트폴리오 수익률
+  - `pipeline_utils.py` → 시계열 유틸리티
+- **환경변수 전환**: config.py → python-dotenv 기반 (.env 파일)
+- **보안 정리**: DB 비밀번호 하드코딩 제거, node_modules git 추적 해제
+- **삭제**: utils/util.py (빈 파일)
 
 ## Architecture Highlights
 
-1. **Modular Design:** Clear separation between download, processing (live), and reporting
+1. **Modular Design:** 기능별 6개 모듈 분리 + Pipeline 클래스 오케스트레이션 (하이브리드)
 2. **Performance:** Vectorized operations; numba acceleration available
-3. **Documentation:** Extensive docstrings, README, process maps, variable flow diagrams
-4. **Flexibility:** Test mode, style constraints, 2-factor mix optimization all configurable
+3. **Documentation:** 한글 docstring (예시 I/O 포함), README, process maps
+4. **Flexibility:** 듀얼 모드 (hardcoded/simulation), test mode, style constraints 등 설정 가능
 5. **Audit Trail:** Preserves factor attribution through to final portfolio weights
 6. **Production-Ready:** Outputs integrate directly with Bloomberg Optimizer for execution
+7. **Security:** 환경변수 기반 설정 (.env), 민감정보 git 미추적
 
 ## Setup & Dependencies
 
@@ -345,7 +350,20 @@ polars, dask                           # Alternative data processing
 rich, tabulate                         # Terminal formatting
 qpsolvers[osqp], osqp                  # Optimization
 pyarrow, reportlab, plotly             # Data I/O & visualization
+python-dotenv                          # 환경변수 관리
 pytest, pytest-cov, pytest-xdist       # Testing (dev dependencies)
+```
+
+### 환경 설정 (.env)
+```bash
+# .env 파일 예시
+BENCHMARK=MXCN1A
+UNIVERSE=clarifi_mxcn1a_afl
+SERVER_NAME=10.206.1.19,9433
+DB_NAME=GLOBAL
+USER_NAME=sa
+USER_PWD=<비밀번호>
+ODBC_NAME=ODBC Driver 17 for SQL Server
 ```
 
 ### Installation
@@ -373,14 +391,15 @@ python main.py mp test test_data.csv
 ## Notes for Claude Code
 
 - **Primary Language:** Code is in English, but domain-specific documentation and comments are in Korean
-- **Main Entry Point:** `service/live/model_portfolio.py:run_model_portfolio_pipeline()` (line 1060)
-- **Critical Functions:** Focus on the 12 key functions listed in the Key Files section
+- **Main Entry Point:** `service/pipeline/model_portfolio.py:run_model_portfolio_pipeline()`
+- **Pipeline 클래스:** `ModelPortfolioPipeline` - 중간 결과물을 인스턴스 변수로 보관 (`.meta`, `.weights`, `.return_matrix` 등)
+- **모듈 구조:** 함수는 기능별 모듈에 위치. Key Files 섹션의 테이블 참조
+- **듀얼 모드:** `simulate_constrained_weights(mode="hardcoded"|"simulation")` - 프로덕션은 hardcoded, 테스트는 simulation
 - **Data Flow:** Follow `docs/FLOW_VISUALIZATION.md` and `docs/VARIABLE_FLOW.md` for understanding transformations
 - **Testing:** Always use test mode when validating changes with small datasets
-- **Output Validation:** Check `output/{date}/` folder for generated CSV files after pipeline runs
+- **Output Validation:** Check `output/` folder for generated CSV files after pipeline runs
 - **Performance:** Operations are vectorized; avoid introducing loops where possible
 - **Style Constraints:** The 25% style cap is a hard requirement in production
-- **Clean Architecture:** Placeholder directories exist for future refactoring (application/domain/infrastructure)
 - **CRITICAL - 코드 변경 검증:** 코드 수정 시 반드시 다음을 수행할 것:
   1. `test_data.csv`로 파이프라인 실행하여 결과 비교 (변경 전후)
   2. `pipenv run python -m pytest tests/test_unit/ -v`로 기존 테스트 통과 확인

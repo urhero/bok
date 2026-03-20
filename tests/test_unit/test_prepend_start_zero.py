@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from service.live.model_portfolio import prepend_start_zero
+from service.pipeline.pipeline_utils import prepend_start_zero
 
 
 class TestPrependStartZero:

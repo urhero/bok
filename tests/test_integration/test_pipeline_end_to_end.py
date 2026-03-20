@@ -51,7 +51,7 @@ class TestPipelineEndToEnd:
     )
     def test_pipeline_runs_without_error(self) -> None:
         """파이프라인이 에러 없이 실행되는지 확인"""
-        from service.live.model_portfolio import run_model_portfolio_pipeline
+        from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
         # test_data.csv로 파이프라인 실행
         try:
@@ -70,7 +70,7 @@ class TestPipelineEndToEnd:
     )
     def test_output_files_created(self) -> None:
         """출력 파일이 생성되는지 확인"""
-        from service.live.model_portfolio import run_model_portfolio_pipeline
+        from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
         run_model_portfolio_pipeline(
             start_date=None,
@@ -88,7 +88,7 @@ class TestPipelineEndToEnd:
     )
     def test_meta_data_has_required_columns(self) -> None:
         """meta_data.csv가 필수 컬럼을 가지는지 확인"""
-        from service.live.model_portfolio import run_model_portfolio_pipeline
+        from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
         run_model_portfolio_pipeline(
             start_date=None,
@@ -117,7 +117,7 @@ class TestPipelineDataValidation:
     )
     def test_no_nan_in_critical_columns(self) -> None:
         """중요 컬럼에 NaN이 없는지 확인"""
-        from service.live.model_portfolio import run_model_portfolio_pipeline
+        from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
         run_model_portfolio_pipeline(
             start_date=None,
@@ -142,7 +142,7 @@ class TestPipelineDataValidation:
     )
     def test_weights_are_valid(self) -> None:
         """가중치가 유효한 범위인지 확인"""
-        from service.live.model_portfolio import run_model_portfolio_pipeline
+        from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
         run_model_portfolio_pipeline(
             start_date=None,
@@ -174,7 +174,7 @@ class TestPipelineOutputConsistency:
     )
     def test_output_structure_consistent(self) -> None:
         """출력 구조가 일관되는지 확인"""
-        from service.live.model_portfolio import run_model_portfolio_pipeline
+        from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
         run_model_portfolio_pipeline(
             start_date=None,
@@ -206,7 +206,7 @@ class TestPipelinePerformance:
     def test_pipeline_completes_within_timeout(self) -> None:
         """파이프라인이 합리적인 시간 내에 완료되는지 확인"""
         import time
-        from service.live.model_portfolio import run_model_portfolio_pipeline
+        from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
         start_time = time.time()
 
@@ -227,7 +227,7 @@ class TestPipelineErrorHandling:
 
     def test_invalid_file_path_raises_error(self) -> None:
         """존재하지 않는 파일 경로는 에러 발생"""
-        from service.live.model_portfolio import run_model_portfolio_pipeline
+        from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
         with pytest.raises((FileNotFoundError, Exception)):
             run_model_portfolio_pipeline(
@@ -249,7 +249,7 @@ class TestPipelineErrorHandling:
         empty_df.to_csv(empty_csv, index=False)
 
         try:
-            from service.live.model_portfolio import run_model_portfolio_pipeline
+            from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
             # 빈 데이터는 적절한 에러나 빈 출력을 생성해야 함
             # 구체적인 동작은 구현에 따라 다름
@@ -283,7 +283,7 @@ class TestStyleLsWeightCalculation:
     )
     def test_style_ls_weight_column_exists(self) -> None:
         """style_ls_weight 컬럼이 출력에 존재하는지 확인"""
-        from service.live.model_portfolio import run_model_portfolio_pipeline
+        from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
         run_model_portfolio_pipeline(
             start_date=None,
@@ -312,7 +312,7 @@ class TestStyleLsWeightCalculation:
         2. style_ls_weight와 ls_weight의 부호가 같음
         3. factor_weight=0이면 style_ls_weight=0
         """
-        from service.live.model_portfolio import run_model_portfolio_pipeline
+        from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
         run_model_portfolio_pipeline(
             start_date=None,
@@ -355,7 +355,7 @@ class TestStyleLsWeightCalculation:
     )
     def test_style_ls_weight_no_nan(self) -> None:
         """style_ls_weight에 NaN이 없는지 확인"""
-        from service.live.model_portfolio import run_model_portfolio_pipeline
+        from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
         run_model_portfolio_pipeline(
             start_date=None,
@@ -376,7 +376,7 @@ class TestStyleLsWeightCalculation:
     )
     def test_mp_style_ls_weight_equals_mp_ls_weight(self) -> None:
         """MP 행의 style_ls_weight가 mp_ls_weight와 동일한지 확인"""
-        from service.live.model_portfolio import run_model_portfolio_pipeline
+        from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
         run_model_portfolio_pipeline(
             start_date=None,

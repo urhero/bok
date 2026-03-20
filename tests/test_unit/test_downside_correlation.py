@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from service.live.model_portfolio import calculate_downside_correlation
+from service.pipeline.correlation import calculate_downside_correlation
 
 
 class TestDownsideCorrelationBasic:

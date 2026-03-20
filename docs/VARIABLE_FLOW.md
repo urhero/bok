@@ -1,6 +1,6 @@
 # Variable-Based Code Flow Visualization
 
-This document visualizes the `model_portfolio.py` pipeline, strictly focusing on how **variables** are transformed through function calls.
+This document visualizes the Model Portfolio pipeline (`service/pipeline/`), strictly focusing on how **variables** are transformed through function calls across modules.
 
 ## Variable Flow Graph
 
@@ -35,7 +35,7 @@ graph TD
     Var_Merged --> Func_Merge --> Var_Grouped
 
     %% --- Factor Assignment ---
-    Func_Assign{{"calculate_factor_stats<br/>(팩터 통계/분위 계산)"}}:::func
+    Func_Assign{{"factor_analysis.calculate_factor_stats<br/>(팩터 통계/분위 계산)"}}:::func
     Var_DataList("processed_factor_data_list<br/>(List[Tuple])"):::data
 
     Var_Grouped & Var_MRet --> Func_Assign
@@ -44,7 +44,7 @@ graph TD
     Var_DataList -.-> note_DL
 
     %% --- Filter ---
-    Func_Filter{{"filter_and_label_factors<br/>(필터링 및 라벨링)"}}:::func
+    Func_Filter{{"factor_analysis.filter_and_label_factors<br/>(필터링 및 라벨링)"}}:::func
     Var_CleanedRaw("filtered_factor_data_list<br/>(List[pd.DataFrame])"):::data
     Var_KeptLists("kept_factor_abbrs...<br/>(List[str])"):::data
 
@@ -53,7 +53,7 @@ graph TD
     Func_Filter --> Var_KeptLists
 
     %% --- Meta Generation ---
-    Func_GenMeta{{"evaluate_factor_universe<br/>(메타/성과지표 생성)"}}:::func
+    Func_GenMeta{{"Pipeline._evaluate_universe<br/>(메타/성과지표 생성)"}}:::func
     Var_FacRet("monthly_return_matrix<br/>(pd.DataFrame)"):::data
     Var_DownCorr("downside_correlation_matrix<br/>(pd.DataFrame)"):::data
     Var_PerfMet("factor_performance_metrics<br/>(pd.DataFrame)"):::data
@@ -66,7 +66,7 @@ graph TD
     %% --- Optimization (Grid Search) ---
     %% --- Optimization (Grid Search) ---
     %% --- Optimization (Grid Search) ---
-    Func_GetWgt{{"find_optimal_mix loops<br/>(최적 조합 탐색)"}}:::func
+    Func_GetWgt{{"optimization.find_optimal_mix loops<br/>(최적 조합 탐색)"}}:::func
     Var_TopMetrics("top_metrics<br/>(pd.DataFrame)"):::data
     Var_MixGrid("mix_grid<br/>(pd.DataFrame)"):::data
     
@@ -86,16 +86,16 @@ graph TD
     %% --- Simulation ---
     %% --- Simulation ---
     %% --- Simulation ---
-    Func_Sim{{"simulate_constrained_weights<br/>(제약 기반 시뮬레이션)"}}:::func
+    Func_Sim{{"optimization.simulate_constrained_weights<br/>(듀얼 모드: hardcoded/simulation)"}}:::func
     Var_Res("sim_result<br/>(Tuple)"):::data
-    note_Res["Tuple:<br/>(best_stats, weights_tbl)"]
+    note_Res["Tuple:<br/>(best_stats, weights_tbl)<br/>mode=hardcoded: 프로덕션<br/>mode=simulation: 몬테카를로"]
     
     Var_RetSubset --> Func_Sim
     Func_Sim --> Var_Res
     Var_Res -.-> note_Res
 
     %% --- Weight Construction ---
-    Func_Construct{{"Weight Construction Loop<br/>(비중 계산 반복)"}}:::func
+    Func_Construct{{"Pipeline._construct_and_export<br/>(비중 계산 및 출력)"}}:::func
     Var_WeightFrames("weight_frames<br/>(List[pd.DataFrame])"):::data
     Var_WeightRaw("weight_raw<br/>(pd.DataFrame)"):::data
     
@@ -129,17 +129,18 @@ graph TD
 
 ## Variable Descriptions
 
-| Variable | Description | Type | Source |
+| Variable | Description | Type | Source Module |
 | :--- | :--- | :--- | :--- |
-| `raw_factor_data_df` | Raw factor data loaded from Parquet. | `pd.DataFrame` | `*.parquet` |
-| `factor_metadata_df` | Joined data of raw factors + info info. | `pd.DataFrame` | `raw_factor_data_df` + `factor_metadata_df` |
-| `processed_factor_data_list` | List of results from `calculate_factor_stats` for each factor. Contains sector returns, quantile returns, spreads, and merging basic data. | `List[Tuple]` | `calculate_factor_stats` |
-| `filtered_factor_data_list` | Filtered list of factor DataFrames (removing those with negative Q-spreads). | `List[pd.DataFrame]` | `filter_and_label_factors` |
-| `monthly_return_matrix` | Matrix of individual factor returns (Index: Date, Col: Factor). | `pd.DataFrame` | `evaluate_factor_universe` |
-| `factor_performance_metrics` | Metrics (CAGR, Rank) for each factor. | `pd.DataFrame` | `evaluate_factor_universe` |
-| `mix_grid` | Results of the grid search optimization for Main/Sub factor pairs. | `pd.DataFrame` | `find_optimal_mix` loop |
-| `best_sub` | The top selected Main+Sub factor combinations. | `pd.DataFrame` | Selection logic from `mix_grid` |
-| `ret_subset` | Subset of returns for only the selected Main/Sub factors. | `pd.DataFrame` | `monthly_return_matrix` |
-| `sim_result` | Result of the Monte Carlo simulation. Contains `best_stats` and `weights_tbl`. | `Tuple` | `simulate_constrained_weights` |
-| `weight_frames` | List of DataFrames, each containing calculated weights for tickers for a specific factor/style. | `List[pd.DataFrame]` | Loop over `sim_result[1]` |
-| `final_weights` | Combined DataFrame of all individual factor weights + aggregated total weights (`MP` style). | `pd.DataFrame` | `weight_raw` + `agg_w` |
+| `raw_factor_data_df` | Raw factor data loaded from Parquet. | `pd.DataFrame` | `model_portfolio` (`_load_data`) |
+| `factor_metadata_df` | Joined data of raw factors + factor info. | `pd.DataFrame` | `model_portfolio` (`_prepare_metadata`) |
+| `processed_factor_data_list` | List of results from `calculate_factor_stats` for each factor. Contains sector returns, quantile returns, spreads, and merged data. | `List[Tuple]` | `factor_analysis` |
+| `filtered_factor_data_list` | Filtered list of factor DataFrames (removing those with negative Q-spreads). | `List[pd.DataFrame]` | `factor_analysis` |
+| `monthly_return_matrix` | Matrix of individual factor returns (Index: Date, Col: Factor). | `pd.DataFrame` | `pipeline_utils` → `model_portfolio` (`_evaluate_universe`) |
+| `downside_correlation_matrix` | Downside correlation matrix between factors. | `pd.DataFrame` | `correlation` |
+| `factor_performance_metrics` | Metrics (CAGR, Rank) for each factor. | `pd.DataFrame` | `model_portfolio` (`_evaluate_universe`) |
+| `mix_grid` | Results of the grid search optimization for Main/Sub factor pairs. | `pd.DataFrame` | `optimization` (`find_optimal_mix`) |
+| `best_sub` | The top selected Main+Sub factor combinations. | `pd.DataFrame` | `model_portfolio` (`_optimize_mixes`) |
+| `ret_subset` | Subset of returns for only the selected Main/Sub factors. | `pd.DataFrame` | `model_portfolio` (`_optimize_mixes`) |
+| `sim_result` | Result of weight determination (dual mode: hardcoded or Monte Carlo). Contains `best_stats` and `weights_tbl`. | `Tuple` | `optimization` (`simulate_constrained_weights`) |
+| `weight_frames` | List of DataFrames, each containing calculated weights for tickers for a specific factor/style. | `List[pd.DataFrame]` | `model_portfolio` (`_construct_and_export`) |
+| `final_weights` | Combined DataFrame of all individual factor weights + aggregated total weights (`MP` style). | `pd.DataFrame` | `model_portfolio` (`_construct_and_export`) |

@@ -26,13 +26,13 @@
 ### (2-1) 백테스트 기간 설정
 - 분석 시작 시점: **2018년**
 - 코드 구현
-  - `construct_long_short_df()` 내 `ddt >= 2017-12-31`
+  - `weight_construction.construct_long_short_df()` 내 `ddt >= 2017-12-31`
   - → 2018년부터 실질적인 성과 반영
 
 ---
 
 ### (2-2) 팩터별 5분위(Quintile) 포트폴리오 구성
-- **핵심 함수:** `calculate_factor_stats()`
+- **핵심 함수:** `factor_analysis.calculate_factor_stats()`
 - 절차
   - 종목별 팩터 값에 **1개월 래그 적용** (전월 값으로 당월 투자)
   - 동일 날짜·동일 섹터 내에서 팩터 값 순위 산정
@@ -44,7 +44,7 @@
 ---
 
 ### (2-3) 비투자 섹터 결정
-- **핵심 함수:** `filter_and_label_factors()`
+- **핵심 함수:** `factor_analysis.filter_and_label_factors()`
 - 절차
   - 섹터별 팩터 스프레드 계산  
     - `Spread = Q1 – Q5`
@@ -56,7 +56,7 @@
 ---
 
 ### (2-4) 투자 대상 분위(롱/숏) 결정
-- `filter_and_label_factors()`에서 재계산
+- `factor_analysis.filter_and_label_factors()`에서 재계산
 - 절차
   - 섹터 제거 후 분위별 평균 수익률 재산출
   - Q1–Q5 평균 스프레드를 기준으로 임계값 설정
@@ -72,20 +72,20 @@
 
 ### (2-5) 팩터 스프레드 수익률 측정
 - **핵심 함수 흐름**
-  - `construct_long_short_df()`  
-    - 롱/숏 종목군 구성  
+  - `weight_construction.construct_long_short_df()`
+    - 롱/숏 종목군 구성
     - 분위 내 **동일가중 포트폴리오**
-  - `calculate_vectorized_return()`  
-    - 리밸런싱 반영  
-    - 턴오버 계산  
+  - `weight_construction.calculate_vectorized_return()`
+    - 리밸런싱 반영
+    - 턴오버 계산
     - 거래비용(30bp) 차감
-  - `aggregate_factor_returns()`  
+  - `pipeline_utils.aggregate_factor_returns()`
     - 팩터별 **월간 롱–숏 스프레드 수익률** 생성
 
 ---
 
 ### (2-6) 팩터 후보군 최종 선정
-- **핵심 함수:** `evaluate_factor_universe()`
+- **핵심 함수:** `ModelPortfolioPipeline._evaluate_universe()`
 - 절차
   - 팩터별 월간 스프레드 수익률 행렬 구성
   - 연환산 수익률(CAGR) 계산
@@ -106,7 +106,7 @@
 ---
 
 ### (3-2) 보완 팩터 선정 및 2-팩터 믹스
-- **핵심 함수:** `find_optimal_mix()`
+- **핵심 함수:** `optimization.find_optimal_mix()`
 - 절차
   - 메인 팩터 대비
     - 성과(CAGR)
@@ -122,8 +122,11 @@
 ---
 
 ### (3-3) 스타일 제약 하 최적 비중 결정
-- **핵심 함수:** `simulate_constrained_weights()`
-- 절차
+- **핵심 함수:** `optimization.simulate_constrained_weights()`
+- **듀얼 모드 지원:**
+  - `mode="hardcoded"` (기본값): 사전 결정된 프로덕션 가중치 사용
+  - `mode="simulation"`: 몬테카를로 시뮬레이션으로 탐색
+- 절차 (simulation 모드)
   - 몬테카를로 방식으로 다수의 랜덤 포트폴리오 생성
   - 스타일별 비중 합계가 **최대 25%**를 넘지 않도록 제약
   - 각 포트폴리오의
@@ -192,6 +195,33 @@
 
 ---
 
+## 📁 모듈 구조 (`service/pipeline/`)
+
+```
+service/pipeline/
+├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
+├── factor_analysis.py      # calculate_factor_stats, filter_and_label_factors
+├── correlation.py          # calculate_downside_correlation, construct_style_portfolios
+├── optimization.py         # find_optimal_mix, simulate_constrained_weights (듀얼 모드)
+├── weight_construction.py  # construct_long_short_df, calculate_vectorized_return
+└── pipeline_utils.py       # prepend_start_zero, aggregate_factor_returns
+```
+
+### Pipeline 사용법
+```python
+from service.pipeline.model_portfolio import ModelPortfolioPipeline
+
+pipeline = ModelPortfolioPipeline(config=PARAM, factor_info_path="data/factor_info.csv")
+pipeline.run(start_date="2023-01-01", end_date="2023-12-31")
+
+# 중간 결과 접근
+pipeline.meta           # 팩터 성과/랭크 테이블
+pipeline.weights        # 최적 가중치
+pipeline.return_matrix  # 월간 수익률 행렬
+```
+
+---
+
 ## 📎 Appendix: 함수별 Input / Output 정리 (I/O Reference)
 
 > 아래는 본 코드에서 정의된 주요 함수들을 기준으로, **입력(필수 컬럼/형식)**과 **출력(산출물)**을 정리한 섹션입니다.  
@@ -199,27 +229,7 @@
 
 ---
 
-### `compute_percentile(series: pd.Series) -> pd.Series`
-- **Input**
-  - `series`: `pd.Series`  
-    - 보통 `rank()` 결과(1~n)
-- **Output**
-  - `pd.Series`: 0~100 스케일 백분위 점수
-  - 단, `n <= 10`이면 전부 `NaN`
-
----
-
-### `get_quantile_label(score: float|int, n: int = 5) -> str|float`
-- **Input**
-  - `score`: 0~100 범위의 백분위 점수
-  - `n`: 분위 개수 (기본 5)
-- **Output**
-  - `"Q1" ~ "Qn"` 라벨 문자열
-  - 범위 밖/NaN이면 `np.nan`
-
----
-
-### `prepend_start_zero(series: pd.DataFrame) -> pd.DataFrame`
+### `pipeline_utils.prepend_start_zero(series: pd.DataFrame) -> pd.DataFrame`
 - **Input**
   - `series`: `pd.DataFrame`
     - **DatetimeIndex**를 가진 시계열 데이터프레임(예: spread)
@@ -229,7 +239,7 @@
 
 ---
 
-### `calculate_factor_stats(factor_abbr: str, sort_order: int, factor_data_df: pd.DataFrame, market_return_df: pd.DataFrame)`
+### `factor_analysis.calculate_factor_stats(factor_abbr: str, sort_order: int, factor_data_df: pd.DataFrame)`
 `-> Tuple[sector_ret, quantile_ret, spread, merged] | (None, None, None, None)`
 - **Input**
   - `abbv`: 팩터 약어(컬럼명으로 사용)
@@ -253,7 +263,7 @@
 
 ---
 
-### `filter_and_label_factors(factor_abbr_list, factor_name_list, style_name_list, factor_data_list)`
+### `factor_analysis.filter_and_label_factors(factor_abbr_list, factor_name_list, style_name_list, factor_data_list)`
 `-> (kept_abbr, kept_name, kept_style, kept_idx, dropped_sec, new_raw)`
 - **Input**
   - `list_abbrs`: 팩터 약어 리스트
@@ -274,7 +284,7 @@
 
 ---
 
-### `calculate_downside_correlation(df: pd.DataFrame, min_obs: int = 20) -> pd.DataFrame`
+### `correlation.calculate_downside_correlation(df: pd.DataFrame, min_obs: int = 20) -> pd.DataFrame`
 - **Input**
   - `df`: 월간 수익률 행렬(행=날짜, 열=팩터/스타일)
   - `min_obs`: 최소 표본 수(기본 20)
@@ -284,7 +294,7 @@
 
 ---
 
-### `construct_long_short_df(labeled_data_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]`
+### `weight_construction.construct_long_short_df(labeled_data_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]`
 - **Input**
   - `labeled_data_df`: 종목 단위 데이터(라벨 포함)
     - **필수 컬럼(예상)**: `["ddt","gvkeyiid","label","M_RETURN", ...]`
@@ -300,7 +310,7 @@
 
 ---
 
-### `calculate_vectorized_return(portfolio_data_df: pd.DataFrame, factor_abbr: str, cost_bps: float = 30.0)`
+### `weight_construction.calculate_vectorized_return(portfolio_data_df: pd.DataFrame, factor_abbr: str, cost_bps: float = 30.0)`
 `-> Tuple[gross_return_df, net_return_df, trading_cost_df]`
 - **Input**
   - `portfolio_data_df`: 롱 또는 숏 포지션 raw (=`construct_long_short_df` 결과 중 하나)
@@ -319,7 +329,7 @@
 
 ---
 
-### `aggregate_factor_returns(factor_data_list: List[pd.DataFrame], factor_abbr_list: List[str])`
+### `pipeline_utils.aggregate_factor_returns(factor_data_list: List[pd.DataFrame], factor_abbr_list: List[str])`
 `-> Tuple[gross_return_df, net_return_df, trading_cost_df]`
 - **Input**
   - `factor_data_list`: 팩터별 종목 raw 데이터 리스트(라벨 포함)
@@ -331,7 +341,7 @@
 
 ---
 
-### `evaluate_factor_universe(factor_abbr_list, factor_name_list, style_name_list, factor_data_list)`
+### `ModelPortfolioPipeline._evaluate_universe(kept_abbrs, kept_names, kept_styles, filtered_data, test_file)`
 `-> Tuple[ret_df, negative_corr, meta]`
 - **Input**
   - `factor_abbr_list/factor_name_list/style_name_list`: 팩터 메타 리스트
@@ -349,7 +359,7 @@
 
 ---
 
-### `find_optimal_mix(factor_rets: pd.DataFrame, data_raw: pd.DataFrame, data_neg: pd.DataFrame)`
+### `optimization.find_optimal_mix(factor_rets: pd.DataFrame, data_raw: pd.DataFrame, data_neg: pd.DataFrame)`
 `-> Tuple[df_mix, ports, main_factor, main_w, sub_factor, sub_w]`
 - **Input**
   - `factor_rets`: 월간 팩터 수익률 행렬(열=팩터)
@@ -367,7 +377,7 @@
 
 ---
 
-### `construct_style_portfolios(factor_rets, meta, neg_corr) -> Tuple[pd.DataFrame, pd.DataFrame]`
+### `correlation.construct_style_portfolios(factor_rets, meta, neg_corr) -> Tuple[pd.DataFrame, pd.DataFrame]`
 - **Input**
   - `factor_rets`: 월간 팩터 수익률 행렬
   - `meta`: 팩터 성과/랭크 테이블(상위 팩터 정렬 반영)
@@ -380,12 +390,13 @@
 
 ---
 
-### `simulate_constrained_weights(rtn_df, style_list, num_sims=1_000_000, style_cap=0.25, tol=1e-12)`
+### `optimization.simulate_constrained_weights(rtn_df, style_list, mode="hardcoded", num_sims=1_000_000, style_cap=0.25, tol=1e-12)`
 `-> Tuple[best_stats, weights_tbl]`
 - **Input**
   - `rtn_df`: 월간 수익률 행렬(행=월, 열=팩터; 최종 후보 팩터 subset)
   - `style_list`: `rtn_df` 컬럼과 동일 순서의 스타일명 리스트
-  - `num_sims`: 랜덤 포트폴리오 샘플 수
+  - `mode`: `"hardcoded"` (기본, 프로덕션) 또는 `"simulation"` (몬테카를로)
+  - `num_sims`: 랜덤 포트폴리오 샘플 수 (simulation 모드에서만 사용)
   - `style_cap`: 스타일별 최대 비중(기본 25%)
   - `tol`: 수치 허용오차
 - **Output**
@@ -397,7 +408,7 @@
 
 ---
 
-### `run_model_portfolio_pipeline(start_date, end_date) -> None`
+### `model_portfolio.run_model_portfolio_pipeline(start_date, end_date) -> None`
 - **Input**
   - `start_date`, `end_date`: 문자열(날짜)  
     - parquet 파일명 및 최종 리밸런싱 시점(`end_date`) 필터에 사용
