@@ -42,6 +42,7 @@ def _build_pipeline_ready(
         - mreturn_df: M_RETURN만 분리, categorical (gvkeyiid + ddt 키)
     """
     # M_RETURN 분리 (67K행 — 별도 저장하여 19M행 중복 방지)
+    # merge 키: (gvkeyiid, ddt) — sec 불일치 0건 확인완료
     m_mask = raw_df["factorAbbreviation"] == "M_RETURN"
     mreturn_df = (
         raw_df.loc[m_mask, ["gvkeyiid", "ddt", "val"]]
