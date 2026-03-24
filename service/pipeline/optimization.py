@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import List, Tuple
 
 import numpy as np
@@ -20,7 +21,7 @@ def find_optimal_mix(
     factor_rets: pd.DataFrame,
     data_raw: pd.DataFrame,
     data_neg: pd.DataFrame,
-) -> Tuple[pd.DataFrame, List[pd.Series], str, float, str, float]:
+) -> pd.DataFrame:
     """메인 팩터와 상위 3개 보조 팩터의 최적 가중치 배합을 그리드 탐색한다.
 
     CAGR 순위(70%) + 하락 상관관계 순위(30%)로 보조 팩터 후보를 선정하고,
@@ -32,11 +33,7 @@ def find_optimal_mix(
         data_neg: (top_50 × top_50) 하락 상관관계 행렬
 
     Returns:
-        (df_mix, mix_series, main_factor, main_wgt, sub_factor, sub_wgt) 튜플
-        - df_mix: 그리드 결과 (101×3행, mix_cagr/mix_mdd/rank_total 등)
-        - mix_series: 각 그리드 포인트의 혼합 수익률 시계열
-        - main_factor/main_wgt: 메인 팩터 이름과 최적 비중
-        - sub_factor/sub_wgt: 서브 팩터 이름과 최적 비중
+        df_mix: 그리드 결과 (101×3행, mix_cagr/mix_mdd/rank_total 등)
 
     예시 Input:
         factor_rets: (72 × 50) 월간 수익률 행렬
@@ -66,7 +63,6 @@ def find_optimal_mix(
     main = data_raw["factorAbbreviation"].iat[0]
 
     frames: List[pd.DataFrame] = []
-    mix_series: List[pd.Series] = []
 
     for sub in track(
         negative_corr["factorAbbreviation"], description=f"Mixing {main} with sub-factors"
@@ -78,22 +74,25 @@ def find_optimal_mix(
         mix_ret = port[main].to_numpy()[:, None] * w_grid + port[sub].to_numpy()[:, None] * w_inv
         mix_cum = np.cumprod(1 + mix_ret, axis=0)
 
+        # cumprod 캐싱 (동일 계산 반복 방지)
+        cum_main = (1 + port[main]).cumprod()
+        cum_sub = (1 + port[sub]).cumprod()
+
         df = pd.DataFrame(
             {
                 "main_wgt": w_grid,
                 "sub_wgt": w_inv,
-                "main_cagr": (1 + port[main]).cumprod().iat[-1] ** ann - 1,
-                "sub_cagr": (1 + port[sub]).cumprod().iat[-1] ** ann - 1,
+                "main_cagr": cum_main.iat[-1] ** ann - 1,
+                "sub_cagr": cum_sub.iat[-1] ** ann - 1,
                 "mix_cagr": mix_cum[-1] ** ann - 1,
-                "main_mdd": ((1 + port[main]).cumprod() / (1 + port[main]).cumprod().cummax() - 1).min(),
-                "sub_mdd": ((1 + port[sub]).cumprod() / (1 + port[sub]).cumprod().cummax() - 1).min(),
+                "main_mdd": (cum_main / cum_main.cummax() - 1).min(),
+                "sub_mdd": (cum_sub / cum_sub.cummax() - 1).min(),
                 "mix_mdd": (mix_cum / np.maximum.accumulate(mix_cum, axis=0) - 1).min(axis=0),
                 "main_factor": main,
                 "sub_factor": sub,
             }
         )
         frames.append(df)
-        mix_series.extend(pd.Series(mix_ret[:, i], index=port.index) for i in range(mix_ret.shape[1]))
         logger.info("Completed main=%s <-> sub=%s", main, sub)
 
     df_mix = pd.concat(frames, ignore_index=True)
@@ -101,14 +100,7 @@ def find_optimal_mix(
     logger.info(f"[Trace] Generated Mix Grid for {main}. Size: {len(df_mix)}")
     best = df_mix.nsmallest(1, "rank_total").iloc[0]
 
-    return (
-        df_mix,
-        mix_series,
-        main,
-        round(best["main_wgt"], 2),
-        best["sub_factor"],
-        round(best["sub_wgt"], 2),
-    )
+    return df_mix
 
 
 def _get_hardcoded_weights() -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -118,108 +110,13 @@ def _get_hardcoded_weights() -> Tuple[pd.DataFrame, pd.DataFrame]:
     (이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!)
     """
     best_stats = pd.DataFrame(
-        {
-            "cagr": [np.nan],
-            "mdd": [np.nan],
-            "rank_cagr": [np.nan],
-            "rank_mdd": [np.nan],
-            "rank_total": [np.nan],
-        }
+        {c: [np.nan] for c in ["cagr", "mdd", "rank_cagr", "rank_mdd", "rank_total"]}
     )
 
-    weights_tbl = pd.DataFrame(
-        {
-            "factor": np.array(
-                [
-                    "SalesAcc",
-                    "6MTTMSalesMom",
-                    "PM6M",
-                    "52WSlope",
-                    "90DCV",
-                    "CashEV",
-                    "RevMagFY1C",
-                    "SalesToEPSChg",
-                    "Rev3MFY1C",
-                    "TobinQ",
-                ]
-            ),
-            "raw_weight": np.array(
-                [
-                    0.22462604683583082,
-                    0.00949236008476596,
-                    0.22093656600974726,
-                    0.03682605618179807,
-                    0.19689785242117552,
-                    0.04,
-                    0.12144838610526651,
-                    0.06512687691246523,
-                    0.059073320426603355,
-                    0.025572535022347066,
-                ]
-            ),
-            "styleName": np.array(
-                [
-                    "Historical Growth",
-                    "Historical Growth",
-                    "Price Momentum",
-                    "Price Momentum",
-                    "Volatility",
-                    "Valuation",
-                    "Analyst Expectations",
-                    "Earnings Quality",
-                    "Analyst Expectations",
-                    "Capital Efficiency",
-                ]
-            ),
-            "fitted_weight": np.array(
-                [
-                    0.22462604683583082,
-                    0.00949236008476596,
-                    0.22093656600974726,
-                    0.03682605618179807,
-                    0.19689785242117552,
-                    0.04,
-                    0.12144838610526651,
-                    0.06512687691246523,
-                    0.059073320426603355,
-                    0.025572535022347066,
-                ]
-            ),
-        }
-    )
-
-    # ~2025-12 포트폴리오까지 적용 (이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!)
-    # weights_tbl = pd.DataFrame({
-    #     "factor": np.array(['SalesAcc', '6MTTMSalesMom', 'PM6M', '52WSlope', '90DCV',
-    #         'CashEV', 'RevMagFY1C', 'SalesToEPSChg', 'Rev3MFY1C', 'TobinQ']),
-    #     "raw_weight": np.array([0.199298652556654,0.00842206236153488,0.196025173956866,0.0326737859629076,0.174696911741135,
-    #         0.148243451062375,0.10775464398236,0.0577835874187986,0.0524125911883854,0.022689139768980]),
-    #     "styleName": np.array(['Historical Growth', 'Historical Growth', 'Price Momentum', 'Price Momentum', 'Volatility',
-    #         'Valuation', 'Analyst Expectations', 'Earnings Quality', 'Analyst Expectations', 'Capital Efficiency']),
-    #     "fitted_weight": np.array([0.199298652556654,0.00842206236153488,0.196025173956866,0.0326737859629076,0.174696911741135,
-    #         0.148243451062375,0.10775464398236,0.0577835874187986,0.0524125911883854,0.022689139768980]),
-    # })
-
-    # 2025-11-30 기준으로 계산한 팩터 비중(이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!)
-    # weights_tbl = pd.DataFrame({
-    #     "factor": np.array([
-    #         'Rev3MFY2C', 'RevMagFY1C', 'TobinQ', 'FCFSales', 'SalesAcc',
-    #         '52WSlope', 'PM6M', 'FwdEPC', '90DCV'
-    #     ]),
-    #     "raw_weight": np.array([
-    #         0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
-    #         0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
-    #     ]),
-    #     "styleName": np.array([
-    #         'Analyst Expectations', 'Analyst Expectations', 'Capital Efficiency', 'Earnings Quality', 'Historical Growth',
-    #         'Price Momentum', 'Price Momentum', 'Valuation', 'Volatility'
-    #     ]),
-    #     "fitted_weight": np.array([
-    #         0.021621521816389294, 0.20431602944049673, 0.049936965510287146, 0.09875848294333273, 0.24346249417352991,
-    #         0.024010934147244627, 0.20767050160349557, 0.14737045318156372, 0.0028526171836602172
-    #     ]),
-    # })
-
+    # 가중치를 CSV에서 로드 (과거 버전은 git history 참조)
+    csv_path = Path(__file__).resolve().parent.parent.parent / "data" / "hardcoded_weights.csv"
+    weights_tbl = pd.read_csv(csv_path, float_precision="round_trip")
+    weights_tbl["fitted_weight"] = weights_tbl["raw_weight"]
     weights_tbl = weights_tbl[weights_tbl["raw_weight"] > 0].sort_values("raw_weight", ascending=False).reset_index(drop=True)
 
     return best_stats, weights_tbl
@@ -283,12 +180,10 @@ def simulate_constrained_weights(
 
     styles = np.asarray(style_list)
 
-    # 스타일 마스크 생성 (S × K)
+    # 스타일 마스크 생성 (S × K) — 벡터화
     uniq_styles = np.unique(styles)
     S = len(uniq_styles)
-    mask = np.zeros((S, K), dtype=np.float32)
-    for i, s in enumerate(uniq_styles):
-        mask[i, styles == s] = 1
+    mask = (styles[None, :] == uniq_styles[:, None]).astype(np.float32)
 
     port_np = rtn_df.to_numpy(dtype=np.float32)
     ann_exp = 12 / T

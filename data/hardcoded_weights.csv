@@ -1,0 +1,11 @@
+factor,raw_weight,styleName
+SalesAcc,0.22462604683583082,Historical Growth
+6MTTMSalesMom,0.00949236008476596,Historical Growth
+PM6M,0.22093656600974726,Price Momentum
+52WSlope,0.03682605618179807,Price Momentum
+90DCV,0.19689785242117552,Volatility
+CashEV,0.04,Valuation
+RevMagFY1C,0.12144838610526651,Analyst Expectations
+SalesToEPSChg,0.06512687691246523,Earnings Quality
+Rev3MFY1C,0.059073320426603355,Analyst Expectations
+TobinQ,0.025572535022347066,Capital Efficiency

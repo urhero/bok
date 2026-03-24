@@ -36,15 +36,11 @@ from __future__ import annotations
 # ───────────────────────────────────────────────────────────────────────────────
 # 【라이브러리 임포트】
 # ───────────────────────────────────────────────────────────────────────────────
-import logging  # 로그 기록 (진행 상황, 오류 등)
-import pickle   # 파이썬 객체를 파일로 저장 (현재는 parquet 사용으로 거의 안 씀)
-import time     # 실행 시간 측정
-from pathlib import Path  # 파일 경로 처리 (윈도우/리눅스 호환)
-from typing import Any, List, Tuple  # 타입 힌트 (코드 가독성)
+import logging
+import time
+from pathlib import Path
 
-import numpy as np   # 수치 계산 (배열, 행렬 연산)
-import pandas as pd  # 데이터 테이블 처리 (엑셀 같은 표 형식)
-from rich.progress import track  # 진행바 표시
+import pandas as pd
 
 from config import PARAM  # 설정 파일 (벤치마크명 등)
 from db.factor_query import GenerateQueryStructure  # SQL Server 쿼리 실행
@@ -62,9 +58,8 @@ def run_download_pipeline(
     start_date: str,
     end_date: str,
     *,
-    info_path: Path | str = "data/factor_info.csv",
     out_dir: Path | str | None = None,
-) -> Tuple[List[str], List[str], List[str], List[Any]]:
+) -> None:
     """SQL Server에서 팩터 데이터 다운로드 및 Parquet 파일로 저장
 
     【목적】

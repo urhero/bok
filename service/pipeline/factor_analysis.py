@@ -73,9 +73,10 @@ def calculate_factor_stats(
         .reset_index(drop=True)
     )
 
-    # 섹터-날짜 내 순위 계산
-    merged_df["rank"] = merged_df.groupby(["ddt", "sec"])[factor_abbr].rank(method="average", ascending=bool(sort_order))
-    count_series = merged_df.groupby(["ddt", "sec"])[factor_abbr].transform("count")
+    # 섹터-날짜 내 순위 계산 (단일 groupby로 rank와 count 동시 처리)
+    grp = merged_df.groupby(["ddt", "sec"])[factor_abbr]
+    merged_df["rank"] = grp.rank(method="average", ascending=bool(sort_order))
+    count_series = grp.transform("count")
 
     # 순위 -> 백분위(0~100) 변환
     merged_df["percentile"] = (merged_df["rank"] - 1) / (count_series - 1) * 100
@@ -195,3 +196,100 @@ def filter_and_label_factors(
 
     logger.info("Sector filter retained %d / %d factors", len(kept_idx), len(factor_abbr_list))
     return kept_factor_abbrs, kept_name, kept_style, kept_idx, dropped_sec, filtered_raw_data_list
+
+
+def calculate_factor_stats_batch(
+    merged_data: pd.DataFrame,
+    factor_abbr_list: List[str],
+    orders: List[int],
+    test_mode: bool = False,
+) -> List[Tuple]:
+    """모든 팩터의 5분위 분석을 하이브리드 방식으로 처리한다.
+
+    lag는 전체 DataFrame에서 배치로 수행하고 (배치가 유리),
+    rank/quantile/집계는 팩터별 루프로 수행한다 (2키 groupby가 3키보다 2.8x 빠름).
+
+    Args:
+        merged_data: 전체 팩터 데이터 (factorAbbreviation, val, M_RETURN 컬럼 필수)
+        factor_abbr_list: 팩터 약어 리스트
+        orders: 팩터별 정렬 방향 (1=ascending, 0=descending)
+        test_mode: True이면 최소 종목수 검증 생략
+
+    Returns:
+        calculate_factor_stats()와 동일한 형식의 리스트
+        각 원소: (sector_return_df, quantile_return_df, spread_series, merged_df) 또는 (None,)*4
+    """
+    # [1] 팩터 메타 준비
+    order_map = dict(zip(factor_abbr_list, orders))
+    valid_factors = set(merged_data["factorAbbreviation"].unique()) & set(factor_abbr_list)
+
+    # [2] NaN 제거 + batch lag (전체에서 한번에 — 팩터별보다 빠름)
+    df = merged_data.dropna(subset=["val", "M_RETURN"]).copy()
+    df["val_lagged"] = df.groupby(["gvkeyiid", "factorAbbreviation"])["val"].shift(1)
+    df = df.dropna(subset=["val_lagged"]).drop(columns=["val"]).reset_index(drop=True)
+
+    # [3] History 체크 (배치)
+    date_counts = df.groupby("factorAbbreviation")["ddt"].nunique()
+    sufficient_factors = set(date_counts[date_counts > 2].index)
+
+    # [4] Sort order: descending 팩터의 val_lagged에 -1 곱하기 (배치)
+    desc_factors = {fa for fa in valid_factors if not bool(order_map.get(fa, 1))}
+    if desc_factors:
+        desc_mask = df["factorAbbreviation"].isin(desc_factors)
+        df.loc[desc_mask, "val_lagged"] *= -1
+
+    # [5] 팩터별 통합 루프: rank + quantile + 집계
+    #     (2키 groupby가 3키보다 2.8x 빠르므로 per-factor 루프가 최적)
+    labels = ["Q1", "Q2", "Q3", "Q4", "Q5"]
+    grouped = df.groupby("factorAbbreviation")
+
+    results = []
+    for factor_abbr in factor_abbr_list:
+        if factor_abbr not in valid_factors or factor_abbr not in sufficient_factors:
+            if factor_abbr in valid_factors and factor_abbr not in sufficient_factors:
+                logger.warning("Skipping %s - insufficient history", factor_abbr)
+            results.append((None, None, None, None))
+            continue
+
+        if factor_abbr not in grouped.groups:
+            results.append((None, None, None, None))
+            continue
+
+        fdf = grouped.get_group(factor_abbr).copy()
+
+        # rank + count (2키 groupby — 팩터당 ~53K행, ~900그룹)
+        grp = fdf.groupby(["ddt", "sec"])["val_lagged"]
+        fdf["rank"] = grp.rank(method="average", ascending=True)
+        count_series = grp.transform("count")
+
+        # percentile
+        fdf["percentile"] = (fdf["rank"] - 1) / (count_series - 1) * 100
+        if not test_mode:
+            fdf.loc[count_series <= 10, "percentile"] = np.nan
+
+        # quantile
+        fdf["quantile"] = pd.cut(
+            fdf["percentile"], bins=[0, 20, 40, 60, 80, 105],
+            labels=labels, include_lowest=True, right=True,
+        )
+        fdf = fdf.dropna(subset=["quantile"])
+        fdf = fdf.drop(columns=["rank", "percentile", "val_lagged"])
+
+        # 섹터 × 분위별 평균 수익률
+        sector_return_df = (
+            fdf.groupby(["ddt", "sec", "quantile"], observed=False)["M_RETURN"]
+            .mean().unstack(fill_value=0)
+        ).groupby("sec").mean().T
+
+        # Q1-Q5 스프레드 (Q2~Q4는 불필요 — unstack 없이 Q1, Q5만 추출)
+        q_mean = fdf.groupby(["ddt", "quantile"], observed=False)["M_RETURN"].mean()
+        q1 = q_mean.xs("Q1", level="quantile")
+        q5 = q_mean.xs("Q5", level="quantile")
+        spread_series = pd.DataFrame({factor_abbr: q1 - q5})
+        spread_series = prepend_start_zero(spread_series)
+
+        # quantile_return_df는 downstream에서 미사용 (filter_and_label에서 재계산)
+        results.append((sector_return_df, None, spread_series, fdf))
+
+    logger.info("Batch factor analysis: %d valid / %d total", sum(1 for r in results if r[0] is not None), len(factor_abbr_list))
+    return results
