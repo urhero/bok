@@ -13,7 +13,6 @@ Usage
 """
 
 import logging
-import re
 from typing import Any, Dict
 
 import pandas as pd
@@ -23,26 +22,11 @@ from config import PARAM
 
 logger = logging.getLogger(__name__)
 
-# ----------------------------------------------------------------------------
-# Helper functions
-# ----------------------------------------------------------------------------
-
-def _extract_parentheses(text: str) -> str:
-    """Return substring inside the first pair of parentheses, else *text*."""
-    match = re.search(r"\((.*?)\)", text)
-    return match.group(1) if match else text
-
-
-# ----------------------------------------------------------------------------
-# Core class
-# ----------------------------------------------------------------------------
-
 class GenerateQueryStructure:
     """Fetch raw factor data from SQL Server between *start* and *end* dates."""
 
-    _param: Dict[str, Any] = PARAM  # centralised DB credentials/settings
-
     def __init__(self, start_date: str, end_date: str) -> None:
+        self._param = PARAM
         self.start_date = start_date
         self.end_date = end_date
 
@@ -73,63 +57,30 @@ class GenerateQueryStructure:
         )
 
         engine = sql.create_engine(conn_url)
-        query_raw = (
-            f"WITH RankedData AS (\n"
-            f"    SELECT \n"
-            f"        gvkeyiid, \n"
-            f"        ticker, \n"
-            f"        isin, \n"
-            f"        ddt, \n"
-            f"        val,\n"
-            f"        fld,\n"
-            # 1. fld_name 추출 로직: 괄호가 있으면 앞부분 추출, 없으면 fld 전체 사용
-            f"        CASE \n"
-            f"            WHEN CHARINDEX('(', fld) > 0 \n"
-            f"            THEN RTRIM(LTRIM(LEFT(fld, CHARINDEX('(', fld) - 1)))\n"
-            f"            ELSE fld\n"
-            f"        END AS fld_name,\n"
-            f"        \n"
-            # 2. factorAbbreviation 추출 로직: 괄호가 있으면 안의 약어 추출, 없으면(e.g. MXWO_WGT, M_RETURN) fld 전체 사용
-            f"        CASE \n"
-            f"            WHEN CHARINDEX('(', fld) > 0 AND CHARINDEX(')', fld) > CHARINDEX('(', fld)\n"
-            f"            THEN SUBSTRING(\n"
-            f"                    fld, \n"
-            f"                    CHARINDEX('(', fld) + 1, \n"
-            f"                    CHARINDEX(')', fld) - CHARINDEX('(', fld) - 1\n"
-            f"                 )\n"
-            f"            ELSE fld\n"
-            f"        END AS factorAbbreviation,\n"
-            f"        \n"
-            f"        sec, \n"
-            f"        country, \n"
-            f"        updated_at, \n"
-            f"        \n"
-            # 3. 중복 검사 기준: 원래의 fld 값을 사용
-            f"        ROW_NUMBER() OVER (\n"
-            f"            PARTITION BY gvkeyiid, ddt, fld \n"
-            f"            ORDER BY updated_at DESC \n"
-            f"        ) as rn\n"
-            f"    FROM [dbo].[{arg['universe']}]\n"
-            f"    WHERE ddt >= '{self.start_date}' AND ddt <= '{self.end_date}'\n"
-            f")\n"
-            f"SELECT \n"
-            f"    gvkeyiid, \n"
-            f"    ticker, \n"
-            f"    isin, \n"
-            f"    ddt, \n"
-            f"    val,\n"
-            f"    fld_name, \n"
-            f"    factorAbbreviation, \n"
-            f"    sec, \n"
-            f"    country, \n"
-            f"    updated_at \n"
-            f"FROM RankedData\n"
-            f"WHERE rn = 1\n"
+
+        # universe 테이블명은 파라미터화 불가 (DDL 식별자) → 허용된 값만 사용
+        universe = arg["universe"]
+        query_raw = sql.text(
+            f"WITH RankedData AS ("
+            f"    SELECT "
+            f"        gvkeyiid, ticker, isin, ddt, val, fld,"
+            f"        CASE "
+            f"            WHEN CHARINDEX('(', fld) > 0 AND CHARINDEX(')', fld) > CHARINDEX('(', fld)"
+            f"            THEN SUBSTRING(fld, CHARINDEX('(', fld) + 1, CHARINDEX(')', fld) - CHARINDEX('(', fld) - 1)"
+            f"            ELSE fld"
+            f"        END AS factorAbbreviation,"
+            f"        sec, country,"
+            f"        ROW_NUMBER() OVER (PARTITION BY gvkeyiid, ddt, fld ORDER BY updated_at DESC) as rn"
+            f"    FROM [dbo].[{universe}]"
+            f"    WHERE ddt >= :start_date AND ddt <= :end_date"
+            f") "
+            f"SELECT gvkeyiid, ticker, isin, ddt, val, factorAbbreviation, sec, country "
+            f"FROM RankedData WHERE rn = 1 "
             f"ORDER BY factorAbbreviation, ddt"
         )
 
-        logger.debug("SQL query: %s", query_raw.replace('\n', ' '))
-        df = pd.read_sql_query(query_raw, con=engine)
+        logger.debug("SQL query with params: start=%s, end=%s", self.start_date, self.end_date)
+        df = pd.read_sql_query(query_raw, con=engine, params={"start_date": self.start_date, "end_date": self.end_date})
         engine.dispose()
 
         if df.empty:

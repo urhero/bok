@@ -2,6 +2,8 @@
 
 This document visualizes the Model Portfolio pipeline (`service/pipeline/`), strictly focusing on how **variables** are transformed through function calls across modules.
 
+> 각 단계의 `[N]` 번호는 `model_portfolio.py:run()` 및 `README.md`와 동일합니다.
+
 ## Variable Flow Graph
 
 ```mermaid
@@ -11,136 +13,111 @@ graph TD
     classDef func fill:#f3e5f5,stroke:#4a148c,stroke-width:2px,rx:10,ry:10;
     classDef file fill:#fff3e0,stroke:#e65100,stroke-width:2px,stroke-dasharray: 5 5;
 
-    %% --- Load Data ---
+    %% --- [1] Load Data ---
     File_Parquet[("📄 *.parquet")]:::file
     File_Info[("📄 factor_info.csv")]:::file
-    
-    Func_Load{{"pd.read_parquet / read_csv"}}:::func
-    
-    Var_Query("raw_factor_data_df<br/>(pd.DataFrame)"):::data
-    Var_Info("factor_metadata_df<br/>(pd.DataFrame)"):::data
-    
-    File_Parquet --> Func_Load --> Var_Query
-    File_Info --> Func_Load --> Var_Info
 
-    %% --- Merge & Prep ---
-    Func_Merge{{"merge & groupby<br/>(데이터 병합/그룹화)"}}:::func
-    Var_Merged("merged_factor_data_df<br/>(pd.DataFrame)"):::data
+    Func_Load{{"[1] _load_data + _prepare_metadata<br/>(데이터 로딩, M_RETURN 분리, categorical 변환)"}}:::func
+
+    Var_Raw("raw_data<br/>(pd.DataFrame)"):::data
     Var_MRet("market_return_df<br/>(pd.DataFrame)"):::data
-    Var_Grouped("grouped_source_data<br/>(DataFrameGroupBy)"):::data
+    Var_Info("factor_metadata<br/>(pd.DataFrame)"):::data
+    Var_Merged("merged_data<br/>(pd.DataFrame)"):::data
 
-    Var_Query & Var_Info --> Func_Merge
-    Func_Merge --> Var_Merged
-    Var_Query --> Func_Merge --> Var_MRet
-    Var_Merged --> Func_Merge --> Var_Grouped
+    File_Parquet --> Func_Load
+    File_Info --> Func_Load
+    Func_Load --> Var_Raw & Var_MRet & Var_Info
+    Var_Raw & Var_MRet & Var_Info --> Var_Merged
 
-    %% --- Factor Assignment ---
-    Func_Assign{{"factor_analysis.calculate_factor_stats<br/>(팩터 통계/분위 계산)"}}:::func
-    Var_DataList("processed_factor_data_list<br/>(List[Tuple])"):::data
+    %% --- [2] Factor Assignment ---
+    Func_Assign{{"[2] calculate_factor_stats_batch<br/>(하이브리드: batch lag + per-factor rank/quantile)"}}:::func
+    Var_DataList("factor_stats<br/>(List[Tuple])"):::data
 
-    Var_Grouped & Var_MRet --> Func_Assign
+    Var_Merged --> Func_Assign
     Func_Assign --> Var_DataList
-    note_DL["List of Tuples:<br/>(sector_return_df, quantile_return_df, spread_series, merged_df)"]
+    note_DL["Tuple per factor:<br/>(sector_return_df, None, spread_series, merged_df)<br/>or (None,)*4"]
     Var_DataList -.-> note_DL
 
-    %% --- Filter ---
-    Func_Filter{{"factor_analysis.filter_and_label_factors<br/>(필터링 및 라벨링)"}}:::func
-    Var_CleanedRaw("filtered_factor_data_list<br/>(List[pd.DataFrame])"):::data
-    Var_KeptLists("kept_factor_abbrs...<br/>(List[str])"):::data
+    %% --- [3] Filter & Label ---
+    Func_Filter{{"[3] filter_and_label_factors<br/>(섹터 필터 + L/N/S 라벨링)"}}:::func
+    Var_CleanedRaw("filtered_data<br/>(List[pd.DataFrame])"):::data
+    Var_KeptLists("kept_abbrs, kept_names, kept_styles<br/>(List[str])"):::data
 
     Var_DataList --> Func_Filter
     Func_Filter --> Var_CleanedRaw
     Func_Filter --> Var_KeptLists
 
-    %% --- Meta Generation ---
-    Func_GenMeta{{"Pipeline._evaluate_universe<br/>(메타/성과지표 생성)"}}:::func
-    Var_FacRet("monthly_return_matrix<br/>(pd.DataFrame)"):::data
-    Var_DownCorr("downside_correlation_matrix<br/>(pd.DataFrame)"):::data
-    Var_PerfMet("factor_performance_metrics<br/>(pd.DataFrame)"):::data
+    %% --- [4] Evaluate Universe ---
+    Func_GenMeta{{"[4] _evaluate_universe<br/>(aggregate_factor_returns → CAGR 랭킹 → top 50)"}}:::func
+    Var_FacRet("return_matrix<br/>(pd.DataFrame)"):::data
+    Var_DownCorr("correlation_matrix<br/>(pd.DataFrame)"):::data
+    Var_Meta("meta<br/>(pd.DataFrame)"):::data
 
-    Var_CleanedRaw --> Func_GenMeta
+    Var_CleanedRaw & Var_KeptLists --> Func_GenMeta
     Func_GenMeta --> Var_FacRet
     Func_GenMeta --> Var_DownCorr
-    Func_GenMeta --> Var_PerfMet
+    Func_GenMeta --> Var_Meta
 
-    %% --- Optimization (Grid Search) ---
-    %% --- Optimization (Grid Search) ---
-    %% --- Optimization (Grid Search) ---
-    Func_GetWgt{{"optimization.find_optimal_mix loops<br/>(최적 조합 탐색)"}}:::func
-    Var_TopMetrics("top_metrics<br/>(pd.DataFrame)"):::data
-    Var_MixGrid("mix_grid<br/>(pd.DataFrame)"):::data
-    
-    Var_PerfMet --> Var_TopMetrics
-    Var_FacRet & Var_DownCorr & Var_TopMetrics --> Func_GetWgt
-    Func_GetWgt --> Var_MixGrid
-
-    %% --- Selection ---
-    Func_Select{{"Best Selection<br/>(최적 팩터 선정)"}}:::func
+    %% --- [5] Optimize Mixes ---
+    Func_GetWgt{{"[5] _optimize_mixes → find_optimal_mix<br/>(스타일별 메인-서브 그리드 탐색)"}}:::func
     Var_BestSub("best_sub<br/>(pd.DataFrame)"):::data
     Var_RetSubset("ret_subset<br/>(pd.DataFrame)"):::data
 
-    Var_MixGrid --> Func_Select
-    Func_Select --> Var_BestSub
+    Var_FacRet & Var_DownCorr & Var_Meta --> Func_GetWgt
+    Func_GetWgt --> Var_BestSub
     Var_BestSub & Var_FacRet --> Var_RetSubset
 
-    %% --- Simulation ---
-    %% --- Simulation ---
-    %% --- Simulation ---
-    Func_Sim{{"optimization.simulate_constrained_weights<br/>(듀얼 모드: hardcoded/simulation)"}}:::func
-    Var_Res("sim_result<br/>(Tuple)"):::data
-    note_Res["Tuple:<br/>(best_stats, weights_tbl)<br/>mode=hardcoded: 프로덕션<br/>mode=simulation: 몬테카를로"]
-    
+    %% --- [6] Weight Determination ---
+    Func_Sim{{"[6] simulate_constrained_weights<br/>(듀얼 모드: hardcoded/simulation)"}}:::func
+    Var_Res("sim_result<br/>(best_stats, weights_tbl)"):::data
+
     Var_RetSubset --> Func_Sim
     Func_Sim --> Var_Res
-    Var_Res -.-> note_Res
 
-    %% --- Weight Construction ---
-    Func_Construct{{"Pipeline._construct_and_export<br/>(비중 계산 및 출력)"}}:::func
-    Var_WeightFrames("weight_frames<br/>(List[pd.DataFrame])"):::data
+    %% --- [7] Construct & Export ---
+    Func_Construct{{"[7] _construct_and_export<br/>(종목별 비중 → MP 집계 → CSV 출력)"}}:::func
     Var_WeightRaw("weight_raw<br/>(pd.DataFrame)"):::data
-    
-    Var_Res & Var_CleanedRaw --> Func_Construct
-    Func_Construct --> Var_WeightFrames
-    Var_WeightFrames --> Var_WeightRaw
-
-    %% --- Aggregation & Final Output ---
-    Func_Agg{{"Aggregation & Pivot<br/>(집계 및 피벗)"}}:::func
-    Var_AggW("agg_w<br/>(pd.DataFrame)"):::data
+    Var_AggW("agg_w (MP)<br/>(pd.DataFrame)"):::data
     Var_FinalWeights("final_weights<br/>(pd.DataFrame)"):::data
     Var_Pivoted("pivoted_final<br/>(pd.DataFrame)"):::data
-    
-    Var_WeightRaw --> Func_Agg
-    Func_Agg --> Var_AggW
+
+    Var_Res & Var_CleanedRaw --> Func_Construct
+    Func_Construct --> Var_WeightRaw
+    Var_WeightRaw --> Var_AggW
     Var_WeightRaw & Var_AggW --> Var_FinalWeights
-    Var_FinalWeights --> Func_Agg --> Var_Pivoted
+    Var_FinalWeights --> Var_Pivoted
 
     %% --- Files Output ---
-    File_AggW[("📄 aggregated_weights_*.csv")]:::file
     File_Total[("📄 total_aggregated_weights_*.csv")]:::file
     File_Style[("📄 total_aggregated_weights_style_*.csv")]:::file
-    File_Final[("📄 final_pivot_*.csv")]:::file
+    File_Pivot[("📄 pivoted_total_agg_wgt_*.csv")]:::file
+    File_Meta[("📄 meta_data.csv")]:::file
 
-    Var_AggW --> File_AggW
     Var_FinalWeights --> File_Total
     Var_FinalWeights --> File_Style
-    Var_Pivoted --> File_Final
+    Var_Pivoted --> File_Pivot
+    Var_Meta --> File_Meta
 
 ```
 
 ## Variable Descriptions
 
-| Variable | Description | Type | Source Module |
-| :--- | :--- | :--- | :--- |
-| `raw_factor_data_df` | Raw factor data loaded from Parquet. | `pd.DataFrame` | `model_portfolio` (`_load_data`) |
-| `factor_metadata_df` | Joined data of raw factors + factor info. | `pd.DataFrame` | `model_portfolio` (`_prepare_metadata`) |
-| `processed_factor_data_list` | List of results from `calculate_factor_stats` for each factor. Contains sector returns, quantile returns, spreads, and merged data. | `List[Tuple]` | `factor_analysis` |
-| `filtered_factor_data_list` | Filtered list of factor DataFrames (removing those with negative Q-spreads). | `List[pd.DataFrame]` | `factor_analysis` |
-| `monthly_return_matrix` | Matrix of individual factor returns (Index: Date, Col: Factor). | `pd.DataFrame` | `pipeline_utils` → `model_portfolio` (`_evaluate_universe`) |
-| `downside_correlation_matrix` | Downside correlation matrix between factors. | `pd.DataFrame` | `correlation` |
-| `factor_performance_metrics` | Metrics (CAGR, Rank) for each factor. | `pd.DataFrame` | `model_portfolio` (`_evaluate_universe`) |
-| `mix_grid` | Results of the grid search optimization for Main/Sub factor pairs. | `pd.DataFrame` | `optimization` (`find_optimal_mix`) |
-| `best_sub` | The top selected Main+Sub factor combinations. | `pd.DataFrame` | `model_portfolio` (`_optimize_mixes`) |
-| `ret_subset` | Subset of returns for only the selected Main/Sub factors. | `pd.DataFrame` | `model_portfolio` (`_optimize_mixes`) |
-| `sim_result` | Result of weight determination (dual mode: hardcoded or Monte Carlo). Contains `best_stats` and `weights_tbl`. | `Tuple` | `optimization` (`simulate_constrained_weights`) |
-| `weight_frames` | List of DataFrames, each containing calculated weights for tickers for a specific factor/style. | `List[pd.DataFrame]` | `model_portfolio` (`_construct_and_export`) |
-| `final_weights` | Combined DataFrame of all individual factor weights + aggregated total weights (`MP` style). | `pd.DataFrame` | `model_portfolio` (`_construct_and_export`) |
+| Step | Variable | Description | Type | Source |
+| :--- | :--- | :--- | :--- | :--- |
+| `[1]` | `raw_data` | Parquet/CSV에서 로드된 팩터 데이터 (M_RETURN 분리 후) | `pd.DataFrame` | `_load_data` |
+| `[1]` | `market_return_df` | M_RETURN 행을 분리한 시장 수익률 | `pd.DataFrame` | `_load_data` |
+| `[1]` | `factor_metadata` | factor_info.csv 메타 정보 | `pd.DataFrame` | `_prepare_metadata` |
+| `[1]` | `merged_data` | raw_data + factor_metadata + M_RETURN 병합 결과 | `pd.DataFrame` | `_prepare_metadata` |
+| `[2]` | `factor_stats` | 팩터별 분석 결과 (sector_return, spread, merged_df) | `List[Tuple]` | `calculate_factor_stats_batch` |
+| `[3]` | `filtered_data` | 섹터 필터 + label 부여된 종목 데이터 | `List[pd.DataFrame]` | `filter_and_label_factors` |
+| `[3]` | `kept_abbrs/names/styles` | 유지된 팩터 메타 리스트 | `List[str]` | `filter_and_label_factors` |
+| `[4]` | `return_matrix` | 월간 net return 매트릭스 (top 50 팩터) | `pd.DataFrame` | `_evaluate_universe` |
+| `[4]` | `correlation_matrix` | 하락 상관관계 행렬 | `pd.DataFrame` | `_evaluate_universe` |
+| `[4]` | `meta` | 팩터 성과/랭크 테이블 (CAGR, rank_style, rank_total) | `pd.DataFrame` | `_evaluate_universe` |
+| `[5]` | `best_sub` | 최적 메인+서브 팩터 조합 | `pd.DataFrame` | `_optimize_mixes` |
+| `[5]` | `ret_subset` | 선정된 팩터들의 수익률 행렬 subset | `pd.DataFrame` | `_optimize_mixes` |
+| `[6]` | `sim_result` | (best_stats, weights_tbl) — 최적 비중 결과 | `Tuple` | `simulate_constrained_weights` |
+| `[7]` | `weight_raw` | 팩터별 종목 가중치 | `pd.DataFrame` | `_construct_and_export` |
+| `[7]` | `agg_w` | MP (팩터 통합) 가중치 | `pd.DataFrame` | `_construct_and_export` |
+| `[7]` | `final_weights` | weight_raw + agg_w 결합 | `pd.DataFrame` | `_construct_and_export` |
+| `[7]` | `pivoted_final` | 피벗 형태 (Optimizer 연동용) | `pd.DataFrame` | `_construct_and_export` |

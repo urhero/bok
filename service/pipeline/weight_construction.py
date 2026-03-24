@@ -38,10 +38,11 @@ def construct_long_short_df(
         |------------|----------|--------|----------|-------|--------|-----|---------------|-----------------|
         | 2024-01-31 | 001      | 600519 | 0.03     | 1     | L      | 1   | 1.0           | 1.0             |
     """
-    raw_df = labeled_data_df[labeled_data_df["ddt"] >= "2017-12-31"].reset_index(drop=True).copy()
-    raw_df["signal"] = raw_df["label"].map({1: "L", 0: "N", -1: "S"})
+    # neutral(label=0)을 먼저 제거 — 이후 연산 대상 행 ~20% 절감
+    raw_df = labeled_data_df[(labeled_data_df["ddt"] >= "2017-12-31") & (labeled_data_df["label"] != 0)].copy()
+    raw_df["signal"] = raw_df["label"].map({1: "L", -1: "S"})
     raw_df["num"] = raw_df.groupby(["ddt", "signal"])["signal"].transform("count")
-    raw_df["return_weight"] = 1 / raw_df["num"] * raw_df["label"]
+    raw_df["return_weight"] = raw_df["label"] / raw_df["num"]
     raw_df["turnover_weight"] = abs(raw_df["return_weight"])
     long_df = raw_df[raw_df["signal"] == "L"].reset_index(drop=True)
     short_df = raw_df[raw_df["signal"] == "S"].reset_index(drop=True)
@@ -80,23 +81,28 @@ def calculate_vectorized_return(
         | 2024-01-31 | 0.0      |
         | 2024-02-28 | 0.02     |
     """
-    weight_matrix_df = portfolio_data_df.pivot_table(index="ddt", columns="gvkeyiid", values="return_weight")
-    rtn_df = portfolio_data_df.pivot_table(index="ddt", columns="gvkeyiid", values="M_RETURN")
+    # 단일 pivot으로 3개 값을 한번에 추출
+    pivoted = portfolio_data_df.pivot_table(
+        index="ddt", columns="gvkeyiid", values=["return_weight", "M_RETURN", "turnover_weight"]
+    )
+    weight_matrix_df = pivoted["return_weight"]
+    rtn_df = pivoted["M_RETURN"].copy()
     rtn_df.iloc[0] = 0
-    turnover_weight_df = portfolio_data_df.pivot_table(index="ddt", columns="gvkeyiid", values="turnover_weight")
+    turnover_weight_df = pivoted["turnover_weight"]
     sgn_df = np.sign(weight_matrix_df)
 
     r = rtn_df.sort_index()
     w = turnover_weight_df.reindex(r.index)
-    w0 = turnover_weight_df.copy()
+    w0 = turnover_weight_df
     is_rebal = w.notna().any(axis=1).fillna(False)
     block_id = is_rebal.cumsum().astype(int)
     cumulative_growth_block = (1 + sgn_df * r).groupby(block_id).cumprod()
 
-    denom = (w0 * cumulative_growth_block).sum(axis=1)
-    w_pre = (w0 * cumulative_growth_block).div(denom, axis=0)
+    # w0 * cumulative_growth_block를 한번만 계산
+    weighted_growth = w0 * cumulative_growth_block
+    denom = weighted_growth.sum(axis=1)
+    w_pre = weighted_growth.div(denom, axis=0)
 
-    weight_matrix_df.iloc[0] = w0.loc[weight_matrix_df.index[0]]
     rebal_in_r = r.index.intersection(turnover_weight_df.index)
     turnover = 1 * (w.shift(-1).loc[rebal_in_r] - w_pre.loc[rebal_in_r]).abs().sum(axis=1)
     turnover = turnover.reindex(r.index).fillna(0)

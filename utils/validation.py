@@ -70,7 +70,7 @@ def validate_no_duplicates(
     duplicates = df.duplicated(subset=key_columns, keep=False)
     if duplicates.any():
         n_dups = duplicates.sum()
-        logger.warning(f"{df_name}: {n_dups} duplicate rows found on columns {key_columns}")
+        raise ValueError(f"{df_name}: {n_dups} duplicate rows found on columns {key_columns}")
 
 
 def validate_no_null_in_columns(

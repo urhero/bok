@@ -1,7 +1,11 @@
+import logging
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 PARAM = {
     "benchmark": os.getenv("BENCHMARK", "MXCN1A"),
@@ -12,3 +16,6 @@ PARAM = {
     "user_pwd": os.getenv("USER_PWD", ""),
     "odbc_name": os.getenv("ODBC_NAME", "ODBC Driver 17 for SQL Server"),
 }
+
+if not PARAM["user_pwd"]:
+    logger.warning("USER_PWD not set in .env — DB connections will fail")
