@@ -64,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
     parser_download = subparsers.add_parser("download", help="Download raw factor data.")
     parser_download.add_argument("start_date", type=str, help="Start date in YYYY-MM-DD format.")
     parser_download.add_argument("end_date", type=str, help="End date in YYYY-MM-DD format.")
+    parser_download.add_argument("--incremental", action="store_true",
+                                  help="Incremental mode: download only end_date month and append to existing parquet.")
 
     # ─────────────────────────────────────────────────────────────────────────
     # MP 명령어: 모델 포트폴리오 생성
@@ -155,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
             # ─────────────────────────────────────────────────────────────────
             # 기능: SQL Server → Parquet 파일 저장
             # README.md [1️⃣] 팩터 데이터베이스 구축
-            run_download_pipeline(args.start_date, args.end_date)
+            run_download_pipeline(args.start_date, args.end_date, incremental=args.incremental)
 
         elif args.command == "mp":
             # ─────────────────────────────────────────────────────────────────

@@ -130,39 +130,62 @@ class ModelPortfolioPipeline:
     # ─────────────────────────────────────────────────────────────────────
 
     def _load_data(self, start_date, end_date, test_file):
-        """파케 또는 테스트 CSV에서 원시 데이터를 로드하고 M_RETURN을 분리한다."""
+        """Pipeline-ready parquet 또는 테스트 CSV에서 데이터를 로드한다."""
         t0 = time.time()
         if test_file:
+            # 테스트 모드: CSV에서 로드 + 직접 처리
             test_data_path = _PROJECT_ROOT / test_file
             raw = pd.read_csv(test_data_path, parse_dates=["ddt"])
 
-            # 벡터화된 factorAbbreviation 추출 (.apply 대신 str.extract)
             extracted = raw["fld"].str.extract(r"\(([^)]+)\)$")
             raw["factorAbbreviation"] = extracted[0].fillna(raw["fld"])
             raw = raw.drop(columns=["fld", "updated_at"])
             start_date = raw["ddt"].min().strftime("%Y-%m-%d")
             end_date = raw["ddt"].max().strftime("%Y-%m-%d")
+
+            # categorical 변환
+            for col in ["factorAbbreviation", "sec", "country", "gvkeyiid", "ticker", "isin"]:
+                if col in raw.columns and raw[col].dtype == "object":
+                    raw[col] = raw[col].astype("category")
+
+            # M_RETURN 분리
+            m_mask = raw["factorAbbreviation"] == "M_RETURN"
+            market_return_df = (
+                raw.loc[m_mask, ["gvkeyiid", "ddt", "val"]]
+                .rename(columns={"val": "M_RETURN"})
+            )
+            raw = raw.loc[~m_mask]
             logger.info(f"Test data loaded from {test_data_path} in {time.time() - t0:.2f}s")
         else:
-            parquet_path = DATA_DIR / f"{self.config['benchmark']}_{start_date}_{end_date}.parquet"
-            # 필요 컬럼만 로딩하여 메모리 절감
-            needed_cols = ["gvkeyiid", "ticker", "isin", "ddt", "val", "factorAbbreviation", "sec", "country"]
-            raw = pd.read_parquet(parquet_path, columns=needed_cols)
-            logger.info(f"Parquet loaded from {parquet_path} in {time.time() - t0:.2f}s")
+            benchmark = self.config["benchmark"]
+            factor_path = DATA_DIR / f"{benchmark}_factor.parquet"
+            mreturn_path = DATA_DIR / f"{benchmark}_mreturn.parquet"
 
-        # 전면 categorical 변환 (merge/groupby 성능 향상, 메모리 10GB→1GB)
-        for col in ["factorAbbreviation", "sec", "country", "gvkeyiid", "ticker", "isin"]:
-            if col in raw.columns and raw[col].dtype == "object":
-                raw[col] = raw[col].astype("category")
+            if factor_path.exists() and mreturn_path.exists():
+                # Pipeline-ready parquet (최적 경로: 0.4s 로딩, merge 불필요)
+                raw = pd.read_parquet(factor_path)
+                market_return_df = pd.read_parquet(mreturn_path)
+                start_date = raw["ddt"].min().strftime("%Y-%m-%d")
+                end_date = raw["ddt"].max().strftime("%Y-%m-%d")
+                logger.info(f"Pipeline-ready parquet loaded in {time.time() - t0:.2f}s "
+                             f"({len(raw):,} factor + {len(market_return_df):,} mret)")
+            else:
+                # Fallback: 기존 raw parquet
+                parquet_path = DATA_DIR / f"{benchmark}_{start_date}_{end_date}.parquet"
+                needed_cols = ["gvkeyiid", "ticker", "isin", "ddt", "val", "factorAbbreviation", "sec", "country"]
+                raw = pd.read_parquet(parquet_path, columns=needed_cols)
 
-        # M_RETURN을 여기서 분리하여 _prepare_metadata에서 재추출 방지
-        m_return_mask = raw["factorAbbreviation"] == "M_RETURN"
-        market_return_df = (
-            raw.loc[m_return_mask]
-            .rename(columns={"val": "M_RETURN"})
-            .drop(columns=["factorAbbreviation"])
-        )
-        raw = raw.loc[~m_return_mask]
+                for col in ["factorAbbreviation", "sec", "country", "gvkeyiid", "ticker", "isin"]:
+                    if col in raw.columns and raw[col].dtype == "object":
+                        raw[col] = raw[col].astype("category")
+
+                m_mask = raw["factorAbbreviation"] == "M_RETURN"
+                market_return_df = (
+                    raw.loc[m_mask, ["gvkeyiid", "ddt", "val"]]
+                    .rename(columns={"val": "M_RETURN"})
+                )
+                raw = raw.loc[~m_mask]
+                logger.info(f"Legacy parquet loaded in {time.time() - t0:.2f}s")
 
         return raw, market_return_df, start_date, end_date
 
@@ -172,24 +195,30 @@ class ModelPortfolioPipeline:
         factor_abbr_list = factor_metadata.factorAbbreviation.tolist()
         orders = factor_metadata.factorOrder.tolist()
 
-        # [C] merge 전 filter: factor_info에 있는 팩터만 남김 (merge 대상 축소)
-        valid_abbrs = set(factor_abbr_list)
-        raw_filtered = raw_data[raw_data["factorAbbreviation"].isin(valid_abbrs)]
+        # pipeline-ready parquet이면 factorOrder가 이미 존재 → factor_info merge 불필요
+        already_merged = "factorOrder" in raw_data.columns
 
-        # factor_metadata도 categorical 맞추기 (merge 성능)
-        factor_metadata["factorAbbreviation"] = factor_metadata["factorAbbreviation"].astype(
-            raw_filtered["factorAbbreviation"].dtype
-        )
-        merged = raw_filtered.merge(factor_metadata, on="factorAbbreviation", how="inner")
-
-        # M_RETURN 병합 (_load_data에서 이미 분리된 데이터 사용)
-        merged = (
-            merged.merge(
-                market_return_df,
-                on=["gvkeyiid", "ticker", "isin", "ddt", "sec", "country"],
-                how="inner",
+        if already_merged:
+            merged = raw_data
+        else:
+            # Legacy/test mode: factor_info merge 필요
+            valid_abbrs = set(factor_abbr_list)
+            raw_filtered = raw_data[raw_data["factorAbbreviation"].isin(valid_abbrs)]
+            factor_metadata["factorAbbreviation"] = factor_metadata["factorAbbreviation"].astype(
+                raw_filtered["factorAbbreviation"].dtype
             )
-            .query("sec != 'Undefined'")
+            merged = raw_filtered.merge(factor_metadata, on="factorAbbreviation", how="inner")
+            merged = merged.query("sec != 'Undefined'")
+
+        # M_RETURN 병합 (키를 gvkeyiid+ddt로 축소하여 merge 속도 향상)
+        mret_cols = list(market_return_df.columns)
+        merge_keys = ["gvkeyiid", "ddt"]
+        # M_RETURN에 gvkeyiid와 ddt 외 다른 키가 있으면 사용
+        extra_keys = [c for c in ["ticker", "isin", "sec", "country"] if c in mret_cols]
+        merged = merged.merge(
+            market_return_df,
+            on=merge_keys + extra_keys,
+            how="inner",
         )
 
         logger.info(f"[Trace] Merged data shape: {merged.shape}")
