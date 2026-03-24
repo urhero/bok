@@ -148,11 +148,12 @@ class ModelPortfolioPipeline:
                 if col in raw.columns and raw[col].dtype == "object":
                     raw[col] = raw[col].astype("category")
 
-            # M_RETURN 분리
+            # M_RETURN 분리 (원본 키 컬럼 유지 — merge 정합성)
             m_mask = raw["factorAbbreviation"] == "M_RETURN"
             market_return_df = (
-                raw.loc[m_mask, ["gvkeyiid", "ddt", "val"]]
+                raw.loc[m_mask]
                 .rename(columns={"val": "M_RETURN"})
+                .drop(columns=["factorAbbreviation"])
             )
             raw = raw.loc[~m_mask]
             logger.info(f"Test data loaded from {test_data_path} in {time.time() - t0:.2f}s")
@@ -162,9 +163,17 @@ class ModelPortfolioPipeline:
             mreturn_path = DATA_DIR / f"{benchmark}_mreturn.parquet"
 
             if factor_path.exists() and mreturn_path.exists():
-                # Pipeline-ready parquet (최적 경로: 0.4s 로딩, merge 불필요)
+                # Pipeline-ready parquet (최적 경로: merge 불필요)
                 raw = pd.read_parquet(factor_path)
                 market_return_df = pd.read_parquet(mreturn_path)
+
+                # categorical → object 변환 (pivot_table/groupby의 observed=False OOM 방지)
+                # pipeline-ready에서는 대규모 merge가 없으므로 categorical 불필요
+                for col in raw.select_dtypes(include="category").columns:
+                    raw[col] = raw[col].astype("object")
+                for col in market_return_df.select_dtypes(include="category").columns:
+                    market_return_df[col] = market_return_df[col].astype("object")
+
                 start_date = raw["ddt"].min().strftime("%Y-%m-%d")
                 end_date = raw["ddt"].max().strftime("%Y-%m-%d")
                 logger.info(f"Pipeline-ready parquet loaded in {time.time() - t0:.2f}s "
@@ -181,8 +190,9 @@ class ModelPortfolioPipeline:
 
                 m_mask = raw["factorAbbreviation"] == "M_RETURN"
                 market_return_df = (
-                    raw.loc[m_mask, ["gvkeyiid", "ddt", "val"]]
+                    raw.loc[m_mask]
                     .rename(columns={"val": "M_RETURN"})
+                    .drop(columns=["factorAbbreviation"])
                 )
                 raw = raw.loc[~m_mask]
                 logger.info(f"Legacy parquet loaded in {time.time() - t0:.2f}s")
