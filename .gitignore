@@ -192,8 +192,12 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 
-# Custom additions
-data/
+# Custom additions — data 디렉토리는 무시하되 특정 파일만 추적
+data/*
+!data/MXCN1A_factor_*.parquet
+!data/MXCN1A_mreturn.parquet
+!data/factor_info.csv
+!data/hardcoded_weights.csv
 data_backup/
 #config.py
 .cursorindexingignore
