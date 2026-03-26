@@ -391,7 +391,10 @@ def run_download_pipeline(
         updated_factor = pd.concat([existing_factor, new_factor], ignore_index=True)
         updated_mret = pd.concat([existing_mret, new_mret], ignore_index=True)
 
-        updated_factor.to_parquet(factor_path, index=False, compression="zstd")
+        # 연도별 분할 저장 (git 추적 가능하도록)
+        from service.download.parquet_io import save_factor_parquet_by_year
+        save_factor_parquet_by_year(updated_factor, data_dir, benchmark)
+        updated_factor.to_parquet(factor_path, index=False, compression="zstd")  # 단일 파일도 유지 (하위호환)
         updated_mret.to_parquet(mreturn_path, index=False, compression="zstd")
 
         logger.info("Incremental update saved in %.2fs (factor: %s, mret: %s)",
@@ -414,7 +417,10 @@ def run_download_pipeline(
         t0 = time.time()
         factor_df, mreturn_df = _build_pipeline_ready(raw_df, factor_info_path)
 
-        factor_df.to_parquet(factor_path, index=False, compression="zstd")
+        # 연도별 분할 저장 (git 추적 가능하도록)
+        from service.download.parquet_io import save_factor_parquet_by_year
+        save_factor_parquet_by_year(factor_df, data_dir, benchmark)
+        factor_df.to_parquet(factor_path, index=False, compression="zstd")  # 단일 파일도 유지 (하위호환)
         mreturn_df.to_parquet(mreturn_path, index=False, compression="zstd")
 
         logger.info("Saved in %.2fs — factor: %.1f MB, mreturn: %.1f MB",
