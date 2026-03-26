@@ -194,6 +194,7 @@ cython_debug/
 
 # Custom additions
 data/
+data_backup/
 #config.py
 .cursorindexingignore
 node_modules/

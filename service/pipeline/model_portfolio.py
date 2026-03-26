@@ -82,11 +82,11 @@ class ModelPortfolioPipeline:
         """전체 파이프라인 실행."""
         t0 = time.time()
 
-        # [1] 데이터 로딩 — README 1️⃣
+        # [1] 데이터 로딩 — README [1]
         raw_data, market_return_df, start_date, end_date = self._load_data(start_date, end_date, test_file)
         self.raw_data = raw_data
 
-        # [2] 메타데이터 병합 + 5분위 분석 — README 2-2
+        # [2] 메타데이터 병합 + 5분위 분석 — README [1], [2]
         factor_metadata, merged_data, factor_abbr_list, orders = self._prepare_metadata(raw_data, market_return_df)
         self.factor_metadata = factor_metadata
         analyze_cols = ["gvkeyiid", "ticker", "isin", "ddt", "sec", "val", "M_RETURN", "factorAbbreviation", "factorOrder"]
@@ -97,28 +97,28 @@ class ModelPortfolioPipeline:
             self._generate_report(factor_abbr_list, factor_metadata)
             return
 
-        # [3] 섹터 필터링 + L/N/S 라벨링 — README 2-3, 2-4
+        # [3] 섹터 필터링 + L/N/S 라벨링 — README [3]
         factor_name_list = factor_metadata.factorName.tolist()
         style_name_list = factor_metadata.styleName.tolist()
         kept_abbrs, kept_names, kept_styles, _, _, self.filtered_data = filter_and_label_factors(
             factor_abbr_list, factor_name_list, style_name_list, self.factor_stats
         )
 
-        # [4] 팩터 스프레드 수익률 + 후보군 선정 — README 2-5, 2-6
+        # [4] 팩터 스프레드 수익률 + 후보군 선정 — README [4]
         self.return_matrix, self.correlation_matrix, self.meta = self._evaluate_universe(
             kept_abbrs, kept_names, kept_styles, self.filtered_data, test_file
         )
 
-        # [5] 2-팩터 믹스 최적화 — README 3-1, 3-2
+        # [5] 2-팩터 믹스 최적화 — README [5]
         best_sub, ret_subset, factor_list, style_list = self._optimize_mixes(
             self.return_matrix, self.meta, self.correlation_matrix
         )
 
-        # [6] 스타일 제약 하 비중 결정 — README 3-3
+        # [6] 스타일 제약 하 비중 결정 — README [6]
         sim_result = simulate_constrained_weights(ret_subset, style_list, test_mode=bool(test_file))
         self.weights = sim_result[1]
 
-        # [7] MP 구성 + CSV 출력 — README 4-1 ~ 4-3
+        # [7] MP 구성 + CSV 출력 — README [7]
         self._construct_and_export(
             sim_result, kept_abbrs, self.filtered_data, end_date, test_file
         )
@@ -156,7 +156,7 @@ class ModelPortfolioPipeline:
                 .drop(columns=["factorAbbreviation"])
             )
             raw = raw.loc[~m_mask]
-            logger.info(f"Test data loaded from {test_data_path} in {time.time() - t0:.2f}s")
+            logger.info("Test data loaded from %s in %.2fs", test_data_path, time.time() - t0)
         else:
             benchmark = self.config["benchmark"]
             factor_path = DATA_DIR / f"{benchmark}_factor.parquet"
@@ -176,8 +176,8 @@ class ModelPortfolioPipeline:
 
                 start_date = raw["ddt"].min().strftime("%Y-%m-%d")
                 end_date = raw["ddt"].max().strftime("%Y-%m-%d")
-                logger.info(f"Pipeline-ready parquet loaded in {time.time() - t0:.2f}s "
-                             f"({len(raw):,} factor + {len(market_return_df):,} mret)")
+                logger.info("Pipeline-ready parquet loaded in %.2fs (%s factor + %s mret)",
+                             time.time() - t0, f"{len(raw):,}", f"{len(market_return_df):,}")
             else:
                 # Fallback: 기존 raw parquet
                 parquet_path = DATA_DIR / f"{benchmark}_{start_date}_{end_date}.parquet"
@@ -195,7 +195,7 @@ class ModelPortfolioPipeline:
                     .drop(columns=["factorAbbreviation"])
                 )
                 raw = raw.loc[~m_mask]
-                logger.info(f"Legacy parquet loaded in {time.time() - t0:.2f}s")
+                logger.info("Legacy parquet loaded in %.2fs", time.time() - t0)
 
         return raw, market_return_df, start_date, end_date
 
@@ -220,10 +220,9 @@ class ModelPortfolioPipeline:
             merged = raw_filtered.merge(factor_metadata, on="factorAbbreviation", how="inner")
             merged = merged.query("sec != 'Undefined'")
 
-        # M_RETURN 병합 (키를 gvkeyiid+ddt로 축소하여 merge 속도 향상)
+        # M_RETURN 병합
         mret_cols = list(market_return_df.columns)
         merge_keys = ["gvkeyiid", "ddt"]
-        # M_RETURN에 gvkeyiid와 ddt 외 다른 키가 있으면 사용
         extra_keys = [c for c in ["ticker", "isin", "sec", "country"] if c in mret_cols]
         merged = merged.merge(
             market_return_df,
@@ -231,14 +230,14 @@ class ModelPortfolioPipeline:
             how="inner",
         )
 
-        logger.info(f"[Trace] Merged data shape: {merged.shape}")
+        logger.info("[Trace] Merged data shape: %s", merged.shape)
         return factor_metadata, merged, factor_abbr_list, orders
 
     def _analyze_factors(self, merged_data, factor_abbr_list, orders, test_file):
         """모든 팩터에 대해 5분위 분석을 실행한다 (일괄 처리)."""
         t1 = time.time()
         result = calculate_factor_stats_batch(merged_data, factor_abbr_list, orders, test_mode=bool(test_file))
-        logger.info(f"Factors assigned in {time.time() - t1:.2f}s")
+        logger.info("Factors assigned in %.2fs", time.time() - t1)
         return result
 
     def _generate_report(self, factor_abbr_list, factor_metadata):

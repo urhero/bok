@@ -68,7 +68,7 @@ def find_optimal_mix(
         negative_corr["factorAbbreviation"], description=f"Mixing {main} with sub-factors"
     ):
         if main == sub:
-            logger.warning(f"Skipping mix of {main} with itself")
+            logger.warning("Skipping mix of %s with itself", main)
             continue
         port = factor_rets[[main, sub]]
         mix_ret = port[main].to_numpy()[:, None] * w_grid + port[sub].to_numpy()[:, None] * w_inv
@@ -97,7 +97,7 @@ def find_optimal_mix(
 
     df_mix = pd.concat(frames, ignore_index=True)
     df_mix["rank_total"] = df_mix["mix_cagr"].rank(ascending=False) * 0.6 + df_mix["mix_mdd"].rank(ascending=False) * 0.4
-    logger.info(f"[Trace] Generated Mix Grid for {main}. Size: {len(df_mix)}")
+    logger.info("[Trace] Generated Mix Grid for %s. Size: %d", main, len(df_mix))
     best = df_mix.nsmallest(1, "rank_total").iloc[0]
 
     return df_mix
@@ -176,7 +176,7 @@ def simulate_constrained_weights(
 
     if test_mode:
         style_cap = 1.0
-        logger.info(f"Test mode: relaxed style_cap to {style_cap}")
+        logger.info("Test mode: relaxed style_cap to %s", style_cap)
 
     styles = np.asarray(style_list)
 
@@ -280,5 +280,5 @@ def simulate_constrained_weights(
 
     weights_tbl = weights_tbl[weights_tbl["raw_weight"] > 0].sort_values("raw_weight", ascending=False).reset_index(drop=True)
 
-    logger.info(f"[Trace] Simulation completed. Best stats: {best_stats.to_dict('records')}")
+    logger.info("[Trace] Simulation completed. Best stats: %s", best_stats.to_dict('records'))
     return best_stats, weights_tbl

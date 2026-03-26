@@ -12,17 +12,22 @@
 - 학술·실무 근거에 기반한 다수(200+) 팩터를 사전에 정의 및 축적
 - 각 팩터는 **스타일 단위(Valuation, Momentum, Quality, Growth 등)**로 분류
 
-### 입력 데이터
-- `data/{benchmark}_{start_date}_{end_date}.parquet` (SQL Server DB에서 다운로드)
-  - 종목 × 날짜 × 팩터 값 (`gvkeyiid, ticker, isin, ddt, sec, country, factorAbbreviation, val`)
-- `data/factor_info.csv`
-  - 팩터 메타 정보 (factorAbbreviation, factorName, styleName, factorOrder)
-- `data/hardcoded_weights.csv`
-  - 프로덕션 가중치 (hardcoded 모드에서 사용)
+### 입력 데이터 (Pipeline-Ready Parquet)
+- `data/{benchmark}_factor.parquet` — 팩터 데이터 (factor_info merge 완료, categorical, zstd 압축)
+  - 컬럼: `gvkeyiid, ticker, isin, ddt, sec, val, factorAbbreviation, factorOrder`
+- `data/{benchmark}_mreturn.parquet` — M_RETURN (gvkeyiid × ddt, 별도 저장)
+  - 67K행 (19M 팩터행에 중복 저장하지 않음 → 169MB vs 200MB)
+- `data/factor_info.csv` — 팩터 메타 정보 (factorAbbreviation, factorName, styleName, factorOrder)
+- `data/hardcoded_weights.csv` — 프로덕션 가중치 (hardcoded 모드에서 사용)
+
+### 다운로드 (`download_factors.py`)
+- `python main.py download 2017-12-31 2026-02-28` — 전체 다운로드
+- `python main.py download 2017-12-31 2026-03-31 --incremental` — 증분 다운로드 (신규 월만)
+- 저장 후 자동 검증: 빈 월 감지, 팩터 수 급변, M_RETURN 정합성 (Rich 시각화)
 
 ### 코드 구현
-- `_load_data()`: parquet/CSV 로드, M_RETURN 분리, categorical 변환
-- `_prepare_metadata()`: factor_info merge, M_RETURN 병합
+- `_load_data()`: pipeline-ready parquet 로드 (fallback: legacy raw parquet, test CSV)
+- `_prepare_metadata()`: factor_info merge (pipeline-ready에서는 skip), M_RETURN 병합
 - 백테스트 시작: `ddt >= 2017-12-31` (→ 2018년부터 실질 성과 반영)
 
 ---
