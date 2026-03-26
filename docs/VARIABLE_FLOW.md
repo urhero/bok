@@ -14,17 +14,19 @@ graph TD
     classDef file fill:#fff3e0,stroke:#e65100,stroke-width:2px,stroke-dasharray: 5 5;
 
     %% --- [1] Load Data ---
-    File_Parquet[("📄 *.parquet")]:::file
+    File_Factor[("📄 {benchmark}_factor.parquet<br/>(팩터 데이터, factor_info merge 완료)")]:::file
+    File_MRet[("📄 {benchmark}_mreturn.parquet<br/>(M_RETURN, 67K행)")]:::file
     File_Info[("📄 factor_info.csv")]:::file
 
-    Func_Load{{"[1] _load_data + _prepare_metadata<br/>(데이터 로딩, M_RETURN 분리, categorical 변환)"}}:::func
+    Func_Load{{"[1] _load_data + _prepare_metadata<br/>(pipeline-ready parquet 로드, M_RETURN 병합)"}}:::func
 
     Var_Raw("raw_data<br/>(pd.DataFrame)"):::data
     Var_MRet("market_return_df<br/>(pd.DataFrame)"):::data
     Var_Info("factor_metadata<br/>(pd.DataFrame)"):::data
     Var_Merged("merged_data<br/>(pd.DataFrame)"):::data
 
-    File_Parquet --> Func_Load
+    File_Factor --> Func_Load
+    File_MRet --> Func_Load
     File_Info --> Func_Load
     Func_Load --> Var_Raw & Var_MRet & Var_Info
     Var_Raw & Var_MRet & Var_Info --> Var_Merged
@@ -104,10 +106,10 @@ graph TD
 
 | Step | Variable | Description | Type | Source |
 | :--- | :--- | :--- | :--- | :--- |
-| `[1]` | `raw_data` | Parquet/CSV에서 로드된 팩터 데이터 (M_RETURN 분리 후) | `pd.DataFrame` | `_load_data` |
-| `[1]` | `market_return_df` | M_RETURN 행을 분리한 시장 수익률 | `pd.DataFrame` | `_load_data` |
+| `[1]` | `raw_data` | Pipeline-ready factor parquet에서 로드 (factorOrder 포함, M_RETURN 별도) | `pd.DataFrame` | `_load_data` |
+| `[1]` | `market_return_df` | M_RETURN parquet에서 로드 (67K행, gvkeyiid × ddt) | `pd.DataFrame` | `_load_data` |
 | `[1]` | `factor_metadata` | factor_info.csv 메타 정보 | `pd.DataFrame` | `_prepare_metadata` |
-| `[1]` | `merged_data` | raw_data + factor_metadata + M_RETURN 병합 결과 | `pd.DataFrame` | `_prepare_metadata` |
+| `[1]` | `merged_data` | raw_data + M_RETURN 병합 결과 (pipeline-ready면 factor_info merge 생략) | `pd.DataFrame` | `_prepare_metadata` |
 | `[2]` | `factor_stats` | 팩터별 분석 결과 (sector_return, spread, merged_df) | `List[Tuple]` | `calculate_factor_stats_batch` |
 | `[3]` | `filtered_data` | 섹터 필터 + label 부여된 종목 데이터 | `List[pd.DataFrame]` | `filter_and_label_factors` |
 | `[3]` | `kept_abbrs/names/styles` | 유지된 팩터 메타 리스트 | `List[str]` | `filter_and_label_factors` |

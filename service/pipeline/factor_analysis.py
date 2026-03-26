@@ -53,7 +53,7 @@ def calculate_factor_stats(
 
         spread_series: [0.0, 0.033, 0.028, ...]  (Q1-Q5, 0으로 시작)
     """
-    logger.debug(f"[Trace] Processing factor {factor_abbr}. Data shape: {factor_data_df.shape}")
+    logger.debug("[Trace] Processing factor %s. Data shape: %s", factor_abbr, factor_data_df.shape)
 
     # 데이터 정제
     factor_data_df = factor_data_df.dropna().reset_index(drop=True)
@@ -112,7 +112,7 @@ def calculate_factor_stats(
     spread_series = pd.DataFrame({factor_abbr: quantile_return_df.iloc[:, 0] - quantile_return_df.iloc[:, -1]})
     spread_series = prepend_start_zero(spread_series)
 
-    logger.debug(f"[Trace] Factor {factor_abbr} assigned. Sector Ret Shape: {sector_return_df.shape}, Quantile Ret Shape: {quantile_return_df.shape}")
+    logger.debug("[Trace] Factor %s assigned. Sector Ret Shape: %s, Quantile Ret Shape: %s", factor_abbr, sector_return_df.shape, quantile_return_df.shape)
     return sector_return_df, quantile_return_df, spread_series, merged_df
 
 
@@ -147,7 +147,7 @@ def filter_and_label_factors(
         | 2024-01-31 | 002      | 000858 | Consumer | Q5       | -1    |
         | 2024-01-31 | 003      | 601318 | Consumer | Q3       | 0     |
     """
-    kept_factor_abbrs, kept_name, kept_style, kept_idx = [], [], [], []
+    kept_factor_abbrs, kept_names, kept_styles, kept_idx = [], [], [], []
     dropped_sec: List[List[str]] = []
     filtered_raw_data_list: List[pd.DataFrame] = []
 
@@ -188,14 +188,14 @@ def filter_and_label_factors(
         merged = raw_clean.dropna(subset=["label"])
 
         kept_factor_abbrs.append(factor_abbr_list[idx])
-        kept_name.append(factor_name_list[idx])
-        kept_style.append(style_name_list[idx])
+        kept_names.append(factor_name_list[idx])
+        kept_styles.append(style_name_list[idx])
         kept_idx.append(idx)
         dropped_sec.append(to_drop)
         filtered_raw_data_list.append(merged)
 
     logger.info("Sector filter retained %d / %d factors", len(kept_idx), len(factor_abbr_list))
-    return kept_factor_abbrs, kept_name, kept_style, kept_idx, dropped_sec, filtered_raw_data_list
+    return kept_factor_abbrs, kept_names, kept_styles, kept_idx, dropped_sec, filtered_raw_data_list
 
 
 def calculate_factor_stats_batch(

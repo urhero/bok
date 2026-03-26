@@ -5,9 +5,12 @@
 """
 from __future__ import annotations
 
+import logging
 from typing import List
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from service.pipeline.weight_construction import (
     calculate_vectorized_return,
@@ -58,8 +61,7 @@ def aggregate_factor_returns(
         factor_abbr_list: 팩터 약어 리스트 (factor_data_list와 동일 순서)
 
     Returns:
-        (gross_return_df, net_return_df, trading_cost_df) 튜플
-        각각 (날짜 × 팩터) DataFrame
+        net_return_df — (날짜 × 팩터) net return DataFrame
 
     예시 Output (net_return_df):
         | ddt        | SalesAcc | PM6M   | 90DCV  |
