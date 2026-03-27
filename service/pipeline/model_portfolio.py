@@ -40,6 +40,7 @@ from service.pipeline.weight_construction import (
     calculate_vectorized_return,
     construct_long_short_df,
 )
+from service.download.parquet_io import load_factor_parquet
 
 logger = logging.getLogger(__name__)
 
@@ -159,16 +160,14 @@ class ModelPortfolioPipeline:
             logger.info("Test data loaded from %s in %.2fs", test_data_path, time.time() - t0)
         else:
             benchmark = self.config["benchmark"]
-            factor_path = DATA_DIR / f"{benchmark}_factor.parquet"
             mreturn_path = DATA_DIR / f"{benchmark}_mreturn.parquet"
 
-            if factor_path.exists() and mreturn_path.exists():
-                # Pipeline-ready parquet (최적 경로: merge 불필요)
-                raw = pd.read_parquet(factor_path)
+            try:
+                # 연도별 분할 parquet 또는 단일 파일 로드 (parquet_io가 자동 탐색)
+                raw = load_factor_parquet(DATA_DIR, benchmark, validate=True)
                 market_return_df = pd.read_parquet(mreturn_path)
 
                 # categorical → object 변환 (pivot_table/groupby의 observed=False OOM 방지)
-                # pipeline-ready에서는 대규모 merge가 없으므로 categorical 불필요
                 for col in raw.select_dtypes(include="category").columns:
                     raw[col] = raw[col].astype("object")
                 for col in market_return_df.select_dtypes(include="category").columns:
@@ -176,10 +175,10 @@ class ModelPortfolioPipeline:
 
                 start_date = raw["ddt"].min().strftime("%Y-%m-%d")
                 end_date = raw["ddt"].max().strftime("%Y-%m-%d")
-                logger.info("Pipeline-ready parquet loaded in %.2fs (%s factor + %s mret)",
+                logger.info("Factor parquet loaded in %.2fs (%s factor + %s mret)",
                              time.time() - t0, f"{len(raw):,}", f"{len(market_return_df):,}")
-            else:
-                # Fallback: 기존 raw parquet
+            except FileNotFoundError:
+                # Fallback: 기존 raw parquet (날짜 범위 포함 파일명)
                 parquet_path = DATA_DIR / f"{benchmark}_{start_date}_{end_date}.parquet"
                 needed_cols = ["gvkeyiid", "ticker", "isin", "ddt", "val", "factorAbbreviation", "sec", "country"]
                 raw = pd.read_parquet(parquet_path, columns=needed_cols)
