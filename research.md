@@ -1,0 +1,668 @@
+# Awesome-Cohen (Book of Knowledge) 심층 분석 보고서
+
+> 분석 일시: 2026-03-27
+> 분석 범위: 프로젝트 전체 (13개 프로덕션 모듈, 6개 테스트 모듈, 설정/데이터 파일)
+
+---
+
+## 1. 시스템 개요 (Overview)
+
+### 1.1 목적
+
+Awesome-Cohen(BoK)은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 모델 포트폴리오(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다.
+
+핵심 비즈니스 가치:
+- PIT(Point-in-Time) 데이터로 미래 정보 편향(look-ahead bias) 방지
+- 5분위 포트폴리오 기법으로 팩터 유효성 검증
+- 스타일 다변화 제약(25% cap)으로 집중 위험 통제
+- 프로덕션 모드(고정 가중치)와 연구 모드(시뮬레이션) 분리
+
+### 1.2 아키텍처 패턴
+
+**하이브리드 구조: Pipeline 클래스 오케스트레이터 + 순수 함수 모듈**
+
+`ModelPortfolioPipeline` 클래스가 7단계를 순차 조율하되, 각 단계의 실제 로직은 6개 독립 모듈의 순수 함수에 위치한다. 클래스는 중간 결과물(`self.meta`, `self.weights` 등)을 인스턴스 변수로 보관하여 디버깅과 사후 분석을 지원한다.
+
+```
+main.py (CLI)
+  └→ ModelPortfolioPipeline.run()  [오케스트레이터]
+       ├→ factor_analysis.py       [5분위 분석]
+       ├→ correlation.py           [하락 상관관계]
+       ├→ optimization.py          [2-팩터 믹스 + MC 시뮬레이션]
+       ├→ weight_construction.py   [롱/숏 수익률]
+       └→ pipeline_utils.py        [시계열 유틸리티]
+```
+
+### 1.3 기술 스택
+
+| 계층 | 기술 |
+|------|------|
+| 런타임 | Python 3.10.11, pipenv |
+| 데이터 | pandas (주력), numpy, polars/dask (보조) |
+| DB | MS SQL Server via SQLAlchemy + pyodbc (ODBC Driver 17) |
+| 최적화 | NumPy 벡터연산 (MC 시뮬레이션), qpsolvers/OSQP (미래 확장용) |
+| I/O | pyarrow (parquet, zstd 압축), CSV |
+| CLI/UX | argparse, Rich (로깅, 프로그레스바, 테이블) |
+| 보고서 | matplotlib, reportlab (PDF) |
+| 테스트 | pytest, pytest-cov, pytest-xdist |
+| 설정 | python-dotenv (.env) |
+
+### 1.4 진입점 (Entry Points)
+
+**CLI 2개 커맨드** (`main.py`):
+
+| 커맨드 | 용도 | 호출 경로 |
+|--------|------|-----------|
+| `python main.py download <start> <end>` | SQL → parquet 다운로드 | `run_download_pipeline()` |
+| `python main.py mp <start> <end>` | parquet → MP CSV 생성 | `run_model_portfolio_pipeline()` → `ModelPortfolioPipeline.run()` |
+| `python main.py mp test <file>` | 소량 데이터 테스트 모드 | 동일 경로, `test_file` 인자 활성 |
+| `python main.py mp --report` | PDF 보고서만 생성 후 종료 | `_generate_report()` → `sys.exit(0)` |
+
+---
+
+## 2. 데이터 흐름 (Data Flow)
+
+### 2.1 전체 파이프라인 흐름도
+
+```
+[SQL Server]                [파일 시스템]              [출력]
+     │                           │                       │
+     ▼                           │                       │
+ download 커맨드                  │                       │
+     │                           │                       │
+     ├─ fetch_snp()              │                       │
+     │  (SQL query w/            │                       │
+     │   ROW_NUMBER dedup)       │                       │
+     ▼                           │                       │
+ _build_pipeline_ready()         │                       │
+     │                           │                       │
+     ├─ M_RETURN 분리            │                       │
+     ├─ factor_info merge        │                       │
+     ├─ Undefined 섹터 제거       │                       │
+     ├─ categorical 변환          │                       │
+     ▼                           ▼                       │
+ {benchmark}_factor.parquet   (zstd)                     │
+ {benchmark}_mreturn.parquet  (zstd)                     │
+     │                           │                       │
+     │    mp 커맨드 시작 ──────────┘                       │
+     │         │                                         │
+     │    [1] _load_data()                               │
+     │         │                                         │
+     │         ├─ Pipeline-ready: parquet 직접 로드        │
+     │         ├─ Legacy: raw parquet + M_RETURN 분리     │
+     │         └─ Test: CSV 로드 + fld 파싱              │
+     │         │                                         │
+     │    [2] _prepare_metadata()                        │
+     │         │                                         │
+     │         ├─ factor_info.csv merge (factorOrder)     │
+     │         └─ M_RETURN merge (gvkeyiid + ddt 기준)   │
+     │         │                                         │
+     │    [3] _analyze_factors()                          │
+     │         │                                         │
+     │         └─ calculate_factor_stats_batch()          │
+     │              │                                    │
+     │              ├─ batch lag: groupby(gvkeyiid,      │
+     │              │   factorAbbr).shift(1)              │
+     │              ├─ per-factor: rank → percentile      │
+     │              │   → quantile(Q1~Q5)                │
+     │              └─ sector×quantile 평균 수익률 + 스프레드│
+     │         │                                         │
+     │    [4] filter_and_label_factors()                  │
+     │         │                                         │
+     │         ├─ 음의 스프레드(Q1<Q5) 섹터 제거           │
+     │         └─ 10% 임계값 기반 L(1)/N(0)/S(-1) 라벨    │
+     │         │                                         │
+     │    [5] _evaluate_universe()                        │
+     │         │                                         │
+     │         ├─ aggregate_factor_returns()              │
+     │         │    └─ per-factor: L/S 분리 →             │
+     │         │       vectorized return (30bp cost)      │
+     │         │       → net L+S 합산                     │
+     │         ├─ CAGR 계산 + 상위 50개 선정              │
+     │         ├─ calculate_downside_correlation()        │
+     │         └─ meta_data.csv 저장                      │
+     │         │                                         │
+     │    [6] _optimize_mixes()                          │
+     │         │                                         │
+     │         ├─ 스타일별 top-1 팩터 선정                 │
+     │         └─ find_optimal_mix() × 스타일 수           │
+     │              └─ 3개 보조팩터 × 101 가중치 그리드     │
+     │         │                                         │
+     │    [7] simulate_constrained_weights()              │
+     │         │                                         │
+     │         ├─ mode="hardcoded": CSV 고정 가중치        │
+     │         └─ mode="simulation": MC 100만 시뮬레이션    │
+     │              ├─ 랜덤 가중치 생성 (합=1)             │
+     │              ├─ 스타일 cap 25% 적용 (초과분 재분배)  │
+     │              └─ CAGR 60% + MDD 40% 복합 랭크       │
+     │         │                                         │
+     │    [8] _construct_and_export()                     │
+     │         │                                         ▼
+     │         ├─ 종목별 equal-weight 비중 산출    → aggregated_weights_*.csv
+     │         ├─ MP 집계 (전체 팩터 합산)         → total_aggregated_weights_*.csv
+     │         ├─ 스타일별 집계                    → total_aggregated_weights_style_*.csv
+     │         └─ 피벗 테이블 (Bloomberg용)        → pivoted_total_agg_wgt_*.csv
+```
+
+### 2.2 단계별 데이터 변환 상세
+
+#### [1] _load_data: 데이터 로딩
+
+3가지 경로 존재:
+
+| 경로 | 조건 | 특징 |
+|------|------|------|
+| Pipeline-ready | `{benchmark}_factor.parquet` + `{benchmark}_mreturn.parquet` 존재 | **최적 경로.** merge 불필요, categorical→object 변환만 수행 |
+| Legacy | 위 파일 없고 `{benchmark}_{start}_{end}.parquet` 존재 | raw parquet에서 M_RETURN 분리 필요 |
+| Test | `test_file` 인자 전달 시 | CSV 로드, `fld` 컬럼에서 regex로 factorAbbreviation 파싱 |
+
+**중요 변환**: Pipeline-ready parquet에서 로드 시 `categorical → object` 변환을 수행한다. 이유: `pivot_table`/`groupby`에서 `observed=False` 사용 시 categorical의 전체 카테고리 조합이 메모리를 폭발시키는 OOM 문제를 방지.
+
+**반환값**: `(raw_data, market_return_df, start_date, end_date)`
+
+#### [2] _prepare_metadata: 메타데이터 병합
+
+- `factor_info.csv`에서 factorAbbreviation, factorName, styleName, factorOrder 로드
+- Pipeline-ready parquet은 이미 factorOrder가 포함되어 있으므로 merge 생략
+- Legacy/Test 모드: `factor_info` merge + `sec != 'Undefined'` 필터
+- **M_RETURN merge**: `gvkeyiid + ddt` 기본 키 + 가용한 추가 키(`ticker, isin, sec, country`) 사용
+
+**핵심 판단**: `already_merged = "factorOrder" in raw_data.columns`로 경로 분기
+
+#### [3] _analyze_factors → calculate_factor_stats_batch: 5분위 분석
+
+**하이브리드 배치 전략** (성능 최적화의 핵심):
+
+```python
+# Step 1: batch lag (전체 DataFrame에 한번만)
+df["val_lagged"] = df.groupby(["gvkeyiid", "factorAbbreviation"])["val"].shift(1)
+
+# Step 2: descending 팩터는 val_lagged에 -1 곱하기 (배치)
+df.loc[desc_mask, "val_lagged"] *= -1
+
+# Step 3: per-factor 루프 (2키 groupby가 3키보다 2.8x 빠르므로)
+for factor_abbr in factor_abbr_list:
+    fdf = grouped.get_group(factor_abbr)
+    grp = fdf.groupby(["ddt", "sec"])["val_lagged"]
+    fdf["rank"] = grp.rank(method="average", ascending=True)
+    # ... percentile → quantile → sector return → spread
+```
+
+**1개월 래그 메커니즘**: `groupby("gvkeyiid").shift(1)` — 동일 종목 내에서 전월 팩터값을 당월에 매핑. look-ahead bias 방지의 핵심.
+
+**5분위 버킷화 규칙**:
+- 백분위 = `(rank - 1) / (count - 1) * 100`
+- 버킷 경계: `[0, 20, 40, 60, 80, 105]` (105인 이유: 100% 종목도 Q5에 포함시키기 위한 여유)
+- `include_lowest=True, right=True`
+- **test_mode=False일 때**: 섹터-날짜 그룹 내 종목 수 ≤ 10이면 `percentile = NaN` → 해당 종목 분위 할당 제외
+
+**sort_order 처리**: `sort_order=0`(낮을수록 좋은 팩터)이면 `val_lagged *= -1`로 방향 통일. 이후 모든 rank는 ascending=True.
+
+**반환값**: `List[(sector_return_df, None, spread_series, merged_df)]` — quantile_return_df는 None (downstream에서 재계산하므로 불필요)
+
+#### [4] filter_and_label_factors: 섹터 필터 + L/N/S 라벨링
+
+**음의 스프레드 제거 로직**:
+```python
+# 섹터별 Q1-Q5 스프레드 계산
+tmp["spread"] = tmp["Q1"] - tmp["Q5"]
+# 음수 스프레드 = 팩터가 역방향으로 작용하는 섹터 → 제거
+to_drop = tmp.loc[tmp["spread"] < 0, "sec"].tolist()
+```
+
+**L/N/S 라벨 결정 (10% 임계값)**:
+```python
+thresh = abs(Q1_mean - Q5_mean) * 0.10
+
+# 롱 확장: Q1부터 내려가며, 수익률이 (Q1 - thresh) 이상인 연속 분위
+q_mean["long"] = (q_mean["mean"] > Q1_mean - thresh).cumprod()
+
+# 숏 확장: Q5부터 올라가며, 수익률이 (Q5 + thresh) 이하인 연속 분위
+q_mean["short"] = (q_mean["mean"] < Q5_mean + thresh).abs()[::-1].cumprod()[::-1] * -1
+
+# 합산: long=1, short=-1, neutral=0
+q_mean["label"] = q_mean["long"] + q_mean["short"]
+```
+
+이 로직의 의미: Q1과 Q5 사이 스프레드의 10%를 허용 범위로 두고, Q1에 가까운 성과를 보이는 분위도 롱에, Q5에 가까운 분위도 숏에 포함시킨다. 결과적으로 Q1=L, Q2~Q4=일부 L/N/S, Q5=S가 된다.
+
+#### [5] _evaluate_universe: 팩터 유니버스 평가 및 상위 50 선정
+
+```python
+# 1. 팩터별 순수익률 행렬 구성
+ret_df = aggregate_factor_returns(filtered_data, kept_abbrs)
+# ↳ per-factor: construct_long_short_df → calculate_vectorized_return → net_L + net_S
+
+# 2. 첫 행 = 0 (시작 기준점)
+ret_df.loc[ret_df.index[0]] = 0.0
+
+# 3. 0이 10개 초과인 팩터 제거 (데이터 불충분)
+valid = ret_df.columns[(ret_df == 0).sum() <= 10]
+
+# 4. CAGR 계산 및 정렬
+meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
+
+# 5. 상위 50개만 선정
+meta = meta[:50]
+
+# 6. 하락 상관관계 행렬 계산
+negative_corr = calculate_downside_correlation(ret_df)
+```
+
+**aggregate_factor_returns 내부 흐름**:
+```
+per-factor:
+  labeled_data → construct_long_short_df()
+    → long_df (label=1, signal="L")
+    → short_df (label=-1, signal="S")
+  → calculate_vectorized_return(long_df) → net_L
+  → calculate_vectorized_return(short_df) → net_S
+  → net = net_L + net_S
+```
+
+**calculate_vectorized_return 핵심 로직**:
+- `pivot_table`으로 (날짜 × 종목) 행렬 생성
+- 리밸런싱 블록별 누적 성장률 계산 (`cumulative_growth_block`)
+- 턴오버 = abs(새 비중 - 이전 비중의 drift)
+- 거래비용 = 30bp × 턴오버
+
+#### [6] _optimize_mixes: 2-팩터 믹스 최적화
+
+**스타일별 top-1 메인 팩터 선정**:
+```python
+top_metrics = meta.groupby("styleName", as_index=False).first()
+# → 각 스타일에서 CAGR 1위 팩터를 메인으로 선정
+```
+
+**보조 팩터 후보 선정 (find_optimal_mix 내부)**:
+```python
+# 복합 랭크: CAGR 순위 70% + 하락 상관관계 순위 30%
+rank_avg = rank_cagr * 0.7 + rank_ncorr * 0.3
+# 상위 3개 보조 팩터 선정
+negative_corr.nsmallest(3, "rank_avg")
+```
+
+**그리드 서치**: 메인:보조 가중치를 0:100 ~ 100:0 (1% 단위, 101포인트)로 탐색
+```python
+mix_ret = port[main] * w_grid + port[sub] * (1 - w_grid)
+# → CAGR, MDD 계산
+# → rank_total = CAGR순위*0.6 + MDD순위*0.4
+```
+
+**최종 선택**: `rank_total`이 가장 낮은 (main_factor, sub_factor) 조합
+
+#### [7] simulate_constrained_weights: 가중치 시뮬레이션
+
+**듀얼 모드**:
+
+| 모드 | 용도 | 동작 |
+|------|------|------|
+| `hardcoded` (기본) | 프로덕션 | `data/hardcoded_weights.csv`에서 10개 팩터의 고정 가중치 로드 |
+| `simulation` | 연구/테스트 | MC 100만 시뮬레이션 |
+
+**시뮬레이션 모드 핵심 알고리즘**:
+
+```
+1. K개 팩터에 대해 랜덤 가중치 생성 (Dirichlet-like: rand → normalize)
+2. 스타일 제약 적용:
+   a. style_mask (S×K 이진 행렬) @ weights → 스타일별 비중
+   b. 25% 초과 스타일: scale = cap / share (비례 축소)
+   c. 초과분(excess)을 여유 스타일에 재분배
+   d. 정규화 (합=1)
+3. 유효성 검사: 모든 스타일 비중 ≤ cap + tol
+4. 수익률 시뮬레이션: port_np @ fitted_weights → cumulative
+5. CAGR(60%) + MDD(40%) 복합 랭크로 최적 포트폴리오 선택
+```
+
+**배치 처리**: `batch_size=100_000`으로 메모리 효율 확보. float32 사용.
+
+**test_mode**: `style_cap = 1.0`으로 완화 (소량 데이터에서 제약 충족 불가 방지)
+
+#### [8] _construct_and_export: 최종 가중치 산출 및 CSV 출력
+
+**종목별 비중 계산**:
+```python
+# 동일가중: label(±1) × factor_weight / count_per_group
+df["mp_ls_weight"] = df["label"] * w / count_per_group
+df["ls_weight"] = df["label"] / count_per_group
+```
+
+**style_ls_weight 계산** (스타일 내 정규화):
+```python
+# 스타일별 factor_weight 합계 계산
+style_totals = unique_factor_fw.groupby(["ddt", "style"])["factor_weight"].sum()
+# ls_weight를 스타일 비중으로 정규화
+style_ls_weight = ls_weight * factor_weight / style_fw_sum
+```
+
+**MP(모델 포트폴리오) 집계**:
+```python
+# 전체 팩터의 mp_ls_weight 합산 → MP 행
+agg_w = weight_raw.groupby(["ddt", "ticker", "isin", "gvkeyiid"])[["mp_ls_weight", "factor_weight"]].sum()
+agg_w["style"] = "MP"
+```
+
+**출력 파일 4종**:
+
+| 파일 | 내용 | 용도 |
+|------|------|------|
+| `total_aggregated_weights_*.csv` | 팩터별 + MP 행이 모두 포함된 전체 가중치 | 감사 추적 |
+| `total_aggregated_weights_style_*.csv` | 스타일별 집계 | 스타일 노출 모니터링 |
+| `pivoted_total_agg_wgt_*.csv` | 피벗 형태 (행=종목, 열=스타일×팩터) | Bloomberg Optimizer 입력 |
+| `meta_data.csv` | 팩터 성과 지표 (CAGR, 순위) | 팩터 선정 근거 |
+
+### 2.3 다운로드 파이프라인 (download 커맨드)
+
+```
+SQL Server (clarifi_mxcn1a_afl 테이블)
+    │
+    ├─ GenerateQueryStructure.fetch_snp()
+    │    ├─ ROW_NUMBER() OVER (PARTITION BY gvkeyiid, ddt, fld ORDER BY updated_at DESC)
+    │    │   → 중복 제거 (같은 종목-날짜-팩터에 여러 행 → 최신 1건만)
+    │    └─ CASE문으로 fld에서 factorAbbreviation 추출
+    │
+    ▼
+ _build_pipeline_ready(raw_df, factor_info_path)
+    │
+    ├─ M_RETURN 분리 (val → M_RETURN rename, 별도 DataFrame)
+    ├─ factor_info merge (factorOrder만)
+    ├─ sec != "Undefined" 제거
+    ├─ categorical 변환 (gvkeyiid, ticker, isin, factorAbbreviation, sec)
+    │
+    ▼
+ 2개 parquet (zstd 압축)
+    ├─ {benchmark}_factor.parquet (~수백MB)
+    └─ {benchmark}_mreturn.parquet (~수MB)
+```
+
+**증분 모드** (`--incremental`):
+1. 기존 parquet을 `data_backup/`에 **복사** (원본 유지)
+2. `end_date` 월만 SQL에서 다운로드
+3. 기존 parquet에서 해당 월 제거 (중복 방지)
+4. `pd.concat([기존, 신규])` → 저장
+
+**전체 모드** (기본):
+1. 기존 parquet을 `data_backup/`에 **이동** (원본 삭제)
+2. 전체 기간 SQL 다운로드 → 저장
+
+**검증** (`validate_parquet_coverage`): 5가지 체크
+1. 빈 월 감지 (연속 날짜 간격 > 35일)
+2. 팩터 수 급감 (전월 대비 >10% 감소)
+3. 종목 수 급감 (전월 대비 >20% 감소)
+4. M_RETURN 월 누락
+5. 최근 3개월 팩터 누락
+
+---
+
+## 3. 핵심 의존성 (Dependencies & Touched Files)
+
+### 3.1 내부 의존성 맵
+
+```
+main.py
+  ├→ config.py (PARAM)
+  ├→ service/download/download_factors.py
+  │    ├→ config.py (PARAM)
+  │    └→ db/factor_query.py
+  │         └→ config.py (PARAM)
+  └→ service/pipeline/model_portfolio.py
+       ├→ config.py (PARAM)
+       ├→ service/pipeline/factor_analysis.py
+       │    └→ service/pipeline/pipeline_utils.py (prepend_start_zero)
+       ├→ service/pipeline/correlation.py
+       ├→ service/pipeline/optimization.py
+       ├→ service/pipeline/pipeline_utils.py
+       │    └→ service/pipeline/weight_construction.py (construct_long_short_df, calculate_vectorized_return)
+       └→ service/pipeline/weight_construction.py
+```
+
+### 3.2 모듈별 상세 의존성
+
+| 모듈 | imports | 호출하는 함수 | 호출되는 곳 |
+|------|---------|--------------|------------|
+| `model_portfolio.py` | factor_analysis, correlation, optimization, pipeline_utils, weight_construction | 모든 하위 모듈 함수 | `main.py`, `run_model_portfolio_pipeline()` |
+| `factor_analysis.py` | pipeline_utils | `prepend_start_zero()` | `model_portfolio._analyze_factors()`, `filter_and_label_factors()` |
+| `correlation.py` | (없음) | - | `model_portfolio._evaluate_universe()` |
+| `optimization.py` | (없음) | - | `model_portfolio._optimize_mixes()`, `model_portfolio.run()` [simulate_constrained_weights] |
+| `weight_construction.py` | (없음) | - | `pipeline_utils.aggregate_factor_returns()` |
+| `pipeline_utils.py` | weight_construction | `construct_long_short_df()`, `calculate_vectorized_return()` | `model_portfolio._evaluate_universe()`, `factor_analysis.calculate_factor_stats()` |
+
+### 3.3 외부 의존성
+
+| 의존성 | 용도 | 장애 시 영향 |
+|--------|------|-------------|
+| **MS SQL Server** (10.206.1.19:9433) | 팩터 원시 데이터 | download 커맨드 실패. mp 커맨드는 기존 parquet으로 동작 가능 |
+| **ODBC Driver 17** | DB 연결 | download 불가 |
+| `.env` 파일 | DB 비밀번호 등 | `USER_PWD` 미설정 시 warning 로그 + DB 연결 실패 |
+| `factor_info.csv` | 팩터 메타데이터 (200+ 팩터) | merge 실패 → 분석 불가 |
+| `data/hardcoded_weights.csv` | 프로덕션 고정 가중치 (10개 팩터) | hardcoded 모드 실패 |
+| `data/{benchmark}_factor.parquet` | 팩터 데이터 | mp 커맨드 실패 (download 선행 필요) |
+| `data/{benchmark}_mreturn.parquet` | 시장 수익률 | mp 커맨드 실패 |
+
+### 3.4 영향 범위 (Blast Radius)
+
+| 변경 대상 | 영향 범위 |
+|-----------|----------|
+| `factor_analysis.py` 분위 로직 | 모든 downstream (라벨링, 수익률, 가중치, 최종 CSV) |
+| `weight_construction.py` 수익률 계산 | `aggregate_factor_returns` → 팩터 순위 → 최적화 → 가중치 |
+| `optimization.py` 시뮬레이션 | 최종 가중치만 (mode=simulation인 경우) |
+| `optimization.py` hardcoded 가중치 | **프로덕션 MP 직접 영향** — 가장 위험 |
+| `config.py` PARAM | 전 모듈 (DB 연결, 벤치마크명, 파일 경로) |
+| `factor_info.csv` 팩터 목록 | 분석 대상 팩터 전체 변경 |
+| `hardcoded_weights.csv` | 프로덕션 MP 가중치 직접 변경 |
+| `_construct_and_export` 출력 로직 | CSV 포맷 변경 → Bloomberg Optimizer 연동 영향 가능 |
+
+### 3.5 데이터 파일 상세
+
+**hardcoded_weights.csv** (프로덕션 고정 가중치):
+
+| 팩터 | 가중치 | 스타일 |
+|------|--------|--------|
+| SalesAcc | 22.46% | Historical Growth |
+| PM6M | 22.09% | Price Momentum |
+| 90DCV | 19.69% | Volatility |
+| RevMagFY1C | 12.14% | Analyst Expectations |
+| SalesToEPSChg | 6.51% | Earnings Quality |
+| Rev3MFY1C | 5.91% | Analyst Expectations |
+| CashEV | 4.00% | Valuation (강제 4% 조정) |
+| 52WSlope | 3.68% | Price Momentum |
+| TobinQ | 2.56% | Capital Efficiency |
+| 6MTTMSalesMom | 0.95% | Historical Growth |
+
+---
+
+## 4. 주요 제약 사항 및 엣지 케이스 (Constraints & Edge Cases)
+
+### 4.1 건드리면 안 되는 로직
+
+#### 4.1.1 1개월 래그 (`shift(1)`)
+- **위치**: `factor_analysis.py:228` (batch), `factor_analysis.py:67` (단건)
+- **이유**: look-ahead bias 방지. 전월 팩터값으로 당월 투자 결정을 시뮬레이션. 이를 제거하면 모든 백테스트 결과가 비현실적으로 좋아지며, 실투자 시 재현 불가능한 성과를 보여주게 됨
+- **주의**: lag는 `gvkeyiid` 단위로 적용되어야 함. 전체 DataFrame에 단순 shift하면 종목 간 데이터가 섞임
+
+#### 4.1.2 hardcoded 가중치 모드
+- **위치**: `optimization.py:106-122`
+- **주석**: `"이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!"` (2곳)
+- **이유**: 프로덕션 MP의 실제 투자 가중치. `_get_hardcoded_weights()`의 CSV 경로와 반환 구조를 변경하면 프로덕션 포트폴리오가 깨짐
+- **특이사항**: `Valuation` 스타일(CashEV)은 시뮬레이션 결과와 무관하게 강제로 4%로 설정 (투자 위원회 결정)
+
+#### 4.1.3 스타일 cap 25% 하드 제약
+- **위치**: `optimization.py:130` (`style_cap=0.25`)
+- **이유**: 프로덕션 규제 요건. 단일 스타일 집중 위험 통제
+
+#### 4.1.4 거래비용 30bp
+- **위치**: `weight_construction.py:58` (`cost_bps=30.0`)
+- **이유**: 중국 주식 시장 실거래 비용 추정치. 변경 시 모든 팩터의 순수익률과 순위가 변동
+
+#### 4.1.5 sort_order 방향 통일
+- **위치**: `factor_analysis.py:236-239`
+- **이유**: `sort_order=0`(낮을수록 좋음, 예: P/E ratio)인 팩터의 val_lagged에 -1을 곱하여 "높을수록 좋음"으로 통일. Q1이 항상 "좋은" 종목이 되도록 보장. 이 로직이 누락되면 해당 팩터의 L/S가 뒤집힘
+
+### 4.2 숨겨진 규칙 / 암묵적 계약
+
+#### 4.2.1 파이프라인 실행 순서 불변
+`run()` 내 [1]~[7] 단계는 반드시 순서대로 실행되어야 한다:
+- [3]은 [2]의 `factor_stats` 사용
+- [4]는 [3]의 `filtered_data` 사용
+- [5]는 [4]의 수익률 행렬 사용
+- [6]은 [5]의 상관관계 행렬 사용
+- [7]은 [6]의 가중치 사용
+
+#### 4.2.2 M_RETURN merge 키 정합성
+`_prepare_metadata`에서 M_RETURN은 `merge_keys = ["gvkeyiid", "ddt"]` + 가용한 추가 키로 inner join된다. Pipeline-ready parquet은 `(gvkeyiid, ddt)` 2키만으로 충분하지만, test CSV는 추가 키(`ticker, isin, sec, country`)가 포함되어 있어 자동으로 사용된다. **merge 키가 달라지면 행 수가 달라질 수 있음**.
+
+#### 4.2.3 quantile 경계값 105
+`pd.cut(bins=[0, 20, 40, 60, 80, 105])` — 상한이 100이 아닌 105인 이유: 백분위 100%인 종목(섹터-날짜 그룹에서 rank=count)도 Q5에 포함시키기 위함. `right=True`이므로 100은 (80, 105] 구간에 해당.
+
+#### 4.2.4 `ret_df.loc[ret_df.index[0]] = 0.0`
+`_evaluate_universe`에서 수익률 행렬의 첫 행을 0으로 설정한다. 이는 `prepend_start_zero()`와는 별개의 처리이며, aggregate 이후 첫 날짜의 수익률을 기준점 0으로 강제한다. CAGR 계산의 시작점 역할.
+
+#### 4.2.5 categorical 변환 타이밍
+- 다운로드 시: object → categorical (parquet 저장 최적화)
+- 파이프라인 로드 시: categorical → object (groupby OOM 방지)
+- 테스트 CSV 로드 시: object → categorical (메모리 절약)
+
+이 변환 규칙이 깨지면:
+- categorical + `observed=False` → 모든 카테고리 조합의 Cartesian product → OOM
+- object + 대규모 merge → 메모리 비효율
+
+#### 4.2.6 `report` 모드의 `sys.exit(0)`
+`_generate_report()`는 보고서 생성 후 `sys.exit(0)`으로 프로세스를 종료한다. 이후 단계는 실행되지 않음. 테스트에서 이 경로를 호출하면 pytest가 종료될 수 있음.
+
+#### 4.2.7 `(ret_df == 0).sum() <= 10` 필터
+수익률이 0인 날짜가 10개를 초과하는 팩터는 데이터 불충분으로 제거된다. 이 임계값은 하드코딩되어 있으며 설정 불가.
+
+#### 4.2.8 factor_weight의 sign 보정
+```python
+weight_raw["factor_weight"] = weight_raw["factor_weight"] * np.sign(weight_raw["mp_ls_weight"]) ** 2
+```
+`np.sign(x)**2`는 x≠0이면 1, x=0이면 0. 즉, `mp_ls_weight`가 0인 행의 `factor_weight`도 0으로 만든다. 중립(neutral) 종목의 팩터 가중치를 제거하는 효과.
+
+### 4.3 알려진 엣지 케이스
+
+#### 4.3.1 단일 종목 섹터
+섹터-날짜 그룹에 종목이 1개뿐이면 `count - 1 = 0` → `percentile = 0/0 = NaN` → quantile 할당 불가 → 해당 종목 제외. test_mode에서도 동일.
+
+#### 4.3.2 동일 팩터값 종목들
+`rank(method="average")` 사용으로 동일 값 종목들은 평균 순위를 받음. 그러나 모든 종목의 팩터값이 동일하면 전부 같은 percentile → 하나의 분위에만 몰림.
+
+#### 4.3.3 히스토리 3개월 미만 팩터
+`ddt.unique() <= 2`이면 건너뜀 (batch 모드: `date_counts > 2`). 정확히 3개월이면 lag 적용 후 2개월 데이터로 분석 진행.
+
+#### 4.3.4 MC 시뮬레이션 feasibility 실패
+100만 포트폴리오 중 style_cap 제약을 만족하는 것이 없으면 `ValueError("No feasible portfolios found")`. 이는 팩터 수가 매우 적고 특정 스타일에 집중된 경우 발생 가능. test_mode에서 style_cap=1.0으로 완화하여 방지.
+
+#### 4.3.5 hardcoded_weights.csv에 없는 팩터
+`_construct_and_export`에서 `fac not in factor_idx_map`이면 해당 팩터를 건너뜀 (warning 로그). hardcoded 가중치의 팩터가 실제 데이터에 존재하지 않으면 해당 가중치는 무시됨.
+
+#### 4.3.6 증분 다운로드 후 팩터 구성 변화
+증분 모드로 새 월을 추가할 때, 기존 월에 없던 새 팩터가 등장하거나 기존 팩터가 누락될 수 있음. `validate_parquet_coverage`의 `FACTOR_MISSING_LATEST` 경고로 감지하지만 자동 수정은 없음.
+
+#### 4.3.7 M_RETURN merge 시 행 손실
+`inner join`이므로 M_RETURN에 없는 종목-날짜는 삭제됨. 이는 의도된 동작이지만, M_RETURN parquet에 데이터 누락이 있으면 분석 대상 종목이 줄어듦.
+
+#### 4.3.8 ticker 6자리 제로패딩
+```python
+df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
+```
+Bloomberg 형식으로 변환. 원본 ticker가 6자리를 초과하면 잘리지 않고 그대로 사용됨 (현재 중국 주식은 6자리이므로 문제 없음).
+
+### 4.4 기술 부채 / 주의 사항
+
+#### 4.4.1 construct_long_short_df의 하드코딩된 시작일
+```python
+raw_df = labeled_data_df[(labeled_data_df["ddt"] >= "2017-12-31") & ...]
+```
+`weight_construction.py:45` — 시작일이 `"2017-12-31"`로 하드코딩. 이 날짜 이전 데이터는 무조건 제외됨. 파라미터화 필요할 수 있음.
+
+#### 4.4.2 calculate_downside_correlation의 O(n_cols) 루프
+```python
+for i in range(n_cols):
+    mask = data[:, i] < 0
+    ...
+```
+`correlation.py:50-65` — 컬럼별 for 루프. 50개 팩터에서는 문제없으나, 팩터 수가 크게 증가하면 병목. NumPy 벡터화로 개선 가능하지만 팩터별 mask가 다르므로 단순하지 않음.
+
+#### 4.4.3 find_optimal_mix의 rich.progress.track
+`optimization.py:67-68` — 보조 팩터 3개에 대해 progress bar 표시. 메인 팩터가 보조 팩터와 같으면 skip (67% 정도만 실행).
+
+#### 4.4.4 report 모드의 sys.exit(0)
+`model_portfolio.py:253` — 프로세스 강제 종료. 호출자가 cleanup 로직을 가지고 있다면 실행되지 않음. 향후 예외나 return으로 전환 고려.
+
+#### 4.4.5 float32 정밀도 (시뮬레이션)
+`optimization.py:188,205,211` — MC 시뮬레이션에서 float32 사용. 메모리 효율을 위한 의도적 선택이지만, 극단적인 경우 CAGR/MDD 정밀도에 미세한 차이 발생 가능.
+
+#### 4.4.6 SQL injection 위험 (완화됨)
+```python
+f"FROM [dbo].[{universe}]"
+```
+`factor_query.py:74` — universe 테이블명이 f-string으로 직접 삽입. 그러나 `universe`는 `PARAM["universe"]` (환경변수)에서 오므로, 사용자 입력이 아닌 설정값. SQL parameterization은 DDL 식별자에 사용 불가하므로 현재 구조는 합리적. 단, `.env`가 변조되면 위험.
+
+#### 4.4.7 pipeline_utils의 순환 참조 가능성
+`pipeline_utils.py`가 `weight_construction.py`를 import하고, `model_portfolio.py`가 둘 다 import함. 현재는 순환 없지만, `weight_construction.py`가 `pipeline_utils.py`를 import하면 순환 발생.
+
+### 4.5 테스트 커버리지 현황
+
+| 모듈 | 테스트 수 | 커버되는 핵심 로직 | 미커버 영역 |
+|------|-----------|-------------------|------------|
+| `pipeline_utils.prepend_start_zero` | 16 | 기본, NaN, Inf, 월말 처리 | - |
+| `factor_analysis.calculate_factor_stats` | 17 | 분위, 래그, sort_order, test_mode | batch 모드 직접 테스트 없음 |
+| `correlation.calculate_downside_correlation` | 18 | 기본, min_obs, 엣지케이스 | - |
+| `optimization.simulate_constrained_weights` | 16 | 기본, style_cap, 재현성 | hardcoded 모드 미테스트 |
+| `weight_construction` | 0 (직접) | E2E에서 간접 | `construct_long_short_df`, `calculate_vectorized_return` 단위 테스트 없음 |
+| `model_portfolio` | E2E 16 | 전체 파이프라인 | 개별 private 메서드 단위 테스트 없음 |
+| `download_factors` | 0 | - | 전체 미커버 (DB 의존) |
+| `report_generator` | 0 | - | 전체 미커버 |
+
+### 4.6 성능 특성
+
+| 단계 | 시간 복잡도 | 실측 (200+ 팩터, ~70개월) |
+|------|------------|--------------------------|
+| 데이터 로딩 | O(N) | ~2-5초 (parquet 로드) |
+| 5분위 분석 (batch) | O(F × N/F × log(N/F)) | ~10-30초 |
+| 섹터 필터링 | O(F × N/F) | ~5초 |
+| 수익률 집계 | O(F × T × S) | ~30-60초 (가장 느림) |
+| 2-팩터 믹스 | O(styles × 3 × 101) | ~5초 |
+| MC 시뮬레이션 | O(num_sims × K × T) | ~10-20초 (float32) |
+| 가중치 산출 + CSV | O(factors × rows) | ~2초 |
+
+총 실행 시간: ~1-3분 (200+ 팩터, 70개월 데이터 기준)
+
+---
+
+## 부록: 주요 수식
+
+### CAGR (연환산 수익률)
+```
+CAGR = (cumulative_return)^(12/months) - 1
+```
+
+### MDD (최대 낙폭)
+```
+MDD = min(cumulative / running_max - 1)
+```
+
+### 복합 랭크 (팩터 선정 + 시뮬레이션 공통)
+```
+rank_total = rank_CAGR × 0.6 + rank_MDD × 0.4
+```
+
+### 보조 팩터 선정 복합 랭크
+```
+rank_avg = rank_CAGR × 0.7 + rank_negative_correlation × 0.3
+```
+
+### 거래비용
+```
+trading_cost = (cost_bps / 10000) × turnover
+turnover = |new_weight - drifted_weight|
+```
+
+### 스타일 제약 재분배
+```
+excess = max(style_weight - cap, 0)
+shrink = cap / style_weight  (if exceeding)
+room = max(cap - style_weight, 0)  (for under-allocated styles)
+redistributed = excess × (room / total_room)
+fitted = shrunk + redistributed
+```
