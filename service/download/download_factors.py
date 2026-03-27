@@ -2,16 +2,19 @@
 """팩터 데이터 다운로드 및 Pipeline-Ready Parquet 생성 모듈.
 
 SQL Server에서 팩터 데이터를 다운로드하여 pipeline이 바로 사용할 수 있는
-최적화된 parquet 파일 2개(팩터 + M_RETURN)로 저장한다.
+최적화된 parquet 파일로 저장한다.
 
-파일 구조:
+파일 구조 (연도별 분할):
   data/
-  ├── {benchmark}_factor.parquet   — 팩터 데이터 (factor_info merge 완료, categorical)
-  └── {benchmark}_mreturn.parquet  — M_RETURN (gvkeyiid × ddt, 별도 저장)
+  ├── {benchmark}_factor_2018.parquet  — 연도별 팩터 데이터
+  ├── {benchmark}_factor_2019.parquet
+  ├── ...
+  ├── {benchmark}_factor_2026.parquet
+  └── {benchmark}_mreturn.parquet      — M_RETURN (단일 파일)
 
 다운로드 모드:
   - full: 전체 기간 다운로드 (최초 또는 재구축)
-  - incremental: 신규 월만 다운로드하여 기존 parquet에 append
+  - incremental: 신규 월만 다운로드하여 해당 연도 파일에 append
 
 검증 (validate_parquet_coverage):
   - 빈 월(gap) 감지
@@ -31,6 +34,11 @@ import pandas as pd
 
 from config import PARAM
 from db.factor_query import GenerateQueryStructure
+from service.download.parquet_io import (
+    list_yearly_parquets,
+    load_factor_parquet,
+    save_factor_parquet_by_year,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,39 +48,64 @@ _BACKUP_DIR = _PROJECT_ROOT / "data_backup"
 
 
 def _backup_existing_parquets(
-    factor_path: Path,
+    out_dir: Path,
     mreturn_path: Path,
+    benchmark: str,
     *,
     move: bool = True,
 ) -> None:
     """기존 parquet 파일을 data_backup/으로 백업한다.
 
+    연도별 분할 파일과 레거시 단일 파일 모두 처리한다.
     파일명에 기존 데이터의 최종 날짜를 접미사로 붙인다.
-    예: MXCN1A_factor.parquet → data_backup/MXCN1A_factor_20260131.parquet
+    예: MXCN1A_factor_2026.parquet → data_backup/MXCN1A_factor_2026_20260228.parquet
 
     Args:
+        out_dir: parquet 디렉토리
+        mreturn_path: mreturn parquet 경로
+        benchmark: 벤치마크명
         move: True이면 이동 (전체 다운로드), False이면 복사 (증분 — 원본 유지)
     """
-    if not factor_path.exists():
+    yearly_files = list_yearly_parquets(out_dir, benchmark)
+    single_file = out_dir / f"{benchmark}_factor.parquet"
+
+    if not yearly_files and not single_file.exists() and not mreturn_path.exists():
         return
 
     _BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
     # 기존 parquet에서 최종 날짜 추출
     try:
-        dates = pd.read_parquet(factor_path, columns=["ddt"])["ddt"]
-        max_date = dates.max().strftime("%Y%m%d")
+        if yearly_files:
+            dates = pd.read_parquet(yearly_files[-1], columns=["ddt"])["ddt"]
+        elif single_file.exists():
+            dates = pd.read_parquet(single_file, columns=["ddt"])["ddt"]
+        else:
+            dates = pd.Series(dtype="datetime64[ns]")
+        max_date = dates.max().strftime("%Y%m%d") if not dates.empty else "unknown"
     except Exception:
         max_date = "unknown"
 
     op = shutil.move if move else shutil.copy2
     op_name = "Moved" if move else "Copied"
 
-    for src in [factor_path, mreturn_path]:
-        if src.exists():
-            dst = _BACKUP_DIR / f"{src.stem}_{max_date}{src.suffix}"
-            op(str(src), str(dst))
-            logger.info("%s %s → %s", op_name, src.name, dst)
+    # 연도별 분할 파일 백업
+    for src in yearly_files:
+        dst = _BACKUP_DIR / f"{src.stem}_{max_date}{src.suffix}"
+        op(str(src), str(dst))
+        logger.info("%s %s → %s", op_name, src.name, dst)
+
+    # 레거시 단일 파일 백업
+    if single_file.exists():
+        dst = _BACKUP_DIR / f"{single_file.stem}_{max_date}{single_file.suffix}"
+        op(str(single_file), str(dst))
+        logger.info("%s %s → %s", op_name, single_file.name, dst)
+
+    # M_RETURN 백업
+    if mreturn_path.exists():
+        dst = _BACKUP_DIR / f"{mreturn_path.stem}_{max_date}{mreturn_path.suffix}"
+        op(str(mreturn_path), str(dst))
+        logger.info("%s %s → %s", op_name, mreturn_path.name, dst)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -80,14 +113,17 @@ def _backup_existing_parquets(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def validate_parquet_coverage(
-    factor_path: Path,
-    mreturn_path: Path,
+    data_dir: Path,
+    benchmark: str,
+    mreturn_path: Path | None = None,
     *,
     gap_threshold_days: int = 35,
     factor_drop_pct: float = 0.10,
     stock_drop_pct: float = 0.20,
 ) -> list[dict]:
     """Pipeline-ready parquet의 월별·팩터별 커버리지를 검증한다.
+
+    연도별 분할 파일과 단일 파일 모두 지원한다.
 
     검증 항목:
       1. 빈 월 감지: 연속 날짜 간격이 gap_threshold_days 초과
@@ -96,8 +132,9 @@ def validate_parquet_coverage(
       4. M_RETURN 정합성: factor와 mreturn의 월 불일치
 
     Args:
-        factor_path: factor parquet 경로
-        mreturn_path: mreturn parquet 경로
+        data_dir: parquet 디렉토리
+        benchmark: 벤치마크명
+        mreturn_path: mreturn parquet 경로 (None이면 data_dir에서 추론)
         gap_threshold_days: 빈 월 판단 기준 일수 (기본 35)
         factor_drop_pct: 팩터 수 급감 판단 기준 (기본 10%)
         stock_drop_pct: 종목 수 급감 판단 기준 (기본 20%)
@@ -107,7 +144,10 @@ def validate_parquet_coverage(
     """
     warnings_list: list[dict] = []
 
-    factor_df = pd.read_parquet(factor_path, columns=["ddt", "factorAbbreviation", "gvkeyiid"])
+    if mreturn_path is None:
+        mreturn_path = Path(data_dir) / f"{benchmark}_mreturn.parquet"
+
+    factor_df = load_factor_parquet(data_dir, benchmark)[["ddt", "factorAbbreviation", "gvkeyiid"]]
     mret_df = pd.read_parquet(mreturn_path, columns=["ddt", "gvkeyiid"])
 
     dates = sorted(factor_df["ddt"].unique())
@@ -180,7 +220,12 @@ def validate_parquet_coverage(
     return warnings_list
 
 
-def print_coverage_report(factor_path: Path, mreturn_path: Path, warnings_list: list[dict]) -> None:
+def print_coverage_report(
+    data_dir: Path,
+    benchmark: str,
+    mreturn_path: Path,
+    warnings_list: list[dict],
+) -> None:
     """Rich 테이블로 커버리지 리포트를 터미널에 출력한다."""
     try:
         from rich.console import Console
@@ -196,7 +241,7 @@ def print_coverage_report(factor_path: Path, mreturn_path: Path, warnings_list: 
     console = Console()
 
     # ─── 월별 요약 테이블 ───
-    factor_df = pd.read_parquet(factor_path, columns=["ddt", "factorAbbreviation", "gvkeyiid"])
+    factor_df = load_factor_parquet(data_dir, benchmark)[["ddt", "factorAbbreviation", "gvkeyiid"]]
     mret_df = pd.read_parquet(mreturn_path, columns=["ddt", "gvkeyiid"])
 
     monthly_factors = factor_df.groupby("ddt")["factorAbbreviation"].nunique().sort_index()
@@ -359,14 +404,19 @@ def run_download_pipeline(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     benchmark = PARAM["benchmark"]
-    factor_path = out_dir / f"{benchmark}_factor.parquet"
     mreturn_path = out_dir / f"{benchmark}_mreturn.parquet"
     factor_info_path = out_dir / "factor_info.csv"
 
-    if incremental and factor_path.exists():
+    # 증분 모드 진입 조건: 분할 파일 또는 레거시 단일 파일 존재
+    has_existing = (
+        bool(list_yearly_parquets(out_dir, benchmark))
+        or (out_dir / f"{benchmark}_factor.parquet").exists()
+    )
+
+    if incremental and has_existing:
         # 증분 모드: 기존 파일 복사 백업 (원본 유지 — append 필요)
-        _backup_existing_parquets(factor_path, mreturn_path, move=False)
-        # ─── 증분 모드: end_date 월만 다운로드하여 append ───
+        _backup_existing_parquets(out_dir, mreturn_path, benchmark, move=False)
+        # ─── 증분 모드: end_date 월만 다운로드하여 해당 연도 파일에 append ───
         logger.info("Incremental download for %s", end_date)
         t0 = time.time()
 
@@ -379,27 +429,34 @@ def run_download_pipeline(
 
         new_factor, new_mret = _build_pipeline_ready(new_raw, factor_info_path)
 
-        # 기존 parquet 로딩 + 해당 월 제거 (중복 방지) + append
+        # 영향받는 연도 파일만 업데이트 (전체 재로드 대신)
         t0 = time.time()
-        existing_factor = pd.read_parquet(factor_path)
-        existing_mret = pd.read_parquet(mreturn_path)
-
         end_dt = pd.Timestamp(end_date)
-        existing_factor = existing_factor[existing_factor["ddt"] != end_dt]
-        existing_mret = existing_mret[existing_mret["ddt"] != end_dt]
+        affected_year = end_dt.year
+        year_file = out_dir / f"{benchmark}_factor_{affected_year}.parquet"
 
-        updated_factor = pd.concat([existing_factor, new_factor], ignore_index=True)
+        if year_file.exists():
+            existing_year = pd.read_parquet(year_file)
+            existing_year = existing_year[existing_year["ddt"] != end_dt]
+        else:
+            existing_year = pd.DataFrame()
+
+        updated_year = pd.concat([existing_year, new_factor], ignore_index=True)
+        save_factor_parquet_by_year(updated_year, out_dir, benchmark, years={affected_year})
+
+        # M_RETURN은 단일 파일이므로 전체 업데이트
+        existing_mret = pd.read_parquet(mreturn_path) if mreturn_path.exists() else pd.DataFrame()
+        if not existing_mret.empty:
+            existing_mret = existing_mret[existing_mret["ddt"] != end_dt]
         updated_mret = pd.concat([existing_mret, new_mret], ignore_index=True)
-
-        updated_factor.to_parquet(factor_path, index=False, compression="zstd")
         updated_mret.to_parquet(mreturn_path, index=False, compression="zstd")
 
-        logger.info("Incremental update saved in %.2fs (factor: %s, mret: %s)",
-                     time.time() - t0, f"{len(updated_factor):,}", f"{len(updated_mret):,}")
+        logger.info("Incremental update saved in %.2fs (year: %d)",
+                     time.time() - t0, affected_year)
 
     else:
         # 전체 모드: 기존 파일 이동 백업 (새 파일로 교체)
-        _backup_existing_parquets(factor_path, mreturn_path, move=True)
+        _backup_existing_parquets(out_dir, mreturn_path, benchmark, move=True)
         # ─── 전체 모드: 처음부터 다운로드 ───
         logger.info("Full download %s → %s", start_date, end_date)
         t0 = time.time()
@@ -414,17 +471,18 @@ def run_download_pipeline(
         t0 = time.time()
         factor_df, mreturn_df = _build_pipeline_ready(raw_df, factor_info_path)
 
-        factor_df.to_parquet(factor_path, index=False, compression="zstd")
+        saved_paths = save_factor_parquet_by_year(factor_df, out_dir, benchmark)
         mreturn_df.to_parquet(mreturn_path, index=False, compression="zstd")
 
-        logger.info("Saved in %.2fs — factor: %.1f MB, mreturn: %.1f MB",
-                     time.time() - t0, factor_path.stat().st_size / 1024**2,
+        total_mb = sum(p.stat().st_size for p in saved_paths) / 1024**2
+        logger.info("Saved in %.2fs — factor: %.1f MB (%d files), mreturn: %.1f MB",
+                     time.time() - t0, total_mb, len(saved_paths),
                      mreturn_path.stat().st_size / 1024**2)
 
     # ─── 검증 ───
     if validate:
-        warnings_list = validate_parquet_coverage(factor_path, mreturn_path)
-        print_coverage_report(factor_path, mreturn_path, warnings_list)
+        warnings_list = validate_parquet_coverage(out_dir, benchmark, mreturn_path)
+        print_coverage_report(out_dir, benchmark, mreturn_path, warnings_list)
 
         errors = [w for w in warnings_list if w["level"] == "ERROR"]
         if errors:

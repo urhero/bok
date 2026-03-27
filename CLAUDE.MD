@@ -23,16 +23,19 @@ awesome-cohen/
 ├── factor_info.csv                 # 200+ factor metadata (name, style, sort order)
 ├── test_data.csv                   # Test dataset for pipeline validation
 │
-├── data/                           # Data storage (parquet files, intermediate outputs)
-│   ├── {benchmark}_{start}_{end}.parquet  # Raw factor data from SQL Server
-│   └── factor_info.csv             # Factor metadata copy
+├── data/                           # Data storage (연도별 분할 parquet, Git 추적)
+│   ├── {benchmark}_factor_{YYYY}.parquet  # 연도별 팩터 데이터 (각 <100MB, zstd)
+│   ├── {benchmark}_mreturn.parquet        # M_RETURN (~0.76MB, 단일 파일)
+│   ├── factor_info.csv                    # Factor metadata copy
+│   └── hardcoded_weights.csv              # 프로덕션 가중치
 │
 ├── db/                             # Database & query layer
 │   └── factor_query.py            # MS SQL Server data fetching (MS SQL ODBC)
 │
 ├── service/
 │   ├── download/
-│   │   └── download_factors.py    # Raw data pipeline (download & save parquets)
+│   │   ├── download_factors.py    # Raw data pipeline (download & save parquets)
+│   │   └── parquet_io.py          # 연도별 분할 저장/로드/검증 유틸리티
 │   ├── pipeline/
 │   │   ├── model_portfolio.py      # Pipeline orchestrator (ModelPortfolioPipeline 클래스)
 │   │   ├── factor_analysis.py      # 5분위 분석 + 섹터 필터링
@@ -120,7 +123,8 @@ User Command: python main.py mp <start_date> <end_date>
 main.py → run_model_portfolio_pipeline() → ModelPortfolioPipeline.run()
     ↓
 [1] Load Data (_load_data)
-    - Read parquet or test CSV
+    - load_factor_parquet(validate=True): 연도별 분할 parquet 자동 병합 + 무결성 검증
+    - Fallback: 단일 파일, legacy raw parquet, test CSV
     - Read factor_info.csv, merge metadata
     ↓
 [2] Factor Assignment (_analyze_factors → factor_analysis.calculate_factor_stats)
@@ -158,9 +162,12 @@ main.py → run_model_portfolio_pipeline() → ModelPortfolioPipeline.run()
 ## Data Specifications
 
 ### Input Data
-- **Source:** `data/{BENCHMARK}_{START_DATE}_{END_DATE}.parquet`
-- **Schema:** `gvkeyiid, ticker, isin, ddt, sec, country, factorAbbreviation, val, M_RETURN`
+- **Source (연도별 분할):** `data/{BENCHMARK}_factor_{YYYY}.parquet` (각 <100MB, Git 추적)
+- **M_RETURN:** `data/{BENCHMARK}_mreturn.parquet` (~0.76MB, 단일 파일)
+- **Schema (factor):** `gvkeyiid, ticker, isin, ddt, sec, val, factorAbbreviation, factorOrder`
+- **Schema (mreturn):** `gvkeyiid, ddt, M_RETURN`
 - **Factor Metadata:** `data/factor_info.csv` (factorId, factorAbbreviation, factorName, styleName, factorOrder)
+- **로드:** `service/download/parquet_io.load_factor_parquet()` — 분할 파일 자동 병합, 단일 파일 fallback
 
 ### Output Data
 - **Location:** `output/{YYYYMMDD}/`
@@ -193,11 +200,12 @@ main.py → run_model_portfolio_pipeline() → ModelPortfolioPipeline.run()
 ```
 tests/
 ├── conftest.py                      # 공유 fixtures (테스트 데이터 생성)
-├── test_unit/                       # 유닛 테스트 (65개 테스트)
+├── test_unit/                       # 유닛 테스트 (90개 테스트)
 │   ├── test_prepend_start_zero.py   # 시계열 초기화 함수 테스트
 │   ├── test_calculate_factor_stats.py  # 팩터 분석 함수 테스트
 │   ├── test_downside_correlation.py # 하락 상관관계 함수 테스트
-│   └── test_simulate_constrained_weights.py  # 가중치 시뮬레이션 테스트
+│   ├── test_simulate_constrained_weights.py  # 가중치 시뮬레이션 테스트
+│   └── test_parquet_io.py           # parquet 분할 저장/로드/검증 테스트 (25개)
 └── test_integration/                # 통합 테스트
     └── test_pipeline_end_to_end.py  # E2E 파이프라인 테스트
 ```
@@ -233,6 +241,7 @@ pipenv run python -m pytest tests/ -v
   - `factor_analysis.calculate_factor_stats()` - 18개 테스트
   - `correlation.calculate_downside_correlation()` - 17개 테스트
   - `optimization.simulate_constrained_weights()` - 17개 테스트
+  - `parquet_io` (save/load/validate) - 25개 테스트
 
 #### 데이터 검증 유틸리티
 `utils/validation.py`에 데이터 품질 검사 함수들이 포함되어 있습니다:
@@ -325,6 +334,12 @@ pipenv run python -m pytest tests/ -v
 - **환경변수 전환**: config.py → python-dotenv 기반 (.env 파일)
 - **보안 정리**: DB 비밀번호 하드코딩 제거, node_modules git 추적 해제
 - **삭제**: utils/util.py (빈 파일)
+- **연도별 Parquet 분할 (Mar 2026)**: GitHub 100MB 제한 우회
+  - `parquet_io.py` 신규 모듈: save/load/validate 유틸리티
+  - 168MB 단일 파일 → 연도별 분할 (각 2-26MB, Git 추적 가능)
+  - 증분 다운로드 최적화: 해당 연도만 I/O (85% 감소)
+  - 로드 시 8가지 무결성 검증 (컬럼, NaN, inf, gap, 중복)
+  - 25개 유닛 테스트 추가 (총 90개)
 
 ## Architecture Highlights
 
@@ -391,6 +406,7 @@ python main.py mp test test_data.csv
 ## Notes for Claude Code
 
 - **Primary Language:** Code is in English, but domain-specific documentation and comments are in Korean
+- **Data I/O:** `service/download/parquet_io.py` — 연도별 분할 저장/로드/검증. `load_factor_parquet()`이 자동으로 분할/단일 파일 탐색
 - **Main Entry Point:** `service/pipeline/model_portfolio.py:run_model_portfolio_pipeline()`
 - **Pipeline 클래스:** `ModelPortfolioPipeline` - 중간 결과물을 인스턴스 변수로 보관 (`.meta`, `.weights`, `.return_matrix` 등)
 - **모듈 구조:** 함수는 기능별 모듈에 위치. Key Files 섹션의 테이블 참조

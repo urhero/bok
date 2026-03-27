@@ -41,7 +41,7 @@ main.py (CLI)
 | 데이터 | pandas (주력), numpy, polars/dask (보조) |
 | DB | MS SQL Server via SQLAlchemy + pyodbc (ODBC Driver 17) |
 | 최적화 | NumPy 벡터연산 (MC 시뮬레이션), qpsolvers/OSQP (미래 확장용) |
-| I/O | pyarrow (parquet, zstd 압축), CSV |
+| I/O | pyarrow (parquet, zstd 압축, 연도별 분할), CSV |
 | CLI/UX | argparse, Rich (로깅, 프로그레스바, 테이블) |
 | 보고서 | matplotlib, reportlab (PDF) |
 | 테스트 | pytest, pytest-cov, pytest-xdist |
@@ -81,14 +81,17 @@ main.py (CLI)
      ├─ Undefined 섹터 제거       │                       │
      ├─ categorical 변환          │                       │
      ▼                           ▼                       │
- {benchmark}_factor.parquet   (zstd)                     │
- {benchmark}_mreturn.parquet  (zstd)                     │
+ {benchmark}_factor_YYYY.parquet (연도별, zstd)            │
+ {benchmark}_mreturn.parquet  (단일, zstd)               │
      │                           │                       │
      │    mp 커맨드 시작 ──────────┘                       │
      │         │                                         │
      │    [1] _load_data()                               │
      │         │                                         │
-     │         ├─ Pipeline-ready: parquet 직접 로드        │
+     │         ├─ load_factor_parquet(validate=True)      │
+     │         │    ├─ 연도별 분할 → 자동 병합 (우선)     │
+     │         │    ├─ 단일 파일 fallback                │
+     │         │    └─ 8가지 무결성 검증                  │
      │         ├─ Legacy: raw parquet + M_RETURN 분리     │
      │         └─ Test: CSV 로드 + fld 파싱              │
      │         │                                         │
@@ -152,8 +155,9 @@ main.py (CLI)
 
 | 경로 | 조건 | 특징 |
 |------|------|------|
-| Pipeline-ready | `{benchmark}_factor.parquet` + `{benchmark}_mreturn.parquet` 존재 | **최적 경로.** merge 불필요, categorical→object 변환만 수행 |
-| Legacy | 위 파일 없고 `{benchmark}_{start}_{end}.parquet` 존재 | raw parquet에서 M_RETURN 분리 필요 |
+| **연도별 분할** | `{benchmark}_factor_YYYY.parquet` 파일 존재 | **최적 경로.** `load_factor_parquet()`이 자동 병합. merge 불필요, categorical→object 변환만 수행. `validate=True`로 8가지 무결성 검증 |
+| 단일 파일 (fallback) | 분할 파일 없고 `{benchmark}_factor.parquet` 존재 | 레거시 호환. 동일 `load_factor_parquet()` 함수가 자동 fallback |
+| Legacy raw | 위 둘 다 없고 `{benchmark}_{start}_{end}.parquet` 존재 | raw parquet에서 M_RETURN 분리 필요 |
 | Test | `test_file` 인자 전달 시 | CSV 로드, `fld` 컬럼에서 regex로 factorAbbreviation 파싱 |
 
 **중요 변환**: Pipeline-ready parquet에서 로드 시 `categorical → object` 변환을 수행한다. 이유: `pivot_table`/`groupby`에서 `observed=False` 사용 시 categorical의 전체 카테고리 조합이 메모리를 폭발시키는 OOM 문제를 방지.
@@ -370,20 +374,27 @@ SQL Server (clarifi_mxcn1a_afl 테이블)
     ├─ categorical 변환 (gvkeyiid, ticker, isin, factorAbbreviation, sec)
     │
     ▼
- 2개 parquet (zstd 압축)
-    ├─ {benchmark}_factor.parquet (~수백MB)
-    └─ {benchmark}_mreturn.parquet (~수MB)
+ 연도별 분할 parquet (zstd 압축) via parquet_io.py
+    ├─ {benchmark}_factor_2018.parquet (~22MB)
+    ├─ ...
+    ├─ {benchmark}_factor_2026.parquet (~3MB)
+    └─ {benchmark}_mreturn.parquet (~0.76MB, 단일)
 ```
 
+> **핵심 모듈**: `service/download/parquet_io.py`
+> - `save_factor_parquet_by_year()` — ddt 연도 기준 분할 저장 (years 파라미터로 선택적 저장)
+> - `load_factor_parquet()` — 분할 파일 자동 탐색 → 병합 (단일 파일 fallback)
+> - `validate_loaded_factor_data()` — 로드 후 8가지 무결성 검증
+
 **증분 모드** (`--incremental`):
-1. 기존 parquet을 `data_backup/`에 **복사** (원본 유지)
+1. 기존 연도별 parquet을 `data_backup/`에 **복사** (원본 유지)
 2. `end_date` 월만 SQL에서 다운로드
-3. 기존 parquet에서 해당 월 제거 (중복 방지)
-4. `pd.concat([기존, 신규])` → 저장
+3. **해당 연도 파일만** 로드 → 중복 월 제거 → append (~20MB I/O, 기존 168MB 대비 85% 감소)
+4. `save_factor_parquet_by_year(years={affected_year})` — 해당 연도만 재저장
 
 **전체 모드** (기본):
-1. 기존 parquet을 `data_backup/`에 **이동** (원본 삭제)
-2. 전체 기간 SQL 다운로드 → 저장
+1. 기존 연도별 parquet을 `data_backup/`에 **이동** (원본 삭제)
+2. 전체 기간 SQL 다운로드 → `save_factor_parquet_by_year()` 연도별 분할 저장
 
 **검증** (`validate_parquet_coverage`): 5가지 체크
 1. 빈 월 감지 (연속 날짜 간격 > 35일)
@@ -403,10 +414,12 @@ main.py
   ├→ config.py (PARAM)
   ├→ service/download/download_factors.py
   │    ├→ config.py (PARAM)
-  │    └→ db/factor_query.py
-  │         └→ config.py (PARAM)
+  │    ├→ db/factor_query.py
+  │    │    └→ config.py (PARAM)
+  │    └→ service/download/parquet_io.py (save/load/validate)
   └→ service/pipeline/model_portfolio.py
        ├→ config.py (PARAM)
+       ├→ service/download/parquet_io.py (load_factor_parquet)
        ├→ service/pipeline/factor_analysis.py
        │    └→ service/pipeline/pipeline_utils.py (prepend_start_zero)
        ├→ service/pipeline/correlation.py
@@ -420,7 +433,8 @@ main.py
 
 | 모듈 | imports | 호출하는 함수 | 호출되는 곳 |
 |------|---------|--------------|------------|
-| `model_portfolio.py` | factor_analysis, correlation, optimization, pipeline_utils, weight_construction | 모든 하위 모듈 함수 | `main.py`, `run_model_portfolio_pipeline()` |
+| `model_portfolio.py` | factor_analysis, correlation, optimization, pipeline_utils, weight_construction, **parquet_io** | 모든 하위 모듈 함수 + `load_factor_parquet()` | `main.py`, `run_model_portfolio_pipeline()` |
+| `parquet_io.py` | (없음) | - | `download_factors.py`, `model_portfolio.py` |
 | `factor_analysis.py` | pipeline_utils | `prepend_start_zero()` | `model_portfolio._analyze_factors()`, `filter_and_label_factors()` |
 | `correlation.py` | (없음) | - | `model_portfolio._evaluate_universe()` |
 | `optimization.py` | (없음) | - | `model_portfolio._optimize_mixes()`, `model_portfolio.run()` [simulate_constrained_weights] |
@@ -436,8 +450,8 @@ main.py
 | `.env` 파일 | DB 비밀번호 등 | `USER_PWD` 미설정 시 warning 로그 + DB 연결 실패 |
 | `factor_info.csv` | 팩터 메타데이터 (200+ 팩터) | merge 실패 → 분석 불가 |
 | `data/hardcoded_weights.csv` | 프로덕션 고정 가중치 (10개 팩터) | hardcoded 모드 실패 |
-| `data/{benchmark}_factor.parquet` | 팩터 데이터 | mp 커맨드 실패 (download 선행 필요) |
-| `data/{benchmark}_mreturn.parquet` | 시장 수익률 | mp 커맨드 실패 |
+| `data/{benchmark}_factor_YYYY.parquet` | 연도별 분할 팩터 데이터 (Git 추적) | mp 커맨드 실패 (download 선행 필요). `load_factor_parquet()`이 단일 파일 fallback 지원 |
+| `data/{benchmark}_mreturn.parquet` | 시장 수익률 (Git 추적) | mp 커맨드 실패 |
 
 ### 3.4 영향 범위 (Blast Radius)
 
@@ -518,8 +532,8 @@ main.py
 `_evaluate_universe`에서 수익률 행렬의 첫 행을 0으로 설정한다. 이는 `prepend_start_zero()`와는 별개의 처리이며, aggregate 이후 첫 날짜의 수익률을 기준점 0으로 강제한다. CAGR 계산의 시작점 역할.
 
 #### 4.2.5 categorical 변환 타이밍
-- 다운로드 시: object → categorical (parquet 저장 최적화)
-- 파이프라인 로드 시: categorical → object (groupby OOM 방지)
+- 다운로드 시: object → categorical → 연도별 parquet 분할 저장 (zstd 압축 최적화)
+- 파이프라인 로드 시: `load_factor_parquet()` → 연도별 파일 병합 → categorical → object (groupby OOM 방지)
 - 테스트 CSV 로드 시: object → categorical (메모리 절약)
 
 이 변환 규칙이 깨지면:
@@ -557,6 +571,9 @@ weight_raw["factor_weight"] = weight_raw["factor_weight"] * np.sign(weight_raw["
 
 #### 4.3.6 증분 다운로드 후 팩터 구성 변화
 증분 모드로 새 월을 추가할 때, 기존 월에 없던 새 팩터가 등장하거나 기존 팩터가 누락될 수 있음. `validate_parquet_coverage`의 `FACTOR_MISSING_LATEST` 경고로 감지하지만 자동 수정은 없음.
+
+#### 4.3.6a 연도 경계 증분 다운로드
+`end_date=2027-01-31` 증분 다운로드 시 `affected_year=2027`이므로 `MXCN1A_factor_2027.parquet` 파일이 자동 생성된다. 기존 2026 파일은 변경되지 않음.
 
 #### 4.3.7 M_RETURN merge 시 행 손실
 `inner join`이므로 M_RETURN에 없는 종목-날짜는 삭제됨. 이는 의도된 동작이지만, M_RETURN parquet에 데이터 누락이 있으면 분석 대상 종목이 줄어듦.
@@ -611,6 +628,7 @@ f"FROM [dbo].[{universe}]"
 | `optimization.simulate_constrained_weights` | 16 | 기본, style_cap, 재현성 | hardcoded 모드 미테스트 |
 | `weight_construction` | 0 (직접) | E2E에서 간접 | `construct_long_short_df`, `calculate_vectorized_return` 단위 테스트 없음 |
 | `model_portfolio` | E2E 16 | 전체 파이프라인 | 개별 private 메서드 단위 테스트 없음 |
+| `parquet_io` | 25 | save/load roundtrip, 연도별 분할, fallback, 8가지 검증 | - |
 | `download_factors` | 0 | - | 전체 미커버 (DB 의존) |
 | `report_generator` | 0 | - | 전체 미커버 |
 

@@ -12,21 +12,30 @@
 - 학술·실무 근거에 기반한 다수(200+) 팩터를 사전에 정의 및 축적
 - 각 팩터는 **스타일 단위(Valuation, Momentum, Quality, Growth 등)**로 분류
 
-### 입력 데이터 (Pipeline-Ready Parquet)
-- `data/{benchmark}_factor.parquet` — 팩터 데이터 (factor_info merge 완료, categorical, zstd 압축)
+### 입력 데이터 (Pipeline-Ready Parquet — 연도별 분할)
+- `data/{benchmark}_factor_{YYYY}.parquet` — **연도별 분할** 팩터 데이터 (factor_info merge 완료, categorical, zstd 압축)
   - 컬럼: `gvkeyiid, ticker, isin, ddt, sec, val, factorAbbreviation, factorOrder`
-- `data/{benchmark}_mreturn.parquet` — M_RETURN (gvkeyiid × ddt, 별도 저장)
-  - 67K행 (19M 팩터행에 중복 저장하지 않음 → 169MB vs 200MB)
+  - 예: `MXCN1A_factor_2018.parquet` (~22MB), `MXCN1A_factor_2024.parquet` (~20MB)
+  - 각 파일 <100MB → GitHub 추적 가능 (단일 파일은 ~168MB로 초과)
+- `data/{benchmark}_mreturn.parquet` — M_RETURN (gvkeyiid × ddt, 단일 파일, ~0.76MB)
+  - 67K행 (19M 팩터행에 중복 저장하지 않음)
 - `data/factor_info.csv` — 팩터 메타 정보 (factorAbbreviation, factorName, styleName, factorOrder)
 - `data/hardcoded_weights.csv` — 프로덕션 가중치 (hardcoded 모드에서 사용)
 
+> **분할 저장/로드 유틸리티**: `service/download/parquet_io.py`
+> - `save_factor_parquet_by_year()` — 연도별 분할 저장
+> - `load_factor_parquet()` — 분할 파일 자동 병합 로드 (단일 파일 fallback 지원)
+> - `validate_loaded_factor_data()` — 8가지 무결성 검증 (컬럼, NaN, inf, gap, 중복 등)
+
 ### 다운로드 (`download_factors.py`)
-- `python main.py download 2017-12-31 2026-02-28` — 전체 다운로드
-- `python main.py download 2017-12-31 2026-03-31 --incremental` — 증분 다운로드 (신규 월만)
+- `python main.py download 2017-12-31 2026-02-28` — 전체 다운로드 → 연도별 parquet 분할 저장
+- `python main.py download 2017-12-31 2026-03-31 --incremental` — 증분 다운로드 (해당 연도 파일만 업데이트)
 - 저장 후 자동 검증: 빈 월 감지, 팩터 수 급변, M_RETURN 정합성 (Rich 시각화)
 
 ### 코드 구현
-- `_load_data()`: pipeline-ready parquet 로드 (fallback: legacy raw parquet, test CSV)
+- `_load_data()`: `load_factor_parquet(validate=True)`로 연도별 분할 파일 자동 병합 로드
+  - 로드 시 8가지 무결성 검증 (컬럼, NaN, inf, 월 gap, 중복 등) → ERROR 발견 시 즉시 중단
+  - Fallback: 단일 파일, legacy raw parquet, test CSV
 - `_prepare_metadata()`: factor_info merge (pipeline-ready에서는 skip), M_RETURN 병합
 - 백테스트 시작: `ddt >= 2017-12-31` (→ 2018년부터 실질 성과 반영)
 
@@ -156,16 +165,21 @@
 
 ---
 
-## 📁 모듈 구조 (`service/pipeline/`)
+## 📁 모듈 구조
 
 ```
-service/pipeline/
-├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
-├── factor_analysis.py      # calculate_factor_stats, calculate_factor_stats_batch, filter_and_label_factors
-├── correlation.py          # calculate_downside_correlation
-├── optimization.py         # find_optimal_mix, simulate_constrained_weights (듀얼 모드)
-├── weight_construction.py  # construct_long_short_df, calculate_vectorized_return
-└── pipeline_utils.py       # prepend_start_zero, aggregate_factor_returns
+service/
+├── download/
+│   ├── download_factors.py    # SQL → 연도별 parquet 다운로드 + 검증
+│   └── parquet_io.py          # 연도별 분할 저장/로드/검증 유틸리티
+│
+└── pipeline/
+    ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
+    ├── factor_analysis.py      # calculate_factor_stats, calculate_factor_stats_batch, filter_and_label_factors
+    ├── correlation.py          # calculate_downside_correlation
+    ├── optimization.py         # find_optimal_mix, simulate_constrained_weights (듀얼 모드)
+    ├── weight_construction.py  # construct_long_short_df, calculate_vectorized_return
+    └── pipeline_utils.py       # prepend_start_zero, aggregate_factor_returns
 ```
 
 ### Pipeline 사용법
