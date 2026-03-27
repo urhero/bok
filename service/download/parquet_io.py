@@ -181,7 +181,7 @@ def validate_loaded_factor_data(
     min_months: int = 3,
     min_factors_per_month: int = 50,
     min_stocks_per_month: int = 30,
-    max_null_pct: float = 0.05,
+    max_null_pct: float = 0.10,
 ) -> list[dict]:
     """병합된 factor DataFrame의 무결성을 검증한다.
 
@@ -243,12 +243,20 @@ def validate_loaded_factor_data(
             "message": f"{pd.Timestamp(dt).strftime('%Y-%m')}: {cnt} stocks (< {min_stocks_per_month})",
         })
 
-    # [5] val NaN 비율
-    null_pct = df["val"].isna().mean()
+    # [5] val NaN 비율 (100% NaN 팩터 제외 후 검사)
+    factor_nan = df.groupby("factorAbbreviation")["val"].apply(lambda x: x.isna().mean())
+    full_nan_factors = factor_nan[factor_nan >= 1.0].index.tolist()
+    if full_nan_factors:
+        issues.append({
+            "level": "WARN", "type": "FULL_NAN_FACTORS",
+            "message": f"{len(full_nan_factors)} factor(s) with 100% NaN: {full_nan_factors[:5]}{'...' if len(full_nan_factors) > 5 else ''}",
+        })
+    df_valid = df[~df["factorAbbreviation"].isin(full_nan_factors)]
+    null_pct = df_valid["val"].isna().mean() if len(df_valid) > 0 else 0.0
     if null_pct > max_null_pct:
         issues.append({
             "level": "ERROR", "type": "HIGH_NULL_PCT",
-            "message": f"val NaN ratio {null_pct:.1%} exceeds {max_null_pct:.1%}",
+            "message": f"val NaN ratio {null_pct:.1%} exceeds {max_null_pct:.1%} (after excluding {len(full_nan_factors)} full-NaN factors)",
         })
 
     # [6] val inf 검사

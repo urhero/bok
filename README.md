@@ -25,7 +25,8 @@
 > **분할 저장/로드 유틸리티**: `service/download/parquet_io.py`
 > - `save_factor_parquet_by_year()` — 연도별 분할 저장
 > - `load_factor_parquet()` — 분할 파일 자동 병합 로드 (단일 파일 fallback 지원)
-> - `validate_loaded_factor_data()` — 8가지 무결성 검증 (컬럼, NaN, inf, gap, 중복 등)
+> - `validate_loaded_factor_data()` — 9가지 무결성 검증 (컬럼, 100% NaN 팩터 분리, NaN 비율, inf, gap, 중복 등)
+>   - 100% NaN 팩터는 WARN으로 별도 보고 후 제외, 나머지 유효 데이터에 대해 NaN 비율 10% 임계값 검사
 
 ### 다운로드 (`download_factors.py`)
 - `python main.py download 2017-12-31 2026-02-28` — 전체 다운로드 → 연도별 parquet 분할 저장
@@ -34,7 +35,7 @@
 
 ### 코드 구현
 - `_load_data()`: `load_factor_parquet(validate=True)`로 연도별 분할 파일 자동 병합 로드
-  - 로드 시 8가지 무결성 검증 (컬럼, NaN, inf, 월 gap, 중복 등) → ERROR 발견 시 즉시 중단
+  - 로드 시 9가지 무결성 검증 (컬럼, 100% NaN 팩터 분리, NaN 비율, inf, 월 gap, 중복 등) → ERROR 발견 시 즉시 중단
   - Fallback: 단일 파일, legacy raw parquet, test CSV
 - `_prepare_metadata()`: factor_info merge (pipeline-ready에서는 skip), M_RETURN 병합
 - 백테스트 시작: `ddt >= 2017-12-31` (→ 2018년부터 실질 성과 반영)
