@@ -162,16 +162,10 @@ class ModelPortfolioPipeline:
             factor_path = DATA_DIR / f"{benchmark}_factor.parquet"
             mreturn_path = DATA_DIR / f"{benchmark}_mreturn.parquet"
 
-            # 연도별 분할 parquet 또는 단일 parquet 자동 감지
-            from service.download.parquet_io import load_factor_parquet
-            try:
-                raw = load_factor_parquet(DATA_DIR, benchmark)
+            if factor_path.exists() and mreturn_path.exists():
+                # Pipeline-ready parquet (최적 경로: merge 불필요)
+                raw = pd.read_parquet(factor_path)
                 market_return_df = pd.read_parquet(mreturn_path)
-                _factor_loaded = True
-            except FileNotFoundError:
-                _factor_loaded = False
-
-            if _factor_loaded:
 
                 # categorical → object 변환 (pivot_table/groupby의 observed=False OOM 방지)
                 # pipeline-ready에서는 대규모 merge가 없으므로 categorical 불필요
