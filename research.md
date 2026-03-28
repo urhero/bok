@@ -91,7 +91,7 @@ main.py (CLI)
      │         ├─ load_factor_parquet(validate=True)      │
      │         │    ├─ 연도별 분할 → 자동 병합 (우선)     │
      │         │    ├─ 단일 파일 fallback                │
-     │         │    └─ 8가지 무결성 검증                  │
+     │         │    └─ 9가지 무결성 검증                  │
      │         ├─ Legacy: raw parquet + M_RETURN 분리     │
      │         └─ Test: CSV 로드 + fld 파싱              │
      │         │                                         │
@@ -155,7 +155,7 @@ main.py (CLI)
 
 | 경로 | 조건 | 특징 |
 |------|------|------|
-| **연도별 분할** | `{benchmark}_factor_YYYY.parquet` 파일 존재 | **최적 경로.** `load_factor_parquet()`이 자동 병합. merge 불필요, categorical→object 변환만 수행. `validate=True`로 8가지 무결성 검증 |
+| **연도별 분할** | `{benchmark}_factor_YYYY.parquet` 파일 존재 | **최적 경로.** `load_factor_parquet()`이 자동 병합. merge 불필요, categorical→object 변환만 수행. `validate=True`로 9가지 무결성 검증 |
 | 단일 파일 (fallback) | 분할 파일 없고 `{benchmark}_factor.parquet` 존재 | 레거시 호환. 동일 `load_factor_parquet()` 함수가 자동 fallback |
 | Legacy raw | 위 둘 다 없고 `{benchmark}_{start}_{end}.parquet` 존재 | raw parquet에서 M_RETURN 분리 필요 |
 | Test | `test_file` 인자 전달 시 | CSV 로드, `fld` 컬럼에서 regex로 factorAbbreviation 파싱 |
@@ -384,7 +384,9 @@ SQL Server (clarifi_mxcn1a_afl 테이블)
 > **핵심 모듈**: `service/download/parquet_io.py`
 > - `save_factor_parquet_by_year()` — ddt 연도 기준 분할 저장 (years 파라미터로 선택적 저장)
 > - `load_factor_parquet()` — 분할 파일 자동 탐색 → 병합 (단일 파일 fallback)
-> - `validate_loaded_factor_data()` — 로드 후 8가지 무결성 검증
+> - `validate_loaded_factor_data()` — 로드 후 9가지 무결성 검증
+>   - [5a] 100% NaN 팩터 분리 → WARN (`FULL_NAN_FACTORS`) — 중국 시장 미제공 팩터 등 (예: ShortIntRatio, IO_NAT, stdRR36M)
+>   - [5b] 나머지 유효 데이터만 val NaN 비율 검사 (기본 `max_null_pct=0.10`)
 
 **증분 모드** (`--incremental`):
 1. 기존 연도별 parquet을 `data_backup/`에 **복사** (원본 유지)
@@ -628,7 +630,7 @@ f"FROM [dbo].[{universe}]"
 | `optimization.simulate_constrained_weights` | 16 | 기본, style_cap, 재현성 | hardcoded 모드 미테스트 |
 | `weight_construction` | 0 (직접) | E2E에서 간접 | `construct_long_short_df`, `calculate_vectorized_return` 단위 테스트 없음 |
 | `model_portfolio` | E2E 16 | 전체 파이프라인 | 개별 private 메서드 단위 테스트 없음 |
-| `parquet_io` | 25 | save/load roundtrip, 연도별 분할, fallback, 8가지 검증 | - |
+| `parquet_io` | 25 | save/load roundtrip, 연도별 분할, fallback, 9가지 검증 | - |
 | `download_factors` | 0 | - | 전체 미커버 (DB 의존) |
 | `report_generator` | 0 | - | 전체 미커버 |
 

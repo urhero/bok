@@ -9,7 +9,12 @@
       "Bash(pipenv run python:*)",
       "Bash(pipenv install:*)",
       "Bash(git reset:*)",
-      "Bash(set:*)"
+      "Bash(set:*)",
+      "Bash(where python:*)",
+      "Read(//c/Users/IKM/.virtualenvs/**)",
+      "Bash(ls C:/Python*/python.exe)",
+      "Read(//c/Users/IKM/AppData/Local/Programs/Python/**)",
+      "Bash(C:/Users/IKM/.virtualenvs/bok-ZkEKkwfv/Scripts/python.exe main.py download 2017-12-01 2026-02-28)"
     ]
   }
 }
