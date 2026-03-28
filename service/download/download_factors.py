@@ -120,7 +120,7 @@ def validate_parquet_coverage(
     gap_threshold_days: int = 35,
     factor_drop_pct: float = 0.10,
     stock_drop_pct: float = 0.20,
-) -> list[dict]:
+) -> tuple[list[dict], pd.DataFrame, pd.DataFrame]:
     """Pipeline-ready parquet의 월별·팩터별 커버리지를 검증한다.
 
     연도별 분할 파일과 단일 파일 모두 지원한다.
@@ -140,15 +140,30 @@ def validate_parquet_coverage(
         stock_drop_pct: 종목 수 급감 판단 기준 (기본 20%)
 
     Returns:
-        경고 리스트 [{"level": "WARN"|"ERROR", "type": str, "message": str}, ...]
+        (warnings_list, factor_df, mret_df) 튜플
+        - warnings_list: [{"level": "WARN"|"ERROR", "type": str, "message": str}, ...]
+        - factor_df: 로드된 팩터 DataFrame (재사용 가능)
+        - mret_df: 로드된 M_RETURN DataFrame (재사용 가능)
     """
-    warnings_list: list[dict] = []
-
     if mreturn_path is None:
         mreturn_path = Path(data_dir) / f"{benchmark}_mreturn.parquet"
 
     factor_df = load_factor_parquet(data_dir, benchmark)[["ddt", "factorAbbreviation", "gvkeyiid"]]
     mret_df = pd.read_parquet(mreturn_path, columns=["ddt", "gvkeyiid"])
+
+    warnings_list = _validate_parquet_coverage_impl(factor_df, mret_df, gap_threshold_days, factor_drop_pct, stock_drop_pct)
+    return warnings_list, factor_df, mret_df
+
+
+def _validate_parquet_coverage_impl(
+    factor_df: pd.DataFrame,
+    mret_df: pd.DataFrame,
+    gap_threshold_days: int,
+    factor_drop_pct: float,
+    stock_drop_pct: float,
+) -> list[dict]:
+    """validate_parquet_coverage의 내부 구현."""
+    warnings_list: list[dict] = []
 
     dates = sorted(factor_df["ddt"].unique())
     if len(dates) < 2:
@@ -221,10 +236,9 @@ def validate_parquet_coverage(
 
 
 def print_coverage_report(
-    data_dir: Path,
-    benchmark: str,
-    mreturn_path: Path,
     warnings_list: list[dict],
+    factor_df: pd.DataFrame,
+    mret_df: pd.DataFrame,
 ) -> None:
     """Rich 테이블로 커버리지 리포트를 터미널에 출력한다."""
     try:
@@ -239,10 +253,6 @@ def print_coverage_report(
         return
 
     console = Console()
-
-    # ─── 월별 요약 테이블 ───
-    factor_df = load_factor_parquet(data_dir, benchmark)[["ddt", "factorAbbreviation", "gvkeyiid"]]
-    mret_df = pd.read_parquet(mreturn_path, columns=["ddt", "gvkeyiid"])
 
     monthly_factors = factor_df.groupby("ddt")["factorAbbreviation"].nunique().sort_index()
     monthly_stocks = factor_df.groupby("ddt")["gvkeyiid"].nunique().sort_index()
@@ -481,8 +491,8 @@ def run_download_pipeline(
 
     # ─── 검증 ───
     if validate:
-        warnings_list = validate_parquet_coverage(out_dir, benchmark, mreturn_path)
-        print_coverage_report(out_dir, benchmark, mreturn_path, warnings_list)
+        warnings_list, factor_df, mret_df = validate_parquet_coverage(out_dir, benchmark, mreturn_path)
+        print_coverage_report(warnings_list, factor_df, mret_df)
 
         errors = [w for w in warnings_list if w["level"] == "ERROR"]
         if errors:
