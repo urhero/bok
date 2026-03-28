@@ -435,7 +435,7 @@ main.py
 
 | 모듈 | imports | 호출하는 함수 | 호출되는 곳 |
 |------|---------|--------------|------------|
-| `model_portfolio.py` | factor_analysis, correlation, optimization, pipeline_utils, weight_construction, **parquet_io** | 모든 하위 모듈 함수 + `load_factor_parquet()` | `main.py`, `run_model_portfolio_pipeline()` |
+| `model_portfolio.py` | factor_analysis, correlation, optimization, pipeline_utils, weight_construction, **parquet_io**, **utils.validation** | 모든 하위 모듈 함수 + `load_factor_parquet()` + `validate_return_matrix()` + `validate_output_weights()` | `main.py`, `run_model_portfolio_pipeline()` |
 | `parquet_io.py` | (없음) | - | `download_factors.py`, `model_portfolio.py` |
 | `factor_analysis.py` | pipeline_utils | `prepend_start_zero()` | `model_portfolio._analyze_factors()`, `filter_and_label_factors()` |
 | `correlation.py` | (없음) | - | `model_portfolio._evaluate_universe()` |
@@ -447,9 +447,9 @@ main.py
 
 | 의존성 | 용도 | 장애 시 영향 |
 |--------|------|-------------|
-| **MS SQL Server** (10.206.1.19:9433) | 팩터 원시 데이터 | download 커맨드 실패. mp 커맨드는 기존 parquet으로 동작 가능 |
+| **MS SQL Server** (.env에서 SERVER_NAME 로드) | 팩터 원시 데이터 | download 커맨드 실패. mp 커맨드는 기존 parquet으로 동작 가능 |
 | **ODBC Driver 17** | DB 연결 | download 불가 |
-| `.env` 파일 | DB 비밀번호 등 | `USER_PWD` 미설정 시 warning 로그 + DB 연결 실패 |
+| `.env` 파일 | DB 비밀번호, 서버 주소, 계정명 등 | `USER_PWD`, `SERVER_NAME`, `USER_NAME` 미설정 시 각각 warning 로그 + DB 연결 실패 |
 | `factor_info.csv` | 팩터 메타데이터 (200+ 팩터) | merge 실패 → 분석 불가 |
 | `data/hardcoded_weights.csv` | 프로덕션 고정 가중치 (10개 팩터) | hardcoded 모드 실패 |
 | `data/{benchmark}_factor_YYYY.parquet` | 연도별 분할 팩터 데이터 (Git 추적) | mp 커맨드 실패 (download 선행 필요). `load_factor_parquet()`이 단일 파일 fallback 지원 |
@@ -464,6 +464,7 @@ main.py
 | `optimization.py` 시뮬레이션 | 최종 가중치만 (mode=simulation인 경우) |
 | `optimization.py` hardcoded 가중치 | **프로덕션 MP 직접 영향** — 가장 위험 |
 | `config.py` PARAM | 전 모듈 (DB 연결, 벤치마크명, 파일 경로) |
+| `config.py` PIPELINE_PARAMS | 파이프라인 비즈니스 파라미터 (style_cap, 거래비용, 팩터 수, 임계값 등). 이전 코드 내 산재하던 매직넘버를 중앙 집중화 |
 | `factor_info.csv` 팩터 목록 | 분석 대상 팩터 전체 변경 |
 | `hardcoded_weights.csv` | 프로덕션 MP 가중치 직접 변경 |
 | `_construct_and_export` 출력 로직 | CSV 포맷 변경 → Bloomberg Optimizer 연동 영향 가능 |
@@ -503,11 +504,11 @@ main.py
 - **특이사항**: `Valuation` 스타일(CashEV)은 시뮬레이션 결과와 무관하게 강제로 4%로 설정 (투자 위원회 결정)
 
 #### 4.1.3 스타일 cap 25% 하드 제약
-- **위치**: `optimization.py:130` (`style_cap=0.25`)
+- **위치**: `config.py:PIPELINE_PARAMS["style_cap"]` → `optimization.py` 파라미터로 전달
 - **이유**: 프로덕션 규제 요건. 단일 스타일 집중 위험 통제
 
 #### 4.1.4 거래비용 30bp
-- **위치**: `weight_construction.py:58` (`cost_bps=30.0`)
+- **위치**: `config.py:PIPELINE_PARAMS["transaction_cost_bps"]` → `weight_construction.py` 파라미터로 전달
 - **이유**: 중국 주식 시장 실거래 비용 추정치. 변경 시 모든 팩터의 순수익률과 순위가 변동
 
 #### 4.1.5 sort_order 방향 통일
@@ -542,22 +543,22 @@ main.py
 - categorical + `observed=False` → 모든 카테고리 조합의 Cartesian product → OOM
 - object + 대규모 merge → 메모리 비효율
 
-#### 4.2.6 `report` 모드의 `sys.exit(0)`
-`_generate_report()`는 보고서 생성 후 `sys.exit(0)`으로 프로세스를 종료한다. 이후 단계는 실행되지 않음. 테스트에서 이 경로를 호출하면 pytest가 종료될 수 있음.
+#### 4.2.6 `report` 모드의 early return
+`_generate_report()`는 보고서 생성 후 반환하고, `run()`에서 `return`으로 이후 단계를 스킵한다. (이전에는 `sys.exit(0)`이었으나 테스트 가능성을 위해 제거됨)
 
 #### 4.2.7 `(ret_df == 0).sum() <= 10` 필터
 수익률이 0인 날짜가 10개를 초과하는 팩터는 데이터 불충분으로 제거된다. 이 임계값은 하드코딩되어 있으며 설정 불가.
 
-#### 4.2.8 factor_weight의 sign 보정
+#### 4.2.8 factor_weight의 neutral 제거
 ```python
-weight_raw["factor_weight"] = weight_raw["factor_weight"] * np.sign(weight_raw["mp_ls_weight"]) ** 2
+weight_raw["factor_weight"] = weight_raw["factor_weight"] * (weight_raw["mp_ls_weight"] != 0).astype(int)
 ```
-`np.sign(x)**2`는 x≠0이면 1, x=0이면 0. 즉, `mp_ls_weight`가 0인 행의 `factor_weight`도 0으로 만든다. 중립(neutral) 종목의 팩터 가중치를 제거하는 효과.
+`mp_ls_weight`가 0인 행(neutral 종목)의 `factor_weight`를 0으로 만든다. 중립 종목의 팩터 가중치를 제거하는 효과. (이전에는 `np.sign()**2`로 동일 효과를 냈으나 가독성을 위해 명시적 boolean mask로 변경)
 
 ### 4.3 알려진 엣지 케이스
 
 #### 4.3.1 단일 종목 섹터
-섹터-날짜 그룹에 종목이 1개뿐이면 `count - 1 = 0` → `percentile = 0/0 = NaN` → quantile 할당 불가 → 해당 종목 제외. test_mode에서도 동일.
+섹터-날짜 그룹에 종목이 1개뿐이면 `count - 1 = 0`. `np.where(count > 1, ..., np.nan)` 가드로 division by zero를 방지하며, `percentile = NaN` → quantile 할당 불가 → 해당 종목 제외. test_mode에서도 동일.
 
 #### 4.3.2 동일 팩터값 종목들
 `rank(method="average")` 사용으로 동일 값 종목들은 평균 순위를 받음. 그러나 모든 종목의 팩터값이 동일하면 전부 같은 percentile → 하나의 분위에만 몰림.
@@ -600,24 +601,30 @@ for i in range(n_cols):
     mask = data[:, i] < 0
     ...
 ```
-`correlation.py:50-65` — 컬럼별 for 루프. 50개 팩터에서는 문제없으나, 팩터 수가 크게 증가하면 병목. NumPy 벡터화로 개선 가능하지만 팩터별 mask가 다르므로 단순하지 않음.
+`correlation.py:50-65` — 컬럼별 for 루프. 50개 팩터에서는 문제없으나, 팩터 수가 크게 증가하면 병목. NumPy 벡터화로 개선 가능하지만 팩터별 mask가 다르므로 단순하지 않음. 공분산 계산은 `nanmean * N/(N-1)` Bessel's correction을 적용하여 `nanstd(ddof=1)`과 일관된 unbiased 추정량을 사용한다.
 
 #### 4.4.3 find_optimal_mix의 rich.progress.track
 `optimization.py:67-68` — 보조 팩터 3개에 대해 progress bar 표시. 메인 팩터가 보조 팩터와 같으면 skip (67% 정도만 실행).
 
-#### 4.4.4 report 모드의 sys.exit(0)
-`model_portfolio.py:253` — 프로세스 강제 종료. 호출자가 cleanup 로직을 가지고 있다면 실행되지 않음. 향후 예외나 return으로 전환 고려.
+#### 4.4.4 report 모드의 early return
+`model_portfolio.py` — `_generate_report()` 완료 후 `run()`에서 `return`으로 이후 단계 스킵. 이전의 `sys.exit(0)`은 테스트 가능성과 라이브러리 사용성을 위해 제거됨.
 
-#### 4.4.5 float32 정밀도 (시뮬레이션)
-`optimization.py:188,205,211` — MC 시뮬레이션에서 float32 사용. 메모리 효율을 위한 의도적 선택이지만, 극단적인 경우 CAGR/MDD 정밀도에 미세한 차이 발생 가능.
+#### 4.4.5 float32 정밀도 + 재현성 (시뮬레이션)
+`optimization.py` — MC 시뮬레이션에서 float32 사용 (메모리 효율 의도적 선택). `random_seed` 파라미터(기본값 42)로 `np.random.default_rng`를 통해 재현성 보장. `random_seed=None`이면 랜덤 모드.
 
 #### 4.4.6 SQL injection 위험 (완화됨)
 ```python
 f"FROM [dbo].[{universe}]"
 ```
-`factor_query.py:74` — universe 테이블명이 f-string으로 직접 삽입. 그러나 `universe`는 `PARAM["universe"]` (환경변수)에서 오므로, 사용자 입력이 아닌 설정값. SQL parameterization은 DDL 식별자에 사용 불가하므로 현재 구조는 합리적. 단, `.env`가 변조되면 위험.
+`factor_query.py:74` — universe 테이블명이 f-string으로 직접 삽입. DDL 식별자는 SQL parameterization 불가. `ALLOWED_UNIVERSES` allowlist로 검증하여 허용된 테이블명만 통과. `.env` 변조 시에도 방어됨.
 
-#### 4.4.7 pipeline_utils의 순환 참조 가능성
+#### 4.4.7 PIPELINE_PARAMS 중앙 관리
+`config.py:PIPELINE_PARAMS` — 9개 비즈니스 파라미터 (style_cap, 거래비용, 팩터 수, 임계값, 랭킹 가중치 등)를 중앙 집중화. Pipeline 클래스 생성자에서 주입되며, 각 모듈 함수는 파라미터로 받아 순수 함수 유지. 기존 매직넘버가 기본값으로 유지되어 backward compatible.
+
+#### 4.4.8 pre-commit hook + detect-secrets
+`.pre-commit-config.yaml` — 커밋 시 자동 검사. `detect-secrets`로 비밀번호/토큰 커밋 차단, `check-added-large-files`로 100MB 초과 파일 차단, `check-merge-conflict`로 머지 충돌 표시 감지.
+
+#### 4.4.9 pipeline_utils의 순환 참조 가능성
 `pipeline_utils.py`가 `weight_construction.py`를 import하고, `model_portfolio.py`가 둘 다 import함. 현재는 순환 없지만, `weight_construction.py`가 `pipeline_utils.py`를 import하면 순환 발생.
 
 ### 4.5 테스트 커버리지 현황
@@ -627,8 +634,10 @@ f"FROM [dbo].[{universe}]"
 | `pipeline_utils.prepend_start_zero` | 16 | 기본, NaN, Inf, 월말 처리 | - |
 | `factor_analysis.calculate_factor_stats` | 17 | 분위, 래그, sort_order, test_mode | batch 모드 직접 테스트 없음 |
 | `correlation.calculate_downside_correlation` | 18 | 기본, min_obs, 엣지케이스 | - |
-| `optimization.simulate_constrained_weights` | 16 | 기본, style_cap, 재현성 | hardcoded 모드 미테스트 |
-| `weight_construction` | 0 (직접) | E2E에서 간접 | `construct_long_short_df`, `calculate_vectorized_return` 단위 테스트 없음 |
+| `optimization.simulate_constrained_weights` | 16 | 기본, style_cap, 재현성 (random_seed 지원) | hardcoded 모드 미테스트 |
+| `factor_analysis.filter_and_label_factors` | ~8 | 섹터 제거, L/N/S 라벨, 엣지케이스 | - |
+| `optimization.find_optimal_mix` | ~5 | 그리드 서치, 랭킹, 컬럼 구조 | - |
+| `weight_construction` | ~10 | L/S 분리, 동일가중, 수익률 계산 | - |
 | `model_portfolio` | E2E 16 | 전체 파이프라인 | 개별 private 메서드 단위 테스트 없음 |
 | `parquet_io` | 25 | save/load roundtrip, 연도별 분할, fallback, 9가지 검증 | - |
 | `download_factors` | 0 | - | 전체 미커버 (DB 의존) |
@@ -655,6 +664,8 @@ f"FROM [dbo].[{universe}]"
 ### CAGR (연환산 수익률)
 ```
 CAGR = (cumulative_return)^(12/months) - 1
+# months = len(ret_df) - 1  (첫 행은 기준점 0이므로 제외)
+# _evaluate_universe, find_optimal_mix, simulate_constrained_weights 모두 동일 기준 적용
 ```
 
 ### MDD (최대 낙폭)

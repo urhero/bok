@@ -70,6 +70,12 @@ def aggregate_factor_returns(
         | 2024-02-28 | 0.025    | 0.018  | 0.012  |
         | 2024-03-31 | -0.01    | 0.005  | -0.003 |
     """
+    if len(factor_data_list) != len(factor_abbr_list):
+        raise ValueError(
+            f"factor_data_list ({len(factor_data_list)}) and "
+            f"factor_abbr_list ({len(factor_abbr_list)}) length mismatch"
+        )
+
     list_net = []
     for data, abbr in zip(factor_data_list, factor_abbr_list):
         long_df, short_df = construct_long_short_df(data)
@@ -77,6 +83,10 @@ def aggregate_factor_returns(
         _, net_s, _ = calculate_vectorized_return(short_df, abbr)
         list_net.append(net_l + net_s)
 
-    net_return_df = pd.concat(list_net, axis=1).dropna(axis=1)
+    combined = pd.concat(list_net, axis=1)
+    net_return_df = combined.dropna(axis=1)
+    dropped = set(combined.columns) - set(net_return_df.columns)
+    if dropped:
+        logger.warning("Dropped %d factors with NaN: %s", len(dropped), sorted(dropped))
 
     return net_return_df

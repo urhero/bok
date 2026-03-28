@@ -14,11 +14,9 @@ import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Rectangle
 
-from service.pipeline.model_portfolio import (
-    OUTPUT_DIR,
-    evaluate_factor_universe,
-    filter_and_label_factors,
-)
+from service.pipeline.factor_analysis import filter_and_label_factors
+from service.pipeline.model_portfolio import OUTPUT_DIR
+from service.pipeline.pipeline_utils import aggregate_factor_returns
 
 logger = logging.getLogger(__name__)
 
@@ -153,9 +151,12 @@ def generate_report(abbrs, names, styles, raw):
         dropped_sec,
         cleaned_raw,
     ) = filter_and_label_factors(abbrs, names, styles, raw)
-    factor_rets, _, _ = evaluate_factor_universe(
-        kept_abbr, kept_name, kept_style, cleaned_raw
-    )
+    factor_rets = aggregate_factor_returns(cleaned_raw, kept_abbr)
+    # _evaluate_universe와 동일한 전처리: 첫 행 0 기준점 + 불충분 팩터 제거
+    factor_rets.loc[factor_rets.index[0]] = 0.0
+    factor_rets = factor_rets.sort_index()
+    valid = factor_rets.columns[(factor_rets == 0).sum() <= 10]
+    factor_rets = factor_rets[valid]
 
     # Calculate sector_rets for all kept factors
     list_sector = []

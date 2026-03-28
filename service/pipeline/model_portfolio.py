@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 from rich.progress import track
 
-from config import PARAM
+from config import PARAM, PIPELINE_PARAMS
 
 # 모듈 import
 from service.pipeline.correlation import calculate_downside_correlation
@@ -41,6 +41,7 @@ from service.pipeline.weight_construction import (
     construct_long_short_df,
 )
 from service.download.parquet_io import load_factor_parquet
+from utils.validation import validate_return_matrix, validate_output_weights, validate_weights_sum_to_one
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +65,11 @@ class ModelPortfolioPipeline:
         # 중간 결과 확인: pipeline.meta, pipeline.weights 등
     """
 
-    def __init__(self, config: dict, factor_info_path: Path, is_test: bool = False):
+    def __init__(self, config: dict, factor_info_path: Path, is_test: bool = False, pipeline_params: dict | None = None):
         self.config = config
         self.factor_info_path = factor_info_path
         self.is_test = is_test
+        self.pp = pipeline_params or PIPELINE_PARAMS
 
         # 중간 결과물
         self.raw_data: pd.DataFrame | None = None
@@ -102,7 +104,8 @@ class ModelPortfolioPipeline:
         factor_name_list = factor_metadata.factorName.tolist()
         style_name_list = factor_metadata.styleName.tolist()
         kept_abbrs, kept_names, kept_styles, _, _, self.filtered_data = filter_and_label_factors(
-            factor_abbr_list, factor_name_list, style_name_list, self.factor_stats
+            factor_abbr_list, factor_name_list, style_name_list, self.factor_stats,
+            spread_threshold_pct=self.pp["spread_threshold_pct"],
         )
 
         # [4] 팩터 스프레드 수익률 + 후보군 선정 — README [4]
@@ -116,7 +119,11 @@ class ModelPortfolioPipeline:
         )
 
         # [6] 스타일 제약 하 비중 결정 — README [6]
-        sim_result = simulate_constrained_weights(ret_subset, style_list, test_mode=bool(test_file))
+        sim_result = simulate_constrained_weights(
+            ret_subset, style_list, test_mode=bool(test_file),
+            style_cap=self.pp["style_cap"],
+            portfolio_rank_weights=self.pp["portfolio_rank_weights"],
+        )
         self.weights = sim_result[1]
 
         # [7] MP 구성 + CSV 출력 — README [7]
@@ -134,8 +141,10 @@ class ModelPortfolioPipeline:
         """Pipeline-ready parquet 또는 테스트 CSV에서 데이터를 로드한다."""
         t0 = time.time()
         if test_file:
-            # 테스트 모드: CSV에서 로드 + 직접 처리
-            test_data_path = _PROJECT_ROOT / test_file
+            # 테스트 모드: CSV에서 로드 + 직접 처리 (경로 검증)
+            test_data_path = (_PROJECT_ROOT / test_file).resolve()
+            if not str(test_data_path).startswith(str(_PROJECT_ROOT.resolve())):
+                raise ValueError(f"test_file must be within the project directory: {test_file}")
             raw = pd.read_csv(test_data_path, parse_dates=["ddt"])
 
             extracted = raw["fld"].str.extract(r"\(([^)]+)\)$")
@@ -235,34 +244,38 @@ class ModelPortfolioPipeline:
     def _analyze_factors(self, merged_data, factor_abbr_list, orders, test_file):
         """모든 팩터에 대해 5분위 분석을 실행한다 (일괄 처리)."""
         t1 = time.time()
-        result = calculate_factor_stats_batch(merged_data, factor_abbr_list, orders, test_mode=bool(test_file))
+        result = calculate_factor_stats_batch(merged_data, factor_abbr_list, orders, test_mode=bool(test_file), min_sector_stocks=self.pp["min_sector_stocks"])
         logger.info("Factors assigned in %.2fs", time.time() - t1)
         return result
 
     def _generate_report(self, factor_abbr_list, factor_metadata):
-        """리포트를 생성하고 프로세스를 종료한다."""
-        import sys
+        """리포트를 생성한다. run()에서 early return으로 이후 단계 스킵."""
         from service.report.report_generator import generate_report
 
         factor_name_list = factor_metadata.factorName.tolist()
         style_name_list = factor_metadata.styleName.tolist()
         logger.info("Report generation requested.")
         generate_report(factor_abbr_list, factor_name_list, style_name_list, self.factor_stats)
-        logger.info("Report generated. Exiting.")
-        sys.exit(0)
+        logger.info("Report generated.")
 
     def _evaluate_universe(self, kept_abbrs, kept_names, kept_styles, filtered_data, test_file):
         """팩터 유니버스를 평가하고 상위 50개를 선정한다."""
         logger.info("Building monthly return matrix")
         ret_df = aggregate_factor_returns(filtered_data, kept_abbrs)
+        if ret_df.empty:
+            raise ValueError(
+                f"No valid factor returns after aggregation. "
+                f"Input: {len(filtered_data)} factors, {len(kept_abbrs)} abbreviations"
+            )
         ret_df.loc[ret_df.index[0]] = 0.0
         ret_df = ret_df.sort_index()
+        validate_return_matrix(ret_df, "factor_return_matrix")
 
         if ret_df.columns.duplicated().any():
             logger.warning("Duplicate factor columns detected, removing duplicates")
             ret_df = ret_df.loc[:, ~ret_df.columns.duplicated(keep="first")]
 
-        valid = ret_df.columns[(ret_df == 0).sum() <= 10]
+        valid = ret_df.columns[(ret_df == 0).sum() <= self.pp["max_zero_return_months"]]
         ret_df = ret_df[valid]
 
         meta_all = pd.DataFrame({"factorAbbreviation": kept_abbrs, "factorName": kept_names, "styleName": kept_styles})
@@ -281,7 +294,7 @@ class ModelPortfolioPipeline:
         else:
             meta.to_csv(OUTPUT_DIR / "meta_data.csv", index=False)
 
-        meta = meta[:50]
+        meta = meta[:self.pp["top_factor_count"]]
         order = meta["factorAbbreviation"].tolist()
         ret_df = ret_df[order]
         negative_corr = calculate_downside_correlation(ret_df).loc[order, order]
@@ -294,7 +307,11 @@ class ModelPortfolioPipeline:
         top_metrics = meta.groupby("styleName", as_index=False).first()
         grids = []
         for _, row in top_metrics.iterrows():
-            grid = find_optimal_mix(return_matrix, row.to_frame().T.reset_index(drop=True), correlation_matrix)
+            grid = find_optimal_mix(
+                return_matrix, row.to_frame().T.reset_index(drop=True), correlation_matrix,
+                sub_factor_rank_weights=self.pp["sub_factor_rank_weights"],
+                portfolio_rank_weights=self.pp["portfolio_rank_weights"],
+            )
             grid["styleName"] = row["styleName"]
             grids.append(grid)
         mix_grid = pd.concat(grids, ignore_index=True)
@@ -320,6 +337,7 @@ class ModelPortfolioPipeline:
 
     def _construct_and_export(self, sim_result, kept_abbrs, filtered_data, end_date, test_file):
         """종목별 가중치를 산출하고 CSV로 출력한다."""
+        end_date_ts = pd.Timestamp(end_date)  # 비교용 Timestamp (파일명에는 원본 사용)
         factor_idx_map = {fac: idx for idx, fac in enumerate(kept_abbrs)}
         sim_factors = sim_result[1][["factor", "fitted_weight", "styleName"]].to_dict("records")
 
@@ -334,7 +352,7 @@ class ModelPortfolioPipeline:
             j = factor_idx_map[fac]
             # end_date를 먼저 필터하여 이후 연산 대상 행 수를 최소화
             df = filtered_data[j].loc[
-                filtered_data[j]["ddt"] == end_date, ["ddt", "ticker", "isin", "gvkeyiid", "label"]
+                filtered_data[j]["ddt"] == end_date_ts, ["ddt", "ticker", "isin", "gvkeyiid", "label"]
             ].copy()
             if df.empty:
                 continue
@@ -351,14 +369,19 @@ class ModelPortfolioPipeline:
 
             weight_frames.append(df[["ddt", "ticker", "isin", "gvkeyiid", "mp_ls_weight", "ls_weight", "factor_weight", "factor", "style", "name", "count"]].reset_index(drop=True))
 
+        if not weight_frames:
+            logger.warning("No matching factors found in filtered data — skipping CSV export")
+            return
+
         weight_raw = pd.concat(weight_frames, ignore_index=True)
-        weight_raw["factor_weight"] = weight_raw["factor_weight"] * np.sign(weight_raw["mp_ls_weight"]) ** 2
+        # neutral 종목(mp_ls_weight=0)의 factor_weight를 0으로 처리
+        weight_raw["factor_weight"] = weight_raw["factor_weight"] * (weight_raw["mp_ls_weight"] != 0).astype(int)
 
         # MP 집계 (한번의 groupby로 mp_ls_weight + factor_weight 동시 합산)
         agg_w = weight_raw.groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)[["mp_ls_weight", "factor_weight"]].sum()
         agg_w["style"] = "MP"
         agg_w["name"] = "MXCN1A_MP"
-        agg_w = agg_w[agg_w["ddt"] == end_date].reset_index(drop=True)
+        agg_w = agg_w[agg_w["ddt"] == end_date_ts].reset_index(drop=True)
         agg_w["count"] = agg_w.groupby(["ddt", agg_w["mp_ls_weight"] > 0])["mp_ls_weight"].transform("size")
         agg_w["factor"] = "AGG"
         agg_w["ls_weight"] = agg_w["mp_ls_weight"]
@@ -410,6 +433,9 @@ class ModelPortfolioPipeline:
         pivoted_final = pivoted_final.loc[:, new_order]
 
         pivoted_final.to_csv(OUTPUT_DIR / f"pivoted_total_agg_wgt_{end_date}{suffix}.csv")
+
+        # 출력 데이터 품질 검증
+        validate_output_weights(weight_raw, ticker_column="ticker", weight_column="mp_ls_weight", df_name="weight_raw")
 
 
 def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, test_file: str | None = None) -> None:

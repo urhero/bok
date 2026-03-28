@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 def construct_long_short_df(
     labeled_data_df: pd.DataFrame,
+    backtest_start: str = "2017-12-31",
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """라벨링된 종목 데이터를 롱(L)/숏(S) 포트폴리오로 분리한다.
 
@@ -42,7 +43,7 @@ def construct_long_short_df(
         | 2024-01-31 | 001      | 600519 | 0.03     | 1     | L      | 1   | 1.0           | 1.0             |
     """
     # neutral(label=0)을 먼저 제거 — 이후 연산 대상 행 ~20% 절감
-    raw_df = labeled_data_df[(labeled_data_df["ddt"] >= "2017-12-31") & (labeled_data_df["label"] != 0)].copy()
+    raw_df = labeled_data_df[(labeled_data_df["ddt"] >= backtest_start) & (labeled_data_df["label"] != 0)].copy()
     raw_df["signal"] = raw_df["label"].map({1: "L", -1: "S"})
     raw_df["num"] = raw_df.groupby(["ddt", "signal"])["signal"].transform("count")
     raw_df["return_weight"] = raw_df["label"] / raw_df["num"]

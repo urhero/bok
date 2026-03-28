@@ -21,6 +21,8 @@ def find_optimal_mix(
     factor_rets: pd.DataFrame,
     data_raw: pd.DataFrame,
     data_neg: pd.DataFrame,
+    sub_factor_rank_weights: tuple = (0.7, 0.3),
+    portfolio_rank_weights: tuple = (0.6, 0.4),
 ) -> pd.DataFrame:
     """메인 팩터와 상위 3개 보조 팩터의 최적 가중치 배합을 그리드 탐색한다.
 
@@ -53,13 +55,13 @@ def find_optimal_mix(
     negative_corr.iloc[:, 0] += 1
     negative_corr.columns = ["rank_cagr", "factorAbbreviation", negative_corr.columns[-1]]
     negative_corr["rank_ncorr"] = negative_corr[negative_corr.columns[-1]].rank()
-    negative_corr["rank_avg"] = negative_corr["rank_cagr"] * 0.7 + negative_corr["rank_ncorr"] * 0.3
+    negative_corr["rank_avg"] = negative_corr["rank_cagr"] * sub_factor_rank_weights[0] + negative_corr["rank_ncorr"] * sub_factor_rank_weights[1]
     negative_corr = negative_corr.nsmallest(3, "rank_avg")
 
     # 가중치 그리드 생성 (0% ~ 100%, 1% 단위)
     w_grid = np.linspace(0, 1, 101)
     w_inv = 1 - w_grid
-    ann = 12 / factor_rets.shape[0]
+    ann = 12 / (factor_rets.shape[0] - 1)  # 첫 행은 기준점(0)이므로 제외
     main = data_raw["factorAbbreviation"].iat[0]
 
     frames: List[pd.DataFrame] = []
@@ -96,7 +98,7 @@ def find_optimal_mix(
         logger.info("Completed main=%s <-> sub=%s", main, sub)
 
     df_mix = pd.concat(frames, ignore_index=True)
-    df_mix["rank_total"] = df_mix["mix_cagr"].rank(ascending=False) * 0.6 + df_mix["mix_mdd"].rank(ascending=False) * 0.4
+    df_mix["rank_total"] = df_mix["mix_cagr"].rank(ascending=False) * portfolio_rank_weights[0] + df_mix["mix_mdd"].rank(ascending=False) * portfolio_rank_weights[1]
     logger.info("[Trace] Generated Mix Grid for %s. Size: %d", main, len(df_mix))
     best = df_mix.nsmallest(1, "rank_total").iloc[0]
 
@@ -131,6 +133,8 @@ def simulate_constrained_weights(
     tol: float = 1e-12,
     test_mode: bool = False,
     batch_size: int = 100_000,
+    random_seed: int | None = 42,
+    portfolio_rank_weights: tuple = (0.6, 0.4),
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """스타일 제약 하 최적 포트폴리오 가중치를 결정한다.
 
@@ -186,7 +190,10 @@ def simulate_constrained_weights(
     mask = (styles[None, :] == uniq_styles[:, None]).astype(np.float32)
 
     port_np = rtn_df.to_numpy(dtype=np.float32)
-    ann_exp = 12 / T
+    ann_exp = 12 / (T - 1)  # 첫 행은 기준점(0)이므로 제외
+
+    # 재현성을 위한 로컬 난수 생성기
+    rng = np.random.default_rng(random_seed)
 
     # 배치 처리
     all_cagrs = []
@@ -202,7 +209,7 @@ def simulate_constrained_weights(
         current_batch_size = end_idx - start_idx
 
         # 랜덤 가중치 생성 (합=1)
-        raw_mat = np.random.rand(K, current_batch_size).astype(np.float32)
+        raw_mat = rng.random((K, current_batch_size), dtype=np.float32)
         raw_mat /= raw_mat.sum(axis=0, keepdims=True)
 
         # 스타일 제약 적용 (초과분 재분배)
@@ -242,7 +249,10 @@ def simulate_constrained_weights(
         all_fitted_weights.append(fitted_mat_ok)
 
     if len(all_cagrs) == 0:
-        raise ValueError("No feasible portfolios found")
+        raise ValueError(
+            f"No feasible portfolios found after {num_sims} simulations. "
+            f"K={K}, styles={S}, style_cap={style_cap}"
+        )
 
     all_cagrs = np.concatenate(all_cagrs)
     all_mdds = np.concatenate(all_mdds)
@@ -252,7 +262,7 @@ def simulate_constrained_weights(
     # 복합 랭크로 최적 포트폴리오 선택
     rank_cagr = np.argsort(np.argsort(-all_cagrs)) + 1
     rank_mdd = np.argsort(np.argsort(-all_mdds)) + 1
-    rank_total = rank_cagr * 0.6 + rank_mdd * 0.4
+    rank_total = rank_cagr * portfolio_rank_weights[0] + rank_mdd * portfolio_rank_weights[1]
 
     best_idx = np.argmin(rank_total)
 

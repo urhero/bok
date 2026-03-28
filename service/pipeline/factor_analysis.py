@@ -23,6 +23,7 @@ def calculate_factor_stats(
     sort_order: int,
     factor_data_df: pd.DataFrame,
     test_mode: bool = False,
+    min_sector_stocks: int = 10,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | Tuple[None, None, None, None]:
     """팩터 데이터를 5분위 포트폴리오로 나누고 성과를 계산한다.
 
@@ -78,12 +79,16 @@ def calculate_factor_stats(
     merged_df["rank"] = grp.rank(method="average", ascending=bool(sort_order))
     count_series = grp.transform("count")
 
-    # 순위 -> 백분위(0~100) 변환
-    merged_df["percentile"] = (merged_df["rank"] - 1) / (count_series - 1) * 100
+    # 순위 -> 백분위(0~100) 변환 (count=1이면 분모=0이므로 NaN 처리)
+    merged_df["percentile"] = np.where(
+        count_series > 1,
+        (merged_df["rank"] - 1) / (count_series - 1) * 100,
+        np.nan,
+    )
 
     # 종목 수 부족 시 NaN 처리
     if not test_mode:
-        merged_df.loc[count_series <= 10, "percentile"] = np.nan
+        merged_df.loc[count_series <= min_sector_stocks, "percentile"] = np.nan
 
     # 백분위 -> 5분위(Q1~Q5) 버킷화
     labels = ["Q1", "Q2", "Q3", "Q4", "Q5"]
@@ -121,6 +126,7 @@ def filter_and_label_factors(
     factor_name_list: List[str],
     style_name_list: List[str],
     factor_data_list: List[Tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]],
+    spread_threshold_pct: float = 0.10,
 ) -> Tuple[List[str], List[str], List[str], List[int], List[List[str]], List[pd.DataFrame]]:
     """음의 스프레드를 가진 섹터를 제거하고 L/N/S 라벨을 재계산한다.
 
@@ -173,7 +179,7 @@ def filter_and_label_factors(
         q_mean = q_ret.mean(axis=0).to_frame("mean")
 
         # 임계값 기반 L/N/S 라벨 결정
-        thresh = abs(q_mean.loc["Q1", "mean"] - q_mean.loc["Q5", "mean"]) * 0.10
+        thresh = abs(q_mean.loc["Q1", "mean"] - q_mean.loc["Q5", "mean"]) * spread_threshold_pct
 
         # 롱: Q1부터 내려가며 수익률 > (Q1 - threshold)인 분위
         q_mean["long"] = (q_mean["mean"] > q_mean.loc["Q1", "mean"] - thresh).astype(int).cumprod()
@@ -181,6 +187,14 @@ def filter_and_label_factors(
         q_mean["short"] = (q_mean["mean"] < q_mean.loc["Q5", "mean"] + thresh).astype(int) * -1
         q_mean["short"] = q_mean["short"].abs()[::-1].cumprod()[::-1] * -1
         q_mean["label"] = q_mean["long"] + q_mean["short"]
+
+        # L/S 라벨 분포 검증
+        n_long = (q_mean["label"] == 1).sum()
+        n_short = (q_mean["label"] == -1).sum()
+        if n_short == 0:
+            logger.warning("Factor %s has no short labels — long-only portfolio", factor_abbr_list[idx])
+        if n_long == 0:
+            logger.warning("Factor %s has no long labels", factor_abbr_list[idx])
 
         # 라벨을 종목 데이터에 매핑
         label_map = q_mean["label"].to_dict()
@@ -203,6 +217,7 @@ def calculate_factor_stats_batch(
     factor_abbr_list: List[str],
     orders: List[int],
     test_mode: bool = False,
+    min_sector_stocks: int = 10,
 ) -> List[Tuple]:
     """모든 팩터의 5분위 분석을 하이브리드 방식으로 처리한다.
 
@@ -262,10 +277,14 @@ def calculate_factor_stats_batch(
         fdf["rank"] = grp.rank(method="average", ascending=True)
         count_series = grp.transform("count")
 
-        # percentile
-        fdf["percentile"] = (fdf["rank"] - 1) / (count_series - 1) * 100
+        # percentile (count=1이면 분모=0이므로 NaN 처리)
+        fdf["percentile"] = np.where(
+            count_series > 1,
+            (fdf["rank"] - 1) / (count_series - 1) * 100,
+            np.nan,
+        )
         if not test_mode:
-            fdf.loc[count_series <= 10, "percentile"] = np.nan
+            fdf.loc[count_series <= min_sector_stocks, "percentile"] = np.nan
 
         # quantile
         fdf["quantile"] = pd.cut(
