@@ -1,6 +1,6 @@
 # TODO — Awesome-Cohen (BoK) 미완료 작업
 
-> 작성일: 2026-03-28
+> 최종 업데이트: 2026-03-28
 > 이 문서만 보고 나중에 독립적으로 실행 가능하도록 상세하게 기술합니다.
 
 ---
@@ -99,168 +99,43 @@ python main.py download 2026-01-31 2026-02-28 --incremental
 
 ---
 
-## 3. [SUGGESTION] pre-commit hook + detect-secrets 설치
-
-### 배경
-- TODO #1의 비밀번호 유출은 pre-commit hook이 있었으면 방지 가능했음
-- 향후 `.env` 값이 코드에 실수로 포함되는 것을 원천 차단
-
-### 작업
-```bash
-# 1. pre-commit 설치
-pip install pre-commit
-
-# 2. .pre-commit-config.yaml 생성
-cat > .pre-commit-config.yaml << 'EOF'
-repos:
-  - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.4.0
-    hooks:
-      - id: detect-secrets
-        args: ['--baseline', '.secrets.baseline']
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
-    hooks:
-      - id: check-added-large-files
-        args: ['--maxkb=100000']  # 100MB (parquet 파일 허용)
-      - id: check-merge-conflict
-      - id: trailing-whitespace
-EOF
-
-# 3. baseline 생성 (기존 파일의 false positive 제거)
-detect-secrets scan > .secrets.baseline
-
-# 4. hook 활성화
-pre-commit install
-```
-
-### 검증
-```bash
-# 의도적으로 비밀번호를 포함한 커밋 시도 → 차단되어야 함
-echo "PASSWORD=test123" >> temp.py
-git add temp.py
-git commit -m "test"  # detect-secrets가 차단해야 함
-rm temp.py
-```
-
----
-
-## 4. [SUGGESTION] assert를 ValueError로 변환
-
-### 배경
-- `pipeline_utils.py:73`의 `assert len(factor_data_list) == len(factor_abbr_list)`
-- `python -O` (최적화 모드)에서는 assert가 무시됨
-- 금융 데이터 파이프라인에서는 방어적 프로그래밍이 필요
-
-### 작업
-```python
-# pipeline_utils.py:73 변경
-# Before:
-assert len(factor_data_list) == len(factor_abbr_list), ...
-
-# After:
-if len(factor_data_list) != len(factor_abbr_list):
-    raise ValueError(
-        f"factor_data_list ({len(factor_data_list)}) and "
-        f"factor_abbr_list ({len(factor_abbr_list)}) length mismatch"
-    )
-```
-
----
-
-## 5. [SUGGESTION] _evaluate_universe 빈 DataFrame guard
-
-### 배경
-- `model_portfolio.py:259`에서 `ret_df.loc[ret_df.index[0]] = 0.0`
-- `aggregate_factor_returns`가 빈 DataFrame을 반환하면 `IndexError` 발생
-- 에러 메시지가 불명확하여 디버깅 어려움
-
-### 작업
-```python
-# model_portfolio.py _evaluate_universe 메서드, ret_df 생성 직후에 추가:
-ret_df = aggregate_factor_returns(filtered_data, kept_abbrs)
-if ret_df.empty:
-    raise ValueError(
-        f"No valid factor returns after aggregation. "
-        f"Input: {len(filtered_data)} factors, {len(kept_abbrs)} abbreviations"
-    )
-ret_df.loc[ret_df.index[0]] = 0.0
-```
-
----
-
-## 6. [SUGGESTION] ValueError 메시지에 컨텍스트 추가
-
-### 배경
-- `optimization.py:246`의 `ValueError("No feasible portfolios found")`
-- 디버깅 시 어떤 파라미터로 실패했는지 알 수 없음
-
-### 작업
-```python
-# optimization.py:246 변경
-raise ValueError(
-    f"No feasible portfolios found after {num_sims} simulations. "
-    f"K={K}, styles={S}, style_cap={style_cap}, "
-    f"valid_count={sum(len(c) for c in all_cagrs) if all_cagrs else 0}"
-)
-```
-
----
-
-## 7. [SUGGESTION] PIPELINE_PARAMS를 실제 코드에 적용
-
-### 배경
-- `config.py`에 `PIPELINE_PARAMS` 딕셔너리를 추가했으나, 실제 코드에서는 아직 참조하지 않음
-- 현재는 매직넘버가 코드에 그대로 존재하고, PIPELINE_PARAMS는 문서화 역할만 수행
-- 점진적으로 코드의 매직넘버를 PIPELINE_PARAMS 참조로 교체해야 함
-
-### 적용 대상 (우선순위순)
-
-| 파라미터 | 현재 위치 | 코드 내 값 |
-|---------|----------|-----------|
-| `style_cap` | `optimization.py:131` | `0.25` |
-| `transaction_cost_bps` | `weight_construction.py:58` | `30.0` |
-| `top_factor_count` | `model_portfolio.py:285` | `50` |
-| `spread_threshold_pct` | `factor_analysis.py:180` | `0.10` |
-| `backtest_start` | `weight_construction.py:45` | `"2017-12-31"` |
-| `sub_factor_rank_weights` | `optimization.py:56` | `(0.7, 0.3)` |
-| `portfolio_rank_weights` | `optimization.py:99,255` | `(0.6, 0.4)` |
-| `min_sector_stocks` | `factor_analysis.py:89` | `10` |
-| `max_zero_return_months` | `model_portfolio.py:266` | `10` |
-
-### 주의사항
-- 각 함수의 시그니처에 파라미터를 추가하거나, Pipeline 클래스에서 config를 주입하는 방식으로 적용
-- **hardcoded_weights.csv 관련 값은 절대 변경하지 말 것** (프로덕션 가중치)
-- 변경 시 반드시 기존 테스트 통과 확인 + test_data.csv 결과 비교
-
----
-
 ## 완료된 작업 (참고)
 
-이전 세션에서 완료한 수정사항 목록:
+### 세션 1 — 초기 코드 리뷰 수정 (6건)
+- [x] C1: `report_generator.py` 깨진 임포트 수정 (`evaluate_factor_universe` → `aggregate_factor_returns`)
+- [x] C2: `factor_analysis.py` division by zero 방어 (`np.where(count > 1, ..., np.nan)`)
+- [x] I1: `optimization.py` 연환산 분모 `12/T` → `12/(T-1)` 통일
+- [x] I2: `correlation.py` Bessel's correction 추가
+- [x] C3: `model_portfolio.py` `np.sign()**2` → 명시적 boolean mask
+- [x] I7: `parquet_io.py` docstring 기본값 "5%" → "10%"
 
-### 세션 1 (2026-03-28 초반)
-- C1: `report_generator.py` 깨진 임포트 수정
-- C2: `factor_analysis.py` division by zero 방어 (`np.where`)
-- I1: `optimization.py` 연환산 분모 `12/(T-1)` 통일
-- I2: `correlation.py` Bessel's correction 추가
-- C3: `model_portfolio.py` `np.sign()**2` → 명시적 boolean mask
-- I7: `parquet_io.py` docstring 기본값 수정
+### 세션 2 — 브레인스토밍 합의 기반 수정 (6건)
+- [x] `model_portfolio.py` end_date `pd.Timestamp` 변환 (타입 안정성)
+- [x] `pipeline_utils.py` NaN 팩터 드롭 warning 로깅 추가
+- [x] `model_portfolio.py` weight_frames 빈 경우 guard + early return
+- [x] `model_portfolio.py` `sys.exit(0)` 제거 → early return
+- [x] `factor_analysis.py` L/S 라벨 0개 경고 로그
+- [x] `pipeline_utils.py` 리스트 길이 검증 추가
 
-### 세션 2 (2026-03-28 중반)
-- `model_portfolio.py` end_date Timestamp 변환
-- `pipeline_utils.py` dropna 팩터 드롭 로깅 + assert
-- `model_portfolio.py` weight_frames 빈 경우 guard
-- `model_portfolio.py` sys.exit(0) 제거
-- `factor_analysis.py` L/S 라벨 0개 경고
+### 세션 3 — 다각도 리뷰 (보안/엔지니어링/코드리뷰) 수정 (8건)
+- [x] `config.py` sa/IP 기본값 제거, `.env` 필수화
+- [x] `factor_query.py` universe `ALLOWED_UNIVERSES` allowlist 검증
+- [x] `model_portfolio.py` test_file path traversal 검증
+- [x] `optimization.py` `random_seed` 파라미터 + `np.random.default_rng` 재현성
+- [x] `model_portfolio.py` `validation.py` 함수 3개 파이프라인 통합 (`validate_return_matrix`, `validate_output_weights`, `validate_weights_sum_to_one`)
+- [x] `correlation.py` Bessel correction 컬럼별 유효 관측 수 보정
+- [x] `report_generator.py` zero-prepend + 불충분 팩터 필터 추가
+- [x] 테스트 50개 신규 작성 (총 140개): `test_filter_and_label_factors.py`, `test_weight_construction.py`, `test_find_optimal_mix.py`
 
-### 세션 3 (2026-03-28 후반)
-- `config.py` sa/IP 기본값 제거 + PIPELINE_PARAMS 추가
-- `factor_query.py` universe allowlist 검증
-- `model_portfolio.py` path traversal 검증
-- `optimization.py` random_seed + default_rng
-- `model_portfolio.py` validation.py 함수 파이프라인 통합
-- `correlation.py` Bessel 컬럼별 유효 카운트 보정
-- `report_generator.py` zero-prepend + 필터 추가
-- 테스트 50개 신규 작성 (총 140개)
-- README.md + research.md 업데이트
+### 세션 4 — SUGGESTION 이슈 수정 (5건)
+- [x] S1: `pipeline_utils.py` `assert` → `ValueError` 변환 (python -O 안전)
+- [x] S2: `model_portfolio.py` `_evaluate_universe` 빈 DataFrame guard
+- [x] S3: `optimization.py` ValueError 메시지에 컨텍스트 추가 (num_sims, K, S, style_cap)
+- [x] S4: `PIPELINE_PARAMS` 9개 매직넘버 전체 코드 적용 (config → 함수 파라미터 전달)
+- [x] S5: `.pre-commit-config.yaml` + `detect-secrets` + `.secrets.baseline` 설정
+
+### 문서 업데이트
+- [x] `README.md` — PIPELINE_PARAMS 테이블, 보안 설정 섹션, NaN 처리, L/S 검증, random_seed 추가
+- [x] `research.md` — §4.1.3/4.1.4 PIPELINE_PARAMS 참조, §4.2.6 early return, §4.2.8 boolean mask, §4.3.1 div-by-zero guard, §4.4.2 Bessel, §4.4.4 early return, §4.4.5 random_seed, §4.4.6 allowlist, §4.4.7 PIPELINE_PARAMS, §4.4.8 pre-commit, CAGR 수식 주석
+- [x] `todo.md` 작성 및 업데이트
+- [x] `.env` + `.env.example` 생성
