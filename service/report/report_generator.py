@@ -316,5 +316,27 @@ def _generate_plots(
                 fig, axes = plt.subplots(rows, cols, figsize=(cols * 4, rows * 3))
                 idx_in_page = 0
 
+
+
+def generate_stress_test_section(stress_csv_path=None):
+    import pandas as pd
+    if stress_csv_path is None:
+        stress_csv_path = str(OUTPUT_DIR / "stress_test_2025.csv")
+    try:
+        sdf = pd.read_csv(stress_csv_path)
+    except FileNotFoundError:
+        logger.warning("Stress test CSV not found: %s", stress_csv_path)
+        return {}
+    n_bear = int(sdf["n_bear"].iloc[0])
+    n_total = int(sdf["n_total"].iloc[0])
+    med_full = float(sdf["med_full"].iloc[0])
+    med_bear = float(sdf["med_bear"].iloc[0])
+    resilient = sdf[sdf["bear_diff"] > 0.05]["factorAbbreviation"].tolist()
+    vulnerable = sdf[sdf["bear_diff"] < -0.05]["factorAbbreviation"].tolist()
+    top10 = sdf.head(10)
+    logger.info("Stress test: %d/%d bear months, corr full=%.3f bear=%.3f", n_bear, n_total, med_full, med_bear)
+    return dict(n_bear=n_bear, n_total=n_total, med_corr_full=med_full, med_corr_bear=med_bear, top10=top10, bear_resilient=resilient, bear_vulnerable=vulnerable)
+
+
 if __name__ == "__main__":
     pass

@@ -23,7 +23,7 @@ price momentum signals reversed while fundamental/revision signals outperformed.
 |--------|-------|-----------|-----------|---------|
 | PM1M | Price Momentum | 6.3% | -95.7% | -1610% |
 | Alpha60M | Price Momentum | 6.2% | -91.4% | -1586% |
-| 5DM¿neyFlowVol | Price Momentum | 6.9% | -62.7% | -1008% |
+| 5DMí“†eyFlowVol | Price Momentum | 6.9% | -62.7% | -1008% |
 | PM6M | Price Momentum | 13.8% | -73.1% | -630% |
 | TobinQ | Valuation | 6.2% | -39.3% | -732% |
 
@@ -53,3 +53,39 @@ Recommendation: Analyst revision and sales growth factors are in a strong regime
 2. Consider increasing weight of Analyst Expectations and Historical Growth styles
 3. Re-run this analysis quarterly to monitor regime persistence
 4 Cross-reference with BOKA-7 (downside correlation stress testing)
+
+
+---
+
+
+## Section 6: Downside Correlation Stress Testing
+
+
+### Methodology
+Identifies bear market months where avg M_RETURN < -5pct.
+Recomputes pairwise downside correlation restricted to bear-period rows.
+Results: output/stress_test_2025.csv, output/downside_corr_bear_2025.csv
+
+
+### Key Findings
+
+
+Bear months: 14 of 97 total
+Full-history median pairwise corr: 0.138
+Bear-period median pairwise corr:  0.047
+Finding: L/S factor spreads DECORRELATE in bear markets.
+
+
+Bear-resilient: 52WSlope, HL52W, RevMagFY1C
+Bear-vulnerable: PM6M
+
+
+Mix PM6M/52WSlope 70/30 full CAGR: 0.124
+Mix PM6M/52WSlope 70/30 bear ann: 0.045
+
+
+### Action Items
+1. Pair PM6M with bear-resilient factors in mix optimization
+2. Monitor PM6M bear-period performance as early warning signal
+3. See output/stress_test_2025.csv for full factor table
+
