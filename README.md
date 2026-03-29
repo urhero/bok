@@ -1,4 +1,6 @@
 # 📘 엔드투엔드 팩터 파이프라인 요약
+[[pytest](https://github.com/urhero/bok/actions/workflows/test.yml/badge.svg)](https://github.com/urhero/bok/actions/workflows/test.yml)
+
 *(Code → Investment Process 매핑)*
 
 > 각 섹션의 `[N]` 번호는 `model_portfolio.py:run()` 코드의 단계 주석과 동일합니다.
