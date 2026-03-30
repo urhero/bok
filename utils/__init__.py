@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Utility functions for Awesome-Cohen (BoK) project."""
+"""Utility functions for BOK project."""
 
 from .validation import (
     validate_required_columns,

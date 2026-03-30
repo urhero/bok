@@ -1,2 +1,2 @@
 # -*- coding: utf-8 -*-
-"""Test package for Awesome-Cohen (BoK) project."""
+"""Test package for BOK project."""

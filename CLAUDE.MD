@@ -1,8 +1,8 @@
-# CLAUDE.MD - Awesome-Cohen (Book of Knowledge)
+# CLAUDE.MD - BOK (Book of Knowledge)
 
 ## Project Overview
 
-**Awesome-Cohen (BoK)** is an end-to-end factor-based portfolio construction and optimization pipeline for investment management. The system transforms raw factor data into a Model Portfolio (MP) by processing 200+ financial factors from a SQL Server database, calculating factor performance using quantile analysis and long-short strategies, selecting optimal factor combinations, and generating portfolio weights constrained by style exposure limits.
+**BOK** is an end-to-end factor-based portfolio construction and optimization pipeline for investment management. The system transforms raw factor data into a Model Portfolio (MP) by processing 200+ financial factors from a SQL Server database, calculating factor performance using quantile analysis and long-short strategies, selecting optimal factor combinations, and generating portfolio weights constrained by style exposure limits.
 
 ### Core Workflow
 
@@ -16,7 +16,7 @@
 ## Project Structure
 
 ```
-awesome-cohen/
+bok/
 ├── main.py                          # CLI entry point (download, mp commands)
 ├── config.py                        # 환경변수 기반 설정 (.env에서 로드)
 ├── .env                             # DB 비밀번호 등 민감정보 (git 미추적)
@@ -259,41 +259,62 @@ pipenv run python -m pytest tests/ -v
 ### Code Change Verification Process (IMPORTANT)
 코드 변경 시 반드시 다음 검증 프로세스를 따를 것:
 
-1. **변경 전 베이스라인 생성**
+1. **변경 전 베이스라인 생성 (테스트 데이터)**
    ```bash
    python main.py mp test test_data.csv
    # output/ 폴더의 결과물을 백업 (예: output_before/)
    ```
 
-2. **코드 변경 적용**
-
-3. **변경 후 결과 생성**
+2. **변경 전 베이스라인 생성 (실제 데이터)**
    ```bash
-   python main.py mp test test_data.csv
-   # 새로운 output/ 결과물 생성
+   python main.py mp {PIPELINE_PARAMS["backtest_start"]} {PIPELINE_PARAMS["backtest_end"]}
+   # output/ 폴더의 결과물을 백업 (예: output_real_before/)
+   # 날짜는 config.py의 PIPELINE_PARAMS에서 가져올 것
    ```
 
-4. **비교 검증**
+3. **코드 변경 적용**
+
+4. **변경 후 결과 생성 + 비교 (테스트 데이터)**
+   ```bash
+   python main.py mp test test_data.csv
+   # output_before/ 와 diff 비교
+   ```
+
+5. **변경 후 결과 생성 + 비교 (실제 데이터)**
+   ```bash
+   python main.py mp {PIPELINE_PARAMS["backtest_start"]} {PIPELINE_PARAMS["backtest_end"]}
+   # output_real_before/ 와 diff 비교
+   ```
+
+6. **비교 검증**
    - 의도한 변경사항이 출력에 반영되었는지 확인
    - 의도하지 않은 부작용이 없는지 확인
    - 주요 비교 대상 파일:
      - `aggregated_weights_*_test.csv` - 종목별 팩터 가중치
      - `total_aggregated_weights_*_test.csv` - 전체 가중치
      - `meta_data.csv` - 팩터 성과 지표
+   - **테스트 데이터와 실제 데이터 모두** 변경 전후 결과가 일치해야 함 (의도된 변경 제외)
 
-5. **pytest 테스트 수정/추가**
+7. **pytest 테스트 수정/추가**
    - 변경된 함수에 해당하는 테스트 파일 확인
    - 기존 테스트가 통과하는지 확인: `pipenv run python -m pytest tests/test_unit/ -v`
    - 필요시 새 테스트 케이스 추가 또는 기존 테스트 수정
    - 테스트 파일 위치: `tests/test_unit/test_{function_name}.py`
 
-6. **검증 체크리스트**
-   - [ ] 파이프라인이 에러 없이 완료되는가?
+8. **문서 업데이트 (MANDATORY)**
+   - 코드 변경 내용을 `README.md`와 `research.md`에 반영
+   - 확인 대상: 함수 위치/시그니처 변경, 파라미터 추가/삭제, 모듈 구조 변경, 의존성 변경
+   - `CLAUDE.md`의 Key Files 테이블, 모듈 구조, PIPELINE_PARAMS 등도 해당 시 업데이트
+   - `docs/FLOW_VISUALIZATION.md`, `transaction_cost_research.md` 등 관련 문서도 확인
+
+9. **검증 체크리스트**
+   - [ ] 파이프라인이 에러 없이 완료되는가? (테스트 + 실제 데이터 모두)
    - [ ] 출력 파일이 정상적으로 생성되는가?
    - [ ] 의도한 변경이 결과에 반영되었는가?
-   - [ ] 변경하지 않은 부분은 동일한가?
+   - [ ] 변경하지 않은 부분은 동일한가? (테스트 + 실제 데이터 모두)
    - [ ] **기존 pytest 테스트가 모두 통과하는가?**
    - [ ] **변경된 로직에 대한 테스트가 추가/수정되었는가?**
+   - [ ] **`README.md`, `research.md` 등 문서가 변경 내용에 맞게 업데이트되었는가?**
 
 ### Test Files
 - **`test_data.csv`**: Sample dataset for validation (Chinese equity factors, Nov-Dec 2025)
@@ -312,7 +333,7 @@ pipenv run python -m pytest tests/ -v
 - Recent refactoring improved clarity (see `old_new_variable.md`)
 
 ### Git Workflow
-- **Current Branch:** `awesome-cohen`
+- **Current Branch:** `main-ikm`
 - **Main Branch:** `main`
 - **Development Branch:** `main-ikm`
 - **Development Pattern:** Feature branches merged to `main-ikm`, then to main
@@ -418,6 +439,8 @@ python main.py mp test test_data.csv
 - **Style Constraints:** The 25% style cap is a hard requirement in production
 - **CRITICAL - 코드 변경 검증:** 코드 수정 시 반드시 다음을 수행할 것:
   1. `test_data.csv`로 파이프라인 실행하여 결과 비교 (변경 전후)
-  2. `pipenv run python -m pytest tests/test_unit/ -v`로 기존 테스트 통과 확인
-  3. 변경된 함수에 대한 pytest 테스트 추가/수정
-  4. (Testing 섹션의 "Code Change Verification Process" 참조)
+  2. 실제 데이터로 파이프라인 실행하여 결과 비교 (변경 전후): `python main.py mp {PIPELINE_PARAMS["backtest_start"]} {PIPELINE_PARAMS["backtest_end"]}`
+  3. `pipenv run python -m pytest tests/test_unit/ -v`로 기존 테스트 통과 확인
+  4. 변경된 함수에 대한 pytest 테스트 추가/수정
+  5. `README.md`, `research.md` 등 문서를 변경 내용에 맞게 업데이트
+  6. (Testing 섹션의 "Code Change Verification Process" 참조)

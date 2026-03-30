@@ -1,4 +1,4 @@
-# Research Notes: Awesome-Cohen Factor Pipeline
+# Research Notes: BOK Factor Pipeline
 
 ## Section 5: Factor Signal Decay Analysis (2025)
 
