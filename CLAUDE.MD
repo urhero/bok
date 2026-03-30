@@ -42,7 +42,7 @@ awesome-cohen/
 │   │   ├── correlation.py          # 하락 상관관계 계산
 │   │   ├── optimization.py         # 2-팩터 믹스 + 가중치 시뮬레이션 (듀얼 모드)
 │   │   ├── weight_construction.py  # 롱/숏 포트폴리오 수익률 계산
-│   │   └── pipeline_utils.py       # 시계열 유틸리티 (prepend_start_zero 등)
+│   │   └── pipeline_utils.py       # 시계열 유틸리티 (prepend_start_zero)
 │   └── report/
 │       └── report_generator.py     # Report generation utilities
 │
@@ -100,7 +100,7 @@ awesome-cohen/
 | `weight_construction.py` | `construct_long_short_df()` | 롱/숏 포지션 분리 |
 | `weight_construction.py` | `calculate_vectorized_return()` | 포트폴리오 수익률 (거래비용 30bp) |
 | `pipeline_utils.py` | `prepend_start_zero()` | 시계열 0 추가 |
-| `pipeline_utils.py` | `aggregate_factor_returns()` | 팩터별 수익률 집계 |
+| `model_portfolio.py` | `aggregate_factor_returns()` | 팩터별 수익률 집계 (backtest_start, cost_bps 파라미터) |
 
 ### 듀얼 모드 (simulate_constrained_weights)
 - `mode="hardcoded"` (기본값): 사전 결정된 가중치 사용 (프로덕션)
@@ -138,7 +138,7 @@ main.py → run_model_portfolio_pipeline() → ModelPortfolioPipeline.run()
     - Recalculate quantiles and label L/S/N for each symbol
     ↓
 [4] Factor Universe Evaluation (_evaluate_universe)
-    - pipeline_utils.aggregate_factor_returns → monthly return matrix
+    - model_portfolio.aggregate_factor_returns → monthly return matrix
     - Compute CAGR, downside correlation
     - Rank factors; select top 50
     ↓
