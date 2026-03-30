@@ -14,11 +14,8 @@ import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Rectangle
 
-from service.pipeline.model_portfolio import (
-    OUTPUT_DIR,
-    evaluate_factor_universe,
-    filter_and_label_factors,
-)
+from service.pipeline.factor_analysis import filter_and_label_factors
+from service.pipeline.model_portfolio import OUTPUT_DIR, aggregate_factor_returns
 
 logger = logging.getLogger(__name__)
 
@@ -153,9 +150,12 @@ def generate_report(abbrs, names, styles, raw):
         dropped_sec,
         cleaned_raw,
     ) = filter_and_label_factors(abbrs, names, styles, raw)
-    factor_rets, _, _ = evaluate_factor_universe(
-        kept_abbr, kept_name, kept_style, cleaned_raw
-    )
+    factor_rets = aggregate_factor_returns(cleaned_raw, kept_abbr)
+    # _evaluate_universe와 동일한 전처리: 첫 행 0 기준점 + 불충분 팩터 제거
+    factor_rets.loc[factor_rets.index[0]] = 0.0
+    factor_rets = factor_rets.sort_index()
+    valid = factor_rets.columns[(factor_rets == 0).sum() <= 10]
+    factor_rets = factor_rets[valid]
 
     # Calculate sector_rets for all kept factors
     list_sector = []
@@ -314,6 +314,28 @@ def _generate_plots(
             if i < total - 1:
                 fig, axes = plt.subplots(rows, cols, figsize=(cols * 4, rows * 3))
                 idx_in_page = 0
+
+
+
+def generate_stress_test_section(stress_csv_path=None):
+    import pandas as pd
+    if stress_csv_path is None:
+        stress_csv_path = str(OUTPUT_DIR / "stress_test_2025.csv")
+    try:
+        sdf = pd.read_csv(stress_csv_path)
+    except FileNotFoundError:
+        logger.warning("Stress test CSV not found: %s", stress_csv_path)
+        return {}
+    n_bear = int(sdf["n_bear"].iloc[0])
+    n_total = int(sdf["n_total"].iloc[0])
+    med_full = float(sdf["med_full"].iloc[0])
+    med_bear = float(sdf["med_bear"].iloc[0])
+    resilient = sdf[sdf["bear_diff"] > 0.05]["factorAbbreviation"].tolist()
+    vulnerable = sdf[sdf["bear_diff"] < -0.05]["factorAbbreviation"].tolist()
+    top10 = sdf.head(10)
+    logger.info("Stress test: %d/%d bear months, corr full=%.3f bear=%.3f", n_bear, n_total, med_full, med_bear)
+    return dict(n_bear=n_bear, n_total=n_total, med_corr_full=med_full, med_corr_bear=med_bear, top10=top10, bear_resilient=resilient, bear_vulnerable=vulnerable)
+
 
 if __name__ == "__main__":
     pass

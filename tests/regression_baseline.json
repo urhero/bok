@@ -1,0 +1,25 @@
+{
+  "_description": "Regression baseline from test_data.csv pipeline run",
+  "_generated": "2026-03-30",
+  "_tolerance": "CAGR within 0.5pp; top-3 factor abbreviations must match",
+  "top_factor": {
+    "abbreviation": "PM6M",
+    "cagr": 0.137839
+  },
+  "top5_factors": [
+    "PM6M",
+    "SalesAcc",
+    "52WSlope",
+    "RevMagFY1C",
+    "HL52W"
+  ],
+  "top5_cagrs": [
+    0.137839,
+    0.122697,
+    0.10627,
+    0.098774,
+    0.095866
+  ],
+  "total_ranked_factors": 241,
+  "cagr_tolerance": 0.005
+}

@@ -58,8 +58,11 @@ class GenerateQueryStructure:
 
         engine = sql.create_engine(conn_url)
 
-        # universe 테이블명은 파라미터화 불가 (DDL 식별자) → 허용된 값만 사용
+        # universe 테이블명은 파라미터화 불가 (DDL 식별자) → allowlist로 검증
+        ALLOWED_UNIVERSES = {"clarifi_mxcn1a_afl", "clarifi_mxwo_afl"}
         universe = arg["universe"]
+        if universe not in ALLOWED_UNIVERSES:
+            raise ValueError(f"Invalid universe '{universe}'. Allowed: {ALLOWED_UNIVERSES}")
         query_raw = sql.text(
             f"WITH RankedData AS ("
             f"    SELECT "

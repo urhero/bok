@@ -1,4 +1,6 @@
 # 📘 엔드투엔드 팩터 파이프라인 요약
+[[pytest](https://github.com/urhero/bok/actions/workflows/test.yml/badge.svg)](https://github.com/urhero/bok/actions/workflows/test.yml)
+
 *(Code → Investment Process 매핑)*
 
 > 각 섹션의 `[N]` 번호는 `model_portfolio.py:run()` 코드의 단계 주석과 동일합니다.
@@ -73,6 +75,7 @@
 - Q1–Q5 평균 스프레드를 기준으로 임계값 설정
 - 각 분위를 **롱(+1) / 중립(0) / 숏(-1)**으로 재분류
 - 단순히 Q1=롱, Q5=숏이 아닌 **성과 기반으로 투자 대상 분위 선택**
+- L/S 라벨 분포 검증: 숏 또는 롱 라벨이 0개인 경우 warning 로그 출력
 
 ---
 
@@ -82,7 +85,7 @@
 - **핵심 함수 흐름**
   - `weight_construction.construct_long_short_df()` — 롱/숏 종목군 구성 (동일가중)
   - `weight_construction.calculate_vectorized_return()` — 리밸런싱 반영, 턴오버 계산, 거래비용(30bp) 차감
-  - `pipeline_utils.aggregate_factor_returns()` — 팩터별 **월간 롱–숏 스프레드 수익률** 생성
+  - `model_portfolio.aggregate_factor_returns()` — 팩터별 **월간 롱–숏 스프레드 수익률** 생성
 
 ### (b) 팩터 후보군 최종 선정
 - **핵심 함수:** `ModelPortfolioPipeline._evaluate_universe()`
@@ -120,6 +123,7 @@
 - 스타일별 비중 합계가 **최대 25%**를 넘지 않도록 제약
 - 각 포트폴리오의 CAGR / MDD를 동시에 평가
 - 스타일 분산을 유지한 **최적 팩터 비중 구조 도출**
+- `random_seed` 파라미터로 재현성 보장 (기본값 42, None이면 랜덤)
 
 ---
 
@@ -180,7 +184,7 @@ service/
     ├── correlation.py          # calculate_downside_correlation
     ├── optimization.py         # find_optimal_mix, simulate_constrained_weights (듀얼 모드)
     ├── weight_construction.py  # construct_long_short_df, calculate_vectorized_return
-    └── pipeline_utils.py       # prepend_start_zero, aggregate_factor_returns
+    └── pipeline_utils.py       # prepend_start_zero
 ```
 
 ### Pipeline 사용법
@@ -245,9 +249,11 @@ pipeline.return_matrix  # 월간 수익률 행렬
 
 ---
 
-### `[4]` `pipeline_utils.aggregate_factor_returns(factor_data_list, factor_abbr_list) -> pd.DataFrame`
-- **Input**: 팩터별 종목 데이터 리스트 + 약어 리스트
+### `[4]` `model_portfolio.aggregate_factor_returns(factor_data_list, factor_abbr_list, backtest_start, cost_bps) -> pd.DataFrame`
+- **Input**: 팩터별 종목 데이터 리스트 + 약어 리스트 (길이 일치 검증 포함) + `backtest_start` (기본 `"2017-12-31"`) + `cost_bps` (기본 `30.0`)
 - **Output**: `net_return_df` — 팩터별 net return 매트릭스 (열=팩터, 행=날짜)
+- **NaN 처리**: 결합 후 NaN이 있는 팩터 컬럼은 `dropna(axis=1)`로 제거하며, 드롭된 팩터명을 warning 로그로 출력
+- **위치 변경**: `pipeline_utils.py`에서 `model_portfolio.py`로 이동 (오케스트레이션 로직이므로)
 
 ---
 
@@ -273,3 +279,31 @@ pipeline.return_matrix  # 월간 수익률 행렬
 - backward compatibility wrapper
 - 내부에서 `ModelPortfolioPipeline` 생성 → `run()` 호출
 - `run()` 내부: `[1]` → `[2]` → `[3]` → `[4]` → `[5]` → `[6]` → `[7]` 순차 실행
+
+---
+
+## 파이프라인 비즈니스 파라미터 (`PIPELINE_PARAMS`)
+
+`config.py`의 `PIPELINE_PARAMS`에서 중앙 관리. Pipeline 클래스 생성자에서 주입되며, 각 모듈 함수에 파라미터로 전달됨.
+
+| 파라미터 | 값 | 설명 | 사용 모듈 |
+|---------|-----|------|-----------|
+| `style_cap` | 0.25 | 스타일별 최대 비중 (규제 요건) | `optimization.py` |
+| `transaction_cost_bps` | 30.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
+| `top_factor_count` | 50 | CAGR 기준 상위 팩터 선정 수 | `model_portfolio.py` |
+| `spread_threshold_pct` | 0.10 | L/N/S 라벨링 임계값 | `factor_analysis.py` |
+| `sub_factor_rank_weights` | (0.7, 0.3) | 보조 팩터: CAGR + 상관관계 | `optimization.py` |
+| `portfolio_rank_weights` | (0.6, 0.4) | 포트폴리오: CAGR + MDD | `optimization.py` |
+| `min_sector_stocks` | 10 | 섹터-날짜 최소 종목 수 | `factor_analysis.py` |
+| `max_zero_return_months` | 10 | 0 수익률 허용 최대 월 수 | `model_portfolio.py` |
+| `backtest_start` | "2017-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
+| `min_downside_obs` | 20 | 하락 상관관계 최소 관측 수 | `correlation.py` |
+| `num_sims` | 1,000,000 | 몬테카를로 시뮬레이션 횟수 | `optimization.py` |
+
+## 보안 설정
+
+- **`.env`**: DB 비밀번호, 서버 주소 등 민감 정보 (git 미추적)
+- **`.env.example`**: `.env` 템플릿 (값 예시)
+- **`pre-commit hook`**: `detect-secrets`로 비밀번호/토큰 커밋 자동 차단
+- **SQL allowlist**: `factor_query.py`에서 허용된 테이블명만 통과
+- **path traversal 검증**: `test_file` CLI 인자가 프로젝트 디렉토리 내부인지 검사

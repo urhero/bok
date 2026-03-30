@@ -7,7 +7,7 @@ This document visualizes the execution flow of the codebase, specifically focusi
 ```mermaid
 graph TD
     User([User / Command Line]) -->|python main.py mp ...| Main[main.py: main()]
-    
+
     subgraph "Entry Point"
         Main -->|Import| MP_Func[model_portfolio: run_model_portfolio_pipeline\n→ ModelPortfolioPipeline.run]
         Main -->|Import| DL_Func[service.download.download_factors: run_download_pipeline]
@@ -28,7 +28,7 @@ graph TD
     end
 
     subgraph "Meta Analysis (Pipeline._evaluate_universe)"
-        CleanedRaw -->|pipeline_utils.aggregate_factor_returns\n+ correlation.calculate_downside_correlation| MetaVars
+        CleanedRaw -->|model_portfolio.aggregate_factor_returns\n+ correlation.calculate_downside_correlation| MetaVars
 
         subgraph "Meta Variables"
             MetaVars --> FacRet[monthly_return_matrix\n(Date x Factor Returns)]
@@ -76,7 +76,7 @@ graph TD
 
 ### 4. **Meta Matrix Generation** (`model_portfolio.py` + `pipeline_utils.py` + `correlation.py`)
 - **Method**: `Pipeline._evaluate_universe()`
-- **Uses**: `pipeline_utils.aggregate_factor_returns()`, `correlation.calculate_downside_correlation()`
+- **Uses**: `model_portfolio.aggregate_factor_returns()`, `correlation.calculate_downside_correlation()`
 - **Output Variables**:
     - `monthly_return_matrix`: DataFrame of returns (Index: Date, Columns: Factors).
     - `downside_correlation_matrix`: Matrix of downside correlations between factors.

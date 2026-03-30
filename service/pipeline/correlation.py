@@ -57,7 +57,11 @@ def calculate_downside_correlation(df: pd.DataFrame, min_obs: int = 20) -> pd.Da
             centered = subset - means
             # centered_i를 한번만 추출하여 재사용
             centered_i = centered[:, i : i + 1]
-            cov_with_i = np.nanmean(centered * centered_i, axis=0)
+            # unbiased 공분산 (ddof=1): 컬럼별 유효(비NaN) 관측 수로 Bessel 보정
+            valid_counts = np.sum(~np.isnan(centered * centered_i), axis=0)
+            cov_with_i = np.nanmean(centered * centered_i, axis=0) * np.where(
+                valid_counts > 1, valid_counts / (valid_counts - 1), np.nan
+            )
             std_i = stds[i]
             # stds * std_i에서 0 나누기 방지
             denom = stds * std_i
