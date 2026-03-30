@@ -15,8 +15,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Rectangle
 
 from service.pipeline.factor_analysis import filter_and_label_factors
-from service.pipeline.model_portfolio import OUTPUT_DIR
-from service.pipeline.pipeline_utils import aggregate_factor_returns
+from service.pipeline.model_portfolio import OUTPUT_DIR, aggregate_factor_returns
 
 logger = logging.getLogger(__name__)
 

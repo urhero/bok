@@ -35,7 +35,7 @@ from service.pipeline.optimization import (
     find_optimal_mix,
     simulate_constrained_weights,
 )
-from service.pipeline.pipeline_utils import aggregate_factor_returns, prepend_start_zero
+from service.pipeline.pipeline_utils import prepend_start_zero
 from service.pipeline.weight_construction import (
     calculate_vectorized_return,
     construct_long_short_df,
@@ -51,6 +51,39 @@ DATA_DIR = _PROJECT_ROOT / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR = _PROJECT_ROOT / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def aggregate_factor_returns(
+    factor_data_list: List,
+    factor_abbr_list: List[str],
+    backtest_start: str = "2017-12-31",
+    cost_bps: float = 30.0,
+) -> pd.DataFrame:
+    """모든 팩터의 롱+숏 수익률을 하나의 행렬로 결합한다 (오케스트레이션 함수).
+
+    각 팩터에 대해 롱/숏 포트폴리오를 구성하고 수익률을 계산한 후,
+    팩터별 순수익률을 (날짜 x 팩터) 행렬로 합친다.
+    """
+    if len(factor_data_list) != len(factor_abbr_list):
+        raise ValueError(
+            f"factor_data_list ({len(factor_data_list)}) and "
+            f"factor_abbr_list ({len(factor_abbr_list)}) length mismatch"
+        )
+
+    list_net = []
+    for data, abbr in zip(factor_data_list, factor_abbr_list):
+        long_df, short_df = construct_long_short_df(data, backtest_start=backtest_start)
+        _, net_l, _ = calculate_vectorized_return(long_df, abbr, cost_bps=cost_bps)
+        _, net_s, _ = calculate_vectorized_return(short_df, abbr, cost_bps=cost_bps)
+        list_net.append(net_l + net_s)
+
+    combined = pd.concat(list_net, axis=1)
+    net_return_df = combined.dropna(axis=1)
+    dropped = set(combined.columns) - set(net_return_df.columns)
+    if dropped:
+        logger.warning("Dropped %d factors with NaN: %s", len(dropped), sorted(dropped))
+
+    return net_return_df
 
 
 class ModelPortfolioPipeline:
@@ -122,6 +155,7 @@ class ModelPortfolioPipeline:
         sim_result = simulate_constrained_weights(
             ret_subset, style_list, test_mode=bool(test_file),
             style_cap=self.pp["style_cap"],
+            num_sims=self.pp["num_sims"],
             portfolio_rank_weights=self.pp["portfolio_rank_weights"],
         )
         self.weights = sim_result[1]
@@ -261,7 +295,11 @@ class ModelPortfolioPipeline:
     def _evaluate_universe(self, kept_abbrs, kept_names, kept_styles, filtered_data, test_file):
         """팩터 유니버스를 평가하고 상위 50개를 선정한다."""
         logger.info("Building monthly return matrix")
-        ret_df = aggregate_factor_returns(filtered_data, kept_abbrs)
+        ret_df = aggregate_factor_returns(
+            filtered_data, kept_abbrs,
+            backtest_start=self.pp["backtest_start"],
+            cost_bps=self.pp["transaction_cost_bps"],
+        )
         if ret_df.empty:
             raise ValueError(
                 f"No valid factor returns after aggregation. "
@@ -297,7 +335,7 @@ class ModelPortfolioPipeline:
         meta = meta[:self.pp["top_factor_count"]]
         order = meta["factorAbbreviation"].tolist()
         ret_df = ret_df[order]
-        negative_corr = calculate_downside_correlation(ret_df).loc[order, order]
+        negative_corr = calculate_downside_correlation(ret_df, min_obs=self.pp["min_downside_obs"]).loc[order, order]
 
         logger.info("Return matrix built (%d factors)", len(order))
         return ret_df, negative_corr, meta
