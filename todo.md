@@ -50,7 +50,7 @@ git push --force --tags
 ### 검증
 ```bash
 # 히스토리에 비밀번호가 남아있지 않은지 확인
-git log --all -p | grep "***REMOVED***"  # 결과가 없어야 함
+git log --all -p | grep "OLD_PASSWORD"  # 결과가 없어야 함
 ```
 
 ---
