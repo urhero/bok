@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """팩터 분석 모듈: 5분위 포트폴리오 구성 및 섹터 필터링.
 
-팩터 데이터를 5개 분위(Q1~Q5)로 분류하고 성과를 측정한 후,
+팩터 데이터를 5개 분위(Q1~Q5)로 분류하고 팩터 스프레드(Q1-Q5 수익률 차이)를 측정한 후,
 비효과적인 섹터를 제거하고 롱/숏/중립(L/N/S) 라벨을 부여한다.
 """
 from __future__ import annotations
@@ -25,10 +25,10 @@ def calculate_factor_stats(
     test_mode: bool = False,
     min_sector_stocks: int = 10,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | Tuple[None, None, None, None]:
-    """팩터 데이터를 5분위 포트폴리오로 나누고 성과를 계산한다.
+    """팩터 데이터를 5분위 포트폴리오로 나누고 팩터 스프레드를 계산한다.
 
     각 섹터-날짜 그룹 내에서 팩터값 기준으로 종목을 Q1(상위20%)~Q5(하위20%)로 분류하고,
-    분위별 평균 수익률과 Q1-Q5 스프레드를 산출한다. 1개월 래그를 적용하여 미래 정보 사용을 방지한다.
+    분위별 평균 수익률과 팩터 스프레드(Q1-Q5)를 산출한다. 1개월 래그를 적용하여 미래 정보 사용을 방지한다.
 
     Args:
         factor_abbr: 팩터 약어 (예: "SalesAcc", "ROIC")
@@ -128,10 +128,10 @@ def filter_and_label_factors(
     factor_data_list: List[Tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]],
     spread_threshold_pct: float = 0.10,
 ) -> Tuple[List[str], List[str], List[str], List[int], List[List[str]], List[pd.DataFrame]]:
-    """음의 스프레드를 가진 섹터를 제거하고 L/N/S 라벨을 재계산한다.
+    """음의 팩터 스프레드를 가진 섹터를 제거하고 L/N/S 라벨을 재계산한다.
 
-    각 팩터-섹터 조합에서 Q1-Q5 스프레드가 음수이면 해당 섹터를 제거하고,
-    남은 데이터에서 임계값(스프레드의 10%) 기반으로 롱/중립/숏 라벨을 부여한다.
+    각 팩터-섹터 조합에서 팩터 스프레드(Q1-Q5)가 음수이면 해당 섹터를 제거하고,
+    남은 데이터에서 임계값(팩터 스프레드의 10%) 기반으로 롱/중립/숏 라벨을 부여한다.
 
     Args:
         factor_abbr_list: 팩터 약어 리스트

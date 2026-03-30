@@ -133,7 +133,7 @@ class TestSimulateConstrainedWeightsStyleCap:
                 assert all(style_weights <= 0.40 + 1e-6)
         except ValueError as e:
             if "No feasible portfolios" in str(e):
-                # 스타일 제약이 너무 엄격해서 실행 불가능한 경우는 OK
+                # 스타일 캡이 너무 엄격해서 실행 불가능한 경우는 OK
                 pytest.skip("Style constraints too strict for this data configuration")
 
     def test_test_mode_relaxes_style_cap(

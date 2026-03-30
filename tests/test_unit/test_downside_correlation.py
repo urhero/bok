@@ -3,7 +3,7 @@
 Unit tests for calculate_downside_correlation() function.
 
 calculate_downside_correlation() 함수 테스트:
-- 하락 국면에서의 상관관계 계산
+- 하락 상관관계 계산
 - 수익률이 음수인 시점에서의 상관계수 계산
 """
 from __future__ import annotations

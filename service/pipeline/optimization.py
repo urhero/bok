@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""2-팩터 믹스 최적화 및 스타일 제약 하 가중치 시뮬레이션 모듈.
+"""2-팩터 믹스 최적화 및 스타일 캡 하 가중치 시뮬레이션 모듈.
 
 메인 팩터와 보조 팩터의 최적 배합 비율을 그리드 탐색하고,
-몬테카를로 시뮬레이션으로 스타일 제약(기본 25%) 하 최적 가중치를 찾는다.
+몬테카를로 시뮬레이션으로 스타일 캡(기본 25%) 하 최적 가중치를 찾는다.
 """
 from __future__ import annotations
 
@@ -136,7 +136,7 @@ def simulate_constrained_weights(
     random_seed: int | None = 42,
     portfolio_rank_weights: tuple = (0.6, 0.4),
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """스타일 제약 하 최적 포트폴리오 가중치를 결정한다.
+    """스타일 캡 하 최적 포트폴리오 가중치를 결정한다.
 
     두 가지 모드를 지원한다:
     - "hardcoded": 프로덕션용 고정 가중치 반환 (기본값)
@@ -212,7 +212,7 @@ def simulate_constrained_weights(
         raw_mat = rng.random((K, current_batch_size), dtype=np.float32)
         raw_mat /= raw_mat.sum(axis=0, keepdims=True)
 
-        # 스타일 제약 적용 (초과분 재분배)
+        # 스타일 캡 적용 (초과분 재분배)
         share = mask @ raw_mat
         excess = np.clip(share - style_cap, a_min=0, a_max=None)
         scale = np.where(share > style_cap, style_cap / share, 1.0).astype(np.float32)
@@ -291,4 +291,21 @@ def simulate_constrained_weights(
     weights_tbl = weights_tbl[weights_tbl["raw_weight"] > 0].sort_values("raw_weight", ascending=False).reset_index(drop=True)
 
     logger.info("[Trace] Simulation completed. Best stats: %s", best_stats.to_dict('records'))
+
+    # simulation 결과를 hardcoded_weights.csv에 저장 (test_mode에서는 스킵)
+    if not test_mode:
+        import shutil
+        from datetime import datetime
+        csv_path = Path(__file__).resolve().parent.parent.parent / "data" / "hardcoded_weights.csv"
+        if csv_path.exists():
+            backup_dir = csv_path.parent / "hardcoded_weights_backup"
+            backup_dir.mkdir(exist_ok=True)
+            mtime = datetime.fromtimestamp(csv_path.stat().st_mtime)
+            backup = backup_dir / f"hardcoded_weights_{mtime.strftime('%Y%m%d_%H%M%S_%f')}.csv"
+            shutil.move(str(csv_path), str(backup))
+            logger.info("기존 가중치 백업: %s", backup)
+        save_cols = weights_tbl[["factor", "raw_weight", "styleName"]]
+        save_cols.to_csv(csv_path, index=False)
+        logger.info("새 시뮬레이션 가중치 저장: %s (%d factors)", csv_path.name, len(save_cols))
+
     return best_stats, weights_tbl

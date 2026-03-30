@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """하락 상관관계(Downside Correlation) 계산 모듈.
 
-시장 하락 국면에서의 팩터 간 상관관계를 NumPy 벡터 연산으로 계산한다.
+팩터 수익률이 음수인 구간(하락 구간)의 상관관계를 NumPy 벡터 연산으로 계산한다.
 일반 상관관계보다 위험 관리에 더 유용한 지표이다.
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def calculate_downside_correlation(df: pd.DataFrame, min_obs: int = 20) -> pd.DataFrame:
-    """하락 국면에서의 팩터 간 상관관계 행렬을 계산한다.
+    """하락 상관관계 행렬을 계산한다.
 
     각 팩터의 수익률이 음수인 시점만 추출하여 상관계수를 구한다.
     일반 상관관계 대비 위험 관리에 더 적합하다.
