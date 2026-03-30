@@ -14,7 +14,13 @@
       "Read(//c/Users/IKM/.virtualenvs/**)",
       "Bash(ls C:/Python*/python.exe)",
       "Read(//c/Users/IKM/AppData/Local/Programs/Python/**)",
-      "Bash(C:/Users/IKM/.virtualenvs/bok-ZkEKkwfv/Scripts/python.exe main.py download 2017-12-01 2026-02-28)"
+      "Bash(C:/Users/IKM/.virtualenvs/bok-ZkEKkwfv/Scripts/python.exe main.py download 2017-12-01 2026-02-28)",
+      "Bash(python -m pytest tests/test_unit/ -v)",
+      "Bash(python -m pytest tests/test_unit/test_simulate_constrained_weights.py -v)",
+      "Bash(git checkout:*)",
+      "Bash(python main.py mp 2017-12-31 2026-02-28)",
+      "Bash(ls -la output/*.csv)",
+      "Bash(git add:*)"
     ]
   }
 }

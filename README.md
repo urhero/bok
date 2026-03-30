@@ -66,9 +66,9 @@
 `factor_analysis.filter_and_label_factors()`
 
 ### (a) 비투자 섹터 결정
-- 섹터별 팩터 스프레드 계산: `Spread = Q1 – Q5`
-- **스프레드가 음(-)인 섹터는 해당 팩터에서 제외**
-- 목적: 구조적으로 팩터 성과를 훼손하는 섹터 제거
+- 섹터별 팩터 스프레드 계산: `팩터 스프레드 = Q1 – Q5`
+- **팩터 스프레드가 음(-)인 섹터는 해당 팩터에서 제외**
+- 목적: 구조적으로 팩터 수익률을 훼손하는 섹터 제거
 
 ### (b) 투자 대상 분위(롱/숏) 결정
 - 섹터 제거 후 분위별 평균 수익률 재산출
@@ -79,20 +79,20 @@
 
 ---
 
-## [4] 팩터 스프레드 수익률 + 후보군 선정
+## [4] 롱-숏 수익률 + 팩터 유니버스 선정
 
-### (a) 스프레드 수익률 측정
+### (a) 롱-숏 수익률 측정
 - **핵심 함수 흐름**
   - `weight_construction.construct_long_short_df()` — 롱/숏 종목군 구성 (동일가중)
   - `weight_construction.calculate_vectorized_return()` — 리밸런싱 반영, 턴오버 계산, 거래비용(30bp) 차감
-  - `model_portfolio.aggregate_factor_returns()` — 팩터별 **월간 롱–숏 스프레드 수익률** 생성
+  - `model_portfolio.aggregate_factor_returns()` — 팩터별 **월간 롱-숏 수익률** 생성
 
-### (b) 팩터 후보군 최종 선정
+### (b) 팩터 유니버스 최종 선정
 - **핵심 함수:** `ModelPortfolioPipeline._evaluate_universe()`
-- 팩터별 월간 스프레드 수익률 행렬 구성
-- 연환산 수익률(CAGR) 계산 → 스타일 내 / 전체 랭킹 산출
+- 팩터별 월간 롱-숏 수익률 행렬 구성
+- CAGR 계산 → 스타일 내 / 전체 랭킹 산출
 - **CAGR 기준 상위 50개 팩터 선정**
-- **하락 국면 상관관계(Downside Correlation)** 계산
+- **하락 상관관계** 계산
 
 ---
 
@@ -103,26 +103,26 @@
 
 ### 절차
 - 스타일별 CAGR 기준 **1위 팩터를 메인 팩터로 선정**
-- 메인 팩터 대비 성과(CAGR) + 하락 상관관계를 고려하여 **서브 팩터 후보군** 도출
-- 메인–서브 팩터 조합에 대해 비중 0~100% 그리드 탐색 → CAGR 및 MDD 평가
+- 메인 팩터 대비 CAGR + 하락 상관관계를 고려하여 **보조 팩터** 도출
+- 메인–보조 팩터 조합에 대해 비중 0~100% 그리드 탐색 → CAGR 및 MDD 평가
 - **팩터 간 중복을 줄이면서 성과·안정성 개선**
 
 ---
 
-## [6] 스타일 제약 하 비중 결정
+## [6] 스타일 캡 하 비중 결정
 
 ### 핵심 함수
 `optimization.simulate_constrained_weights()`
 
-### 듀얼 모드
-- `mode="hardcoded"` (기본값): `data/hardcoded_weights.csv`에서 프로덕션 가중치 로드
+### 가중치 결정 모드 (hardcoded/simulation)
+- `mode="hardcoded"` (기본값): `data/hardcoded_weights.csv`에서 프로덕션 비중 로드
 - `mode="simulation"`: 몬테카를로 시뮬레이션으로 탐색
 
 ### 절차 (simulation 모드)
 - 몬테카를로 방식으로 다수의 랜덤 포트폴리오 생성
-- 스타일별 비중 합계가 **최대 25%**를 넘지 않도록 제약
+- 스타일별 비중 합계가 **스타일 캡(25%)**을 넘지 않도록 제약
 - 각 포트폴리오의 CAGR / MDD를 동시에 평가
-- 스타일 분산을 유지한 **최적 팩터 비중 구조 도출**
+- 스타일 분산을 유지한 **최적 팩터 비중 도출**
 - `random_seed` 파라미터로 재현성 보장 (기본값 42, None이면 랜덤)
 
 ---
@@ -145,9 +145,9 @@
   - `pivoted_total_agg_wgt_{end_date}.csv` — 피벗 형태 (Optimizer 연동용)
   - `meta_data.csv` — 팩터 성과 요약
 
-### 실제 매매 집행
-- 본 코드는 **Model Portfolio 산출까지 담당**
-- 이후: Benchmark 대비 Tracking Error 점검 → Bloomberg Optimizer 등을 활용한 실제 매매 집행
+### 프로덕션 활용
+- 본 코드는 **Model Portfolio(MP) 산출까지 담당**
+- 이후: Benchmark 대비 Tracking Error 점검 → Bloomberg Optimizer를 통한 프로덕션 매매 집행
 
 ---
 
@@ -158,9 +158,9 @@
 | `[1]` 데이터 로딩 | PIT 기반 종목·팩터 데이터 확보 | `_load_data`, `_prepare_metadata` |
 | `[2]` 5분위 분석 | 팩터별 분위 포트폴리오 구성 | `calculate_factor_stats_batch` |
 | `[3]` 섹터 필터 + 라벨링 | 비효과 섹터 제거, L/N/S 분류 | `filter_and_label_factors` |
-| `[4]` 후보군 선정 | 스프레드 수익률 + CAGR 랭킹 | `_evaluate_universe` |
-| `[5]` 팩터 믹스 | 스타일 대표성 + 상관관계 고려 | `find_optimal_mix` |
-| `[6]` 비중 결정 | 스타일 제약 하 최적화 | `simulate_constrained_weights` |
+| `[4]` 팩터 유니버스 선정 | 롱-숏 수익률 + CAGR 랭킹 | `_evaluate_universe` |
+| `[5]` 팩터 믹스 | 스타일 대표성 + 하락 상관관계 고려 | `find_optimal_mix` |
+| `[6]` 비중 결정 | 스타일 캡 하 최적화 | `simulate_constrained_weights` |
 | `[7]` MP 구성 + 출력 | 종목별 최종 비중, CSV 저장 | `_construct_and_export` |
 
 ---
@@ -182,7 +182,7 @@ service/
     ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
     ├── factor_analysis.py      # calculate_factor_stats, calculate_factor_stats_batch, filter_and_label_factors
     ├── correlation.py          # calculate_downside_correlation
-    ├── optimization.py         # find_optimal_mix, simulate_constrained_weights (듀얼 모드)
+    ├── optimization.py         # find_optimal_mix, simulate_constrained_weights (hardcoded/simulation)
     ├── weight_construction.py  # construct_long_short_df, calculate_vectorized_return
     └── pipeline_utils.py       # prepend_start_zero
 ```
@@ -259,14 +259,14 @@ pipeline.return_matrix  # 월간 수익률 행렬
 
 ### `[5]` `optimization.find_optimal_mix(factor_rets, data_raw, data_neg) -> pd.DataFrame`
 - **Input**: 월간 수익률 행렬, 메인 팩터 메타 (1행), downside 상관행렬
-- **Output**: `df_mix` — 메인–서브 조합별 성과 및 랭킹 테이블
+- **Output**: `df_mix` — 메인–보조 팩터 조합별 CAGR/MDD 및 랭킹 테이블
 
 ---
 
 ### `[6]` `optimization.simulate_constrained_weights(rtn_df, style_list, mode, ...)`
 `-> (best_stats, weights_tbl)`
 - **Input**: 월간 수익률 행렬 + 스타일명 리스트 + 모드/파라미터
-- **Output**: 최적 성과 요약 (1행) + 팩터 비중 테이블
+- **Output**: 최적 CAGR/MDD 요약 (1행) + 팩터 비중 테이블
 
 ---
 
@@ -288,7 +288,7 @@ pipeline.return_matrix  # 월간 수익률 행렬
 
 | 파라미터 | 값 | 설명 | 사용 모듈 |
 |---------|-----|------|-----------|
-| `style_cap` | 0.25 | 스타일별 최대 비중 (규제 요건) | `optimization.py` |
+| `style_cap` | 0.25 | 스타일 캡 (프로덕션 규제 요건) | `optimization.py` |
 | `transaction_cost_bps` | 30.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
 | `top_factor_count` | 50 | CAGR 기준 상위 팩터 선정 수 | `model_portfolio.py` |
 | `spread_threshold_pct` | 0.10 | L/N/S 라벨링 임계값 | `factor_analysis.py` |

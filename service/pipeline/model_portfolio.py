@@ -141,7 +141,7 @@ class ModelPortfolioPipeline:
             spread_threshold_pct=self.pp["spread_threshold_pct"],
         )
 
-        # [4] 팩터 스프레드 수익률 + 후보군 선정 — README [4]
+        # [4] 롱-숏 수익률 + 팩터 유니버스 선정 — README [4]
         self.return_matrix, self.correlation_matrix, self.meta = self._evaluate_universe(
             kept_abbrs, kept_names, kept_styles, self.filtered_data, test_file
         )
@@ -151,9 +151,10 @@ class ModelPortfolioPipeline:
             self.return_matrix, self.meta, self.correlation_matrix
         )
 
-        # [6] 스타일 제약 하 비중 결정 — README [6]
+        # [6] 스타일 캡 하 비중 결정 — README [6]
         sim_result = simulate_constrained_weights(
             ret_subset, style_list, test_mode=bool(test_file),
+            mode=self.pp["simulation_mode"],
             style_cap=self.pp["style_cap"],
             num_sims=self.pp["num_sims"],
             portfolio_rank_weights=self.pp["portfolio_rank_weights"],
