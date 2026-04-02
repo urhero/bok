@@ -148,7 +148,7 @@ def validate_parquet_coverage(
     if mreturn_path is None:
         mreturn_path = Path(data_dir) / f"{benchmark}_mreturn.parquet"
 
-    factor_df = load_factor_parquet(data_dir, benchmark)[["ddt", "factorAbbreviation", "gvkeyiid"]]
+    factor_df = load_factor_parquet(data_dir, benchmark)[["ddt", "factorAbbreviation", "gvkeyiid", "val"]]
     mret_df = pd.read_parquet(mreturn_path, columns=["ddt", "gvkeyiid"])
 
     warnings_list = _validate_parquet_coverage_impl(factor_df, mret_df, gap_threshold_days, factor_drop_pct, stock_drop_pct)
@@ -216,7 +216,40 @@ def _validate_parquet_coverage_impl(
                 "message": f"M_RETURN missing for {pd.Timestamp(m).strftime('%Y-%m')}",
             })
 
-    # ─── [5] 신규 월 팩터 누락 확인 ───
+    # ─── [5] val NULL 비율 검증 ───
+    # 월별 NULL 비율을 계산하고, 과거 평균 대비 비정상적으로 높으면 경고
+    if "val" in factor_df.columns:
+        monthly_null_pct = factor_df.groupby("ddt")["val"].apply(lambda x: x.isna().mean()).sort_index()
+        if len(monthly_null_pct) >= 3:
+            # 마지막 월 제외한 과거 평균/표준편차
+            hist = monthly_null_pct.iloc[:-1]
+            latest_pct = monthly_null_pct.iloc[-1]
+            hist_mean = hist.mean()
+            hist_std = hist.std() if len(hist) > 1 else 0.01
+            # 최신 월 NULL이 100%이면 ERROR (데이터 미적재)
+            if latest_pct >= 0.99:
+                dt = monthly_null_pct.index[-1]
+                warnings_list.append({
+                    "level": "ERROR",
+                    "type": "VAL_ALL_NULL",
+                    "message": (
+                        f"{pd.Timestamp(dt).strftime('%Y-%m')}: val NULL {latest_pct:.0%} "
+                        f"(historical avg {hist_mean:.1%}) - data not loaded"
+                    ),
+                })
+            # 과거 평균 대비 크게 높으면 WARN (3σ 초과 또는 절대 차이 10%p 초과)
+            elif latest_pct > hist_mean + max(3 * hist_std, 0.10):
+                dt = monthly_null_pct.index[-1]
+                warnings_list.append({
+                    "level": "WARN",
+                    "type": "VAL_HIGH_NULL",
+                    "message": (
+                        f"{pd.Timestamp(dt).strftime('%Y-%m')}: val NULL {latest_pct:.1%} "
+                        f"(historical avg {hist_mean:.1%})"
+                    ),
+                })
+
+    # ─── [6] 신규 월 팩터 누락 확인 ───
     # 마지막 3개월 중 팩터가 없는 경우
     if len(dates) >= 3:
         recent_3 = dates[-3:]
@@ -257,6 +290,10 @@ def print_coverage_report(
     monthly_factors = factor_df.groupby("ddt")["factorAbbreviation"].nunique().sort_index()
     monthly_stocks = factor_df.groupby("ddt")["gvkeyiid"].nunique().sort_index()
     mret_stocks = mret_df.groupby("ddt")["gvkeyiid"].nunique().sort_index()
+    monthly_null_pct = (
+        factor_df.groupby("ddt")["val"].apply(lambda x: x.isna().mean()).sort_index()
+        if "val" in factor_df.columns else pd.Series(dtype=float)
+    )
 
     # 최근 12개월만 표시 (전체는 너무 김)
     recent_n = min(12, len(monthly_factors))
@@ -269,6 +306,7 @@ def print_coverage_report(
     table.add_column("Stocks", justify="right", width=8)
     table.add_column("+/-", justify="right", width=6)
     table.add_column("M_RET", justify="right", width=8)
+    table.add_column("NULL%", justify="right", width=6)
     table.add_column("Bar", width=20)
 
     max_stocks = monthly_stocks.max() if len(monthly_stocks) > 0 else 1
@@ -294,6 +332,11 @@ def print_coverage_report(
             df_str, ds_str = "", ""
             df_style, ds_style = "", ""
 
+        # NULL 비율
+        null_pct = monthly_null_pct.get(dt, 0) if len(monthly_null_pct) > 0 else 0
+        null_str = f"{null_pct:.0%}" if null_pct >= 0.99 else f"{null_pct:.1%}"
+        null_style = "bold red" if null_pct >= 0.99 else "yellow" if null_pct > 0.25 else ""
+
         # 바 차트 (종목 수 기준)
         bar_len = int(n_stocks / max_stocks * 18) if max_stocks > 0 else 0
         bar = "#" * bar_len + "." * (18 - bar_len)
@@ -305,6 +348,7 @@ def print_coverage_report(
             str(n_stocks),
             Text(ds_str, style=ds_style),
             str(n_mret),
+            Text(null_str, style=null_style),
             Text(bar, style="blue"),
         )
 
@@ -449,7 +493,26 @@ def run_download_pipeline(
             existing_year = pd.read_parquet(year_file)
             existing_year = existing_year[existing_year["ddt"] != end_dt]
         else:
-            existing_year = pd.DataFrame()
+            # 연도 파일이 없으면 해당 연도 전체를 DB에서 다운로드
+            logger.info("Year file missing for %d — downloading full year", affected_year)
+            year_start = f"{affected_year}-01-01"
+            year_end = f"{affected_year}-12-31"
+            year_raw = GenerateQueryStructure(year_start, year_end).fetch_snp()
+            if not year_raw.empty:
+                year_factor, year_mret = _build_pipeline_ready(year_raw, factor_info_path)
+                # end_date 월은 이미 new_factor에 있으므로 제외
+                existing_year = year_factor[year_factor["ddt"] != end_dt]
+                # 연도 전체 M_RETURN도 병합
+                existing_mret = pd.read_parquet(mreturn_path) if mreturn_path.exists() else pd.DataFrame()
+                year_mret_no_dup = year_mret[year_mret["ddt"] != end_dt]
+                if not existing_mret.empty:
+                    existing_mret = pd.concat([existing_mret, year_mret_no_dup], ignore_index=True)
+                    existing_mret = existing_mret.drop_duplicates(subset=["gvkeyiid", "ddt"], keep="last")
+                else:
+                    existing_mret = year_mret_no_dup
+                existing_mret.to_parquet(mreturn_path, index=False, compression="zstd")
+            else:
+                existing_year = pd.DataFrame()
 
         updated_year = pd.concat([existing_year, new_factor], ignore_index=True)
         save_factor_parquet_by_year(updated_year, out_dir, benchmark, years={affected_year})
@@ -496,7 +559,7 @@ def run_download_pipeline(
 
         errors = [w for w in warnings_list if w["level"] == "ERROR"]
         if errors:
-            logger.error("Validation failed with %d error(s) — review before running pipeline", len(errors))
+            logger.error("Validation failed with %d error(s) - review before running pipeline", len(errors))
             raise RuntimeError(
                 f"Data validation failed: {len(errors)} error(s). "
                 "Fix data issues or re-run with validate=False to skip."
