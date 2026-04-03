@@ -1,242 +1,242 @@
 factorAbbreviation,factorName,styleName,cagr,rank_style,rank_total
-PM6M,6 Months Price Reversal,Price Momentum,0.1378393153024562,1.0,1.0
-SalesAcc,Sales Acceleration,Historical Growth,0.1226968833092339,1.0,2.0
-52WSlope,Slope of 52W Price Trend,Price Momentum,0.10626983464641926,2.0,3.0
-RevMagFY1C,Street Revision Magnitude,Analyst Expectations,0.09877448150308621,1.0,4.0
-HL52W,52W High Low,Price Momentum,0.09586551675333688,3.0,5.0
-Rev3MFY2C,3M Revision in FY2 EPS Estimate,Analyst Expectations,0.0949139579536995,2.0,6.0
-AdjEPSNumRevFY1C,Adjusted Number of EPS FY1 Revisions,Analyst Expectations,0.09087867108329561,3.0,7.0
-PM12M1M,12M - 1M Price Momentum,Price Momentum,0.08982462973749805,4.0,8.0
-AdjRevMagC,Adjusted Revision Magnitude,Analyst Expectations,0.08907962928963387,4.0,9.0
-BuyToSellRecLess3MSMA,Buy-to-Sell Recommendation Ratio Less 3M SMA,Analyst Expectations,0.08906976183011772,5.0,10.0
-BuyToSellRecLess3MEMA,Buy-to-Sell Recommendation Ratio Less 3M EMA,Analyst Expectations,0.08865987751829074,6.0,11.0
-6MTTMSalesMom,6M Momentum in Trailing 12M Sales,Historical Growth,0.08824212964875877,2.0,12.0
-AnnVol1M,1M Realized Price Volatility,Volatility,0.08764194262423475,1.0,13.0
-EPSNumRevFY1C,Number of EPS FY1 Revisions,Analyst Expectations,0.08746899640692973,7.0,14.0
-EstDiffC,Analyst Earnings Estimate Diffusion,Analyst Expectations,0.08742165614703401,8.0,15.0
-Rev3MFY1C,3M Revision in FY1 EPS Estimate,Analyst Expectations,0.08664959149979734,9.0,16.0
-90DCV,90 Day Coefficient of Variation,Volatility,0.0840680615061482,2.0,17.0
-3MSalesMom,3M Momentum in Trailing 12M Sales,Historical Growth,0.08367868776528264,3.0,18.0
-RskAdjRS,Risk Adjusted Relative Strength,Price Momentum,0.08248829350197306,5.0,19.0
-SUEC,Standardized Unexpected Earnings,Analyst Expectations,0.07998673916017207,10.0,20.0
-Chg1YOCF,1Y Chg in Operating Cash Flow per Share,Historical Growth,0.07876010182339677,4.0,21.0
-StdErr180D,180D Price TStat,Price Momentum,0.078388695775224,6.0,22.0
-PA52WL20DLag,Percent Above 260-Day Low,Price Momentum,0.07808660655679311,7.0,23.0
-FwdEPC,Forward Earnings to Price,Valuation,0.07685710120531208,1.0,24.0
-OEP,Operating Earnings to Price Ratio,Valuation,0.0765729074368724,2.0,25.0
-Beta60M,60M CAPM Beta,Volatility,0.0763156029273504,3.0,26.0
-4To52WPrcOsc,4W to 52W Price Oscillator,Price Momentum,0.0756105564681766,8.0,27.0
-50To200PrcRatio,50 Day to 200 Day Stock Price,Price Momentum,0.07422352668101251,9.0,28.0
-EPSStab,EPS Stability,Historical Growth,0.07193498972163281,5.0,29.0
-52WVPT20DLag,52-Week Volume Price Trend with 20-Day Lag,Price Momentum,0.0717085256427159,10.0,30.0
-AdjEPSNumRevFY2C,Adj Number of EPS FY2 Revisions,Analyst Expectations,0.07095797839943452,11.0,31.0
-5DMoneyFlowVol,5-Day Money Flow/Volume,Price Momentum,0.06904807008493163,11.0,32.0
-LTDE,Long Term Debt to Equity Ratio,Capital Efficiency,0.06884349294671477,1.0,33.0
-6MChgTgtPrcGap,6M Chg in Target Price Gap,Analyst Expectations,0.06766484693589092,12.0,34.0
-PRatio15To36W,15/36 Week Price Ratio,Price Momentum,0.06742171589916923,12.0,35.0
-6MChgTgtPrc,6M Chg in Target Price,Analyst Expectations,0.06655208647575517,13.0,36.0
-EPSSurpC,Earnings Surprise,Analyst Expectations,0.06519907655143697,14.0,37.0
-6MAvgChg1MRecC,6M Avg Chg 1M Recommendation,Analyst Expectations,0.06460180534167193,15.0,38.0
-PM1M,1M Price Reversal,Price Momentum,0.0633844202244358,13.0,39.0
-LTGC,Expected LTG,Analyst Expectations,0.06311802523179666,16.0,40.0
-VolAdjRtn12M,Volatility adjusted 12M return,Price Momentum,0.06245306243873672,14.0,41.0
-TobinQ,Tobin's Q Ratio,Capital Efficiency,0.06213203710182591,2.0,42.0
-Alpha60M,60M CAPM Alpha,Price Momentum,0.061474333346711596,15.0,43.0
-50DVolSig,50 Day Volume Signal,Price Momentum,0.060878888902542894,16.0,44.0
-8WChgFwd12MEPS,8-Week Change in 12-Month Forward Earnings Consensus Estimate/Price,Valuation,0.06071412879440774,3.0,45.0
-OCFRatio,Operating Cash Flow Ratio,Capital Efficiency,0.05801891614723287,3.0,46.0
-RONA,Return on Net Tangible Assets,Valuation,0.05788235598847158,4.0,47.0
-GPMargin,Gross Profit Margin,Earnings Quality,0.057535492236469477,1.0,48.0
-FCFEqt,Free Cash Flow to Common Equity,Valuation,0.057491411882162335,5.0,49.0
-CapExToAst,Capital Expenditure to Total Assets,Capital Efficiency,0.05706456107918756,4.0,50.0
-IO_Concentration,Institution Ownership Concentration,Price Momentum,0.05698721679838403,17.0,51.0
-Chg1YFCF,1Y Chg in Free Cash Flow per Share,Historical Growth,0.056808601578403506,6.0,52.0
-IntCovRatio,Interest Coverage Ratio,Capital Efficiency,0.056731558166520424,5.0,53.0
-CFROIC,Cash Flow Return on Invested Capital,Capital Efficiency,0.056711848262105846,6.0,54.0
-6MChgTgtPrcGapEMA,Target Price Gap to 6M EMA,Analyst Expectations,0.05671117839882345,17.0,55.0
-InvToAst,Inventory to Assets Ratio,Earnings Quality,0.05614174466535782,2.0,56.0
-STO,Share Turnover,Price Momentum,0.05585479658400905,18.0,57.0
-PrcTo260DL,Closing Price to 260 Day Low,Price Momentum,0.05543563479132829,19.0,58.0
-14DayRSI,14-Day Relative Strength Index,Price Momentum,0.05543555553954693,20.0,59.0
-PrcTo52WH,Closing Price to 52 Week High,Price Momentum,0.05537083498202566,21.0,60.0
-AstAdjChg1YFCF,1Y Chg in Asset Adjusted Free Cash Flow,Historical Growth,0.055095436353866045,7.0,61.0
-SalesToInvCap,Sales to Invested Capital,Earnings Quality,0.05460449291025049,3.0,62.0
-AstP,Assets to Price Ratio,Valuation,0.054391094331722956,6.0,63.0
-LTDA,Long Term Debt to Assets Ratio,Capital Efficiency,0.05398593154743714,7.0,64.0
-TTMRecInvToSales,Trailing 12-Month Receivables and Inventories/Trailing 12-Month Sales,Historical Growth,0.053215068686036204,8.0,65.0
-FCFSales,Free Cash Flow to Sales,Earnings Quality,0.053186385597027375,4.0,66.0
-AdjAccruals,Adjusted Accruals,Earnings Quality,0.05261640781258947,5.0,67.0
-AdjIntCov,Adjusted Interest Coverage Ratio,Capital Efficiency,0.05256540749030303,8.0,68.0
-AstAdjChg1YOCF,1Y Chg in Asset Adjusted Operating Cash Flow,Historical Growth,0.05215812321731628,9.0,69.0
-EPSToSalesChg1Y,Year over Year Change of EPS to Sales,Earnings Quality,0.05189849642524047,6.0,70.0
-PM9M,9 Month Price Momentum,Price Momentum,0.051816292908122286,22.0,71.0
-CashRatio,Cash Ratio,Earnings Quality,0.05178913950413855,7.0,72.0
-Chg3YFCF,3Y Chg in Free Cash Flow per Share,Historical Growth,0.05111301166044813,10.0,73.0
-PSlopeSERR_26W,26W Price Stat,Price Momentum,0.05101896546232587,23.0,74.0
-InvPEGYC,Inverse P/E Ratio Adj for Growth and Yield,Valuation,0.050635235885633456,7.0,75.0
-AccrualRatioCF,Accrual Ratio - Cash Flows,Earnings Quality,0.05040602956704787,8.0,76.0
-WCAccruals,Working Capital Accruals,Earnings Quality,0.05016388627774626,9.0,77.0
-20DStochastic,20-Day Lane's Stochastic Indicator,Price Momentum,0.05014895571017575,24.0,78.0
-SharpeRatio,Sharpe Ratio,Price Momentum,0.0495236564046706,25.0,79.0
-Alpha18M6MPChg,6M Chg in 18M CAPM Alpha,Price Momentum,0.04940740901830609,26.0,80.0
-10DMACD,10 Day MACD Trend,Price Momentum,0.0493353197155304,27.0,81.0
-UnexpectedRecChg,Unexpected Receivables Change,Earnings Quality,0.04924933359073469,10.0,82.0
-BookLev,Book Leverage,Volatility,0.04923248951005532,4.0,83.0
-CapExToSales,Capital Expenditure to Sales,Earnings Quality,0.04900718671225657,11.0,84.0
-MaxRetPayoff,Max Daily Return in the Past 6 Months,Price Momentum,0.047706930728854235,28.0,85.0
-EbitToAst,EBIT to Assets,Capital Efficiency,0.04714363498769547,9.0,86.0
-3YAvgAnnSalesGrw,3Y Average Annual Sales Growth,Historical Growth,0.046538356797783065,11.0,87.0
-PAdjChg3YFCF,3Y Chg in Free Cash Flow to Price,Historical Growth,0.04650844107976426,12.0,88.0
-CVVolPrc30D,30 Day Coefficient of Variation of Volume to Price,Price Momentum,0.04637569785529916,29.0,89.0
-FY2OverFY1Growth,Expected Earnings Growth: Fiscal Year 2/Fiscal Year 1,Historical Growth,0.04629809071821045,13.0,90.0
-PAdjChg1YCF,1Y Chg in Cash Flow to Price,Historical Growth,0.046218481342737316,14.0,91.0
-39WRtnLag4W,39W Lagged Return,Price Momentum,0.046071532121711556,30.0,92.0
-CapAcqRatio,Capital Acquisition Ratio,Capital Efficiency,0.04569974813613964,10.0,93.0
-WCapToAst,Working Capital to Total Assets,Earnings Quality,0.045229354263215615,12.0,94.0
-CFP,Net Cash Flow to Price,Valuation,0.04504883972502083,8.0,95.0
-Alpha12M6MPChg,6M Chg in 12M CAPM Alpha,Price Momentum,0.04493296687773274,31.0,96.0
-EBITDAEV,EBITDA to Enterprise Value,Valuation,0.04489408215830304,9.0,97.0
-IO_ChgofNumBY,Change in Number of Buyers,Price Momentum,0.044759765192177614,32.0,98.0
-AssetTurn,Asset Turnover,Earnings Quality,0.04472158528873149,13.0,99.0
-AstAdjChg3YFCF,3Y Chg in Asset Adjusted Free Cash Flow,Historical Growth,0.04401265298972468,15.0,100.0
-AnnVol12M,12M Realized Price Volatility,Volatility,0.04357939125363597,5.0,101.0
-HL1M,1M Price High - 1M Price Low,Price Momentum,0.04301766060144585,33.0,102.0
-FinLev,Degree of Financial Leverage,Capital Efficiency,0.042947851280477956,11.0,103.0
-Chg3YOCF,3Y Chg in Operating Cash Flow per Share,Historical Growth,0.04245095999078541,16.0,104.0
-CurLiaP,Current Liability to Price,Valuation,0.042288470857119176,10.0,105.0
-PAdjChg1YEPS,1Y Chg in Earnings to Price,Historical Growth,0.041864322196701886,17.0,106.0
-ROEStddev20Q,ROE 20 Qtr Standard Deviation,Earnings Quality,0.04173972949398341,14.0,107.0
-PAdjChg3YSales,3Y Chg in Sales to Price,Historical Growth,0.0414914906220325,18.0,108.0
-24MResRtnVar,24M Residual Return Variance,Price Momentum,0.04128868146197617,34.0,109.0
-ROAStddev20Q,ROA 20 Qtr Standard Deviation,Earnings Quality,0.04033349871094738,15.0,110.0
-AccrualRatioBS,Accrual Ratio - Balance Sheet,Earnings Quality,0.04026291354059741,16.0,111.0
-OCFEqt,Operating Cash Flow to Equity,Capital Efficiency,0.04010902570342201,12.0,112.0
-Chg1YAstTo,1Y Chg in Sales Turnover,Historical Growth,0.03940698664742359,19.0,113.0
-NCAP,Net Current Assets to Price Ratio,Valuation,0.03931755198386644,11.0,114.0
-Alpha36M6MPChg,6M Chg in 36M CAPM Alpha,Price Momentum,0.03887049013549859,35.0,115.0
-AstAdjChg3YOCF,3Y Chg in Asset Adjusted Operating Cash Flow,Historical Growth,0.03881244633885261,20.0,116.0
-OCFEV,Operating Cash Flow to Enterprise Value,Valuation,0.03881004202741667,12.0,117.0
-InvPEGC,Inverse PEG,Analyst Expectations,0.03862489250121137,18.0,118.0
-AdjSTO_6M,Adjusted 6 Month Average Share Turn Over,Price Momentum,0.037999789513144755,36.0,119.0
-CashBurn,Cash Burn Rate,Earnings Quality,0.037592978906277,17.0,120.0
-Chg1YCF,1Y Chg in Cash Flow per Share,Historical Growth,0.03758115659041339,21.0,121.0
-EBITDAP,EBITDA to Price,Valuation,0.03748402124658856,13.0,122.0
-5DVolSig,5 Day Volume Signal,Price Momentum,0.03657860118469025,37.0,123.0
-ROA60MSlope,ROA 60 Month Slope,Earnings Quality,0.03656035857437612,18.0,124.0
-SEV,Sales to EV Ratio,Valuation,0.03646345062802725,14.0,125.0
-ChgSalestoChgEPS,Change of Sales to Change of EPS,Earnings Quality,0.03643502961317391,19.0,126.0
-PM5D,5 Day Price Reversal,Price Momentum,0.03634677819574361,38.0,127.0
-SalesToEPSChg,1Y Chg in Sales to Earnings,Earnings Quality,0.03623501755149339,20.0,128.0
-RevEstDisp,Revenue Estimate Dispersion,Analyst Expectations,0.03616631930671832,19.0,129.0
-WCTurn,Working Capital Turnover Ratio,Capital Efficiency,0.03593132253355891,13.0,130.0
-IO_StabofChgHD,Stability of Change in Number of Holders,Price Momentum,0.03589796891301322,39.0,131.0
-WCA,Working Capital to Assets Ratio,Earnings Quality,0.0357189716227182,21.0,132.0
-UnexpectedInvChg,Unexpected Inventory Change,Earnings Quality,0.035637806495004254,22.0,133.0
-PAYOUTRATIO,Payout Ratio,Capital Efficiency,0.03496172730860292,14.0,134.0
-GFP,Growth Flow to Price,Valuation,0.03476050261668706,15.0,135.0
-RecTurn,Receivables Turnover Ratio,Capital Efficiency,0.03450479905419046,15.0,136.0
-OCFP,Operating Cash Flow to Price,Valuation,0.034485771066995685,16.0,137.0
-Chg1YAmihud,1Y Chg in Amihud,Volatility,0.03441349250995307,6.0,138.0
-FCFP,Free Cash Flow to Price,Valuation,0.034334491217189234,17.0,139.0
-AdjEBITP,Adjusted EBIT to Price,Valuation,0.034290265947266585,18.0,140.0
-Chg3YAstTo,3Y Chg in Sales Turnover,Historical Growth,0.03423273706504881,22.0,141.0
-DA,Debt to Assets Ratio,Capital Efficiency,0.03410412916948258,16.0,142.0
-ROA,Return on Assets,Capital Efficiency,0.03389780025240885,17.0,143.5
-OEA,Operating Earnings to Assets Ratio,Earnings Quality,0.03389780025240885,23.0,143.5
-REToAst,Retained Earnings to Total Assets,Earnings Quality,0.03385979588077559,24.0,145.0
-CashEV,Cash to EV Ratio,Valuation,0.033798870212836896,19.0,146.0
-IO_Foreign,Foreign Institution Ownership,Price Momentum,0.033625843974713465,40.0,147.0
-AdjChgEPStoSales,Change EPS to Sales,Earnings Quality,0.033590182501541666,25.0,148.0
-FCFEV,Free Cash Flow to Enterprise Value,Valuation,0.033538034716205534,20.0,149.0
-InvToAsset,Asset Adjusted Capital Investments,Earnings Quality,0.03347947989686517,26.0,150.0
-YoYChgDA,1Y Chg in Debt to Assets,Volatility,0.03342103107229555,7.0,151.0
-CashAst,Cash to Total Assets,Valuation,0.03329645706424067,21.0,152.0
-Chg3YEPS,3Y Chg in Earnings per Share,Historical Growth,0.03322523459308613,23.0,153.0
-GrPftToAst,Gross Profit to Assets,Capital Efficiency,0.03306831846784908,18.0,154.0
-ShareChg,1Y Chg in Shares Outstanding,Capital Efficiency,0.03292536409566815,19.0,155.0
-IO_InvDuration,Investment Duration,Price Momentum,0.03256969825591116,41.0,156.0
-CACL,Current Ratio,Earnings Quality,0.03219662011799862,27.0,157.0
-SusGrwRate,Sustainable Growth Rate,Historical Growth,0.03188027957618145,24.0,158.0
-PAdjChg1YOCF,1Y Chg in Operating Cash Flow to Price,Historical Growth,0.03184966572287862,25.0,159.0
-Chg3YOPM,3Y Chg in Operating Margin,Historical Growth,0.031585609915960156,26.0,160.0
-PAdjChg1YFCF,1Y Chg in Free Cash Flow to Price,Historical Growth,0.031212274093336267,27.0,161.0
-EPSEstDispFY1C,Analyst Dispersion for FY1 EPS,Analyst Expectations,0.03117016759558089,20.0,162.0
-ChgSalesMargin,Sales to Gross Profit Margin Growth,Earnings Quality,0.030626002173553823,28.0,163.0
-InvToAstChg1Y,Year over Year Change of Inventory to Assets,Earnings Quality,0.03042506764294428,29.0,164.0
-IO_BreadthStabBY,Ownership Breadth Stability of Institution Ownership by Buyers,Price Momentum,0.030074982405802198,42.0,165.0
-DivToCF,Dividends to Cash Flow,Valuation,0.03000650423889306,22.0,166.0
-Amihud,Amihud Illiquidity Measure,Volatility,0.0298816748639541,8.0,167.0
-SolvencyRatio,Solvency Ratio,Valuation,0.02970584379636576,23.0,168.0
-Chg1YEPS,1Y Chg in Earnings per Share,Historical Growth,0.02968755014776492,28.0,169.0
-CashToSales,Cash to Sales,Earnings Quality,0.029673478491910155,30.0,170.0
-60MAVGTTMROA,Normalized ROA,Capital Efficiency,0.02943924389585173,20.0,171.0
-PAdjChg3YOCF,3Y Chg in Operating Cash Flow to Price,Historical Growth,0.029416070079916867,29.0,172.0
-DebtChg1Y,Year over Year Change of Total Debt,Capital Efficiency,0.02924594833301053,21.0,173.0
-RSI26W,26W Relative Price Strength,Price Momentum,0.028249922899521884,43.0,174.0
-AdjFwdEPC,Adjusted Forward Earnings to Price,Valuation,0.028173661466001088,24.0,175.0
-EBITEstDisp,EBIT Estimate Dispersion,Analyst Expectations,0.02816266478192353,21.0,176.0
-DivperShareGrowth,Dividend per Share Growth,Historical Growth,0.02807845057024494,30.0,177.0
-CashCycle,Cash Conversion Cycle,Earnings Quality,0.02791623774849805,31.0,178.0
-AstAdjChg1YEPS,1Y Chg in Asset Adjusted EPS,Historical Growth,0.02768519414827253,31.0,179.0
-SGAToSalesChg1Y,Year over Year Change in SGA to Sales,Earnings Quality,0.027640403846172168,32.0,180.0
-BP,Book to Price,Valuation,0.027130951064949338,25.0,181.0
-EPSToOCFChg,1Y Chg in EPS to Operating Cash Flow,Earnings Quality,0.026978157125325586,33.0,182.0
-DepToCapex,Depreciation to Capex Ratio,Earnings Quality,0.026360330858858916,34.0,183.0
-OPM,Operating Margin,Earnings Quality,0.02583318282678948,35.0,184.0
-EBITMargin,EBIT Margin,Earnings Quality,0.025796387360621065,36.0,185.0
-QuickRatio,Quick Ratio,Earnings Quality,0.025321602676221078,37.0,186.0
-SGAToSales,SG&A to Sales,Earnings Quality,0.02527293723044921,38.0,187.0
-PAdjChg1YSales,1Y Chg in Sales to Price,Historical Growth,0.024980080729386955,32.0,188.0
-IO_ChgofNumHD,Change in Number of Holders,Price Momentum,0.024613221664457896,44.0,189.0
-PTIP,Pretax Income Per Share to Price,Valuation,0.02435183025721077,26.0,190.0
-LogTTMSales,Log TTM Sales,Size,0.02427917710553218,1.0,191.0
-130DMinRtn,130 Day Minimum Return,Volatility,0.02350012828672643,9.0,192.0
-CFEV,Net Cash Flow to Enterprise Value,Valuation,0.023346355785534678,27.0,193.0
-PTIToNOA,Pretax Income to Net Operating Assets,Earnings Quality,0.023260911547520857,39.0,194.0
-Chg1YTurnover,1Y Chg in Share Turnover,Price Momentum,0.023010162416602586,45.0,195.0
-LogAssets,Log of Total Last Quarter Assets,Size,0.02297041333955785,2.0,196.0
-Chg3YCF,3Y Chg in Cash Flow per Share,Historical Growth,0.02290293458181658,33.0,197.0
-60MAVGTTMEP,Normalized EP,Valuation,0.02236842395067562,28.0,198.0
-EPSEstDispFY2C,Analyst Dispersion for FY2 EPS,Analyst Expectations,0.021826232875798768,22.0,199.0
-SP,Sales to Price Ratio,Valuation,0.021512009333328752,29.0,200.0
-AstAdjChg1YCF,1Y Chg in Asset Adjusted Cash Flow,Historical Growth,0.02146920758539217,34.0,201.0
-Chg1YOPM,1Y Chg in Operating Margin,Historical Growth,0.02131869961577615,35.0,202.0
-IO_BreadthStabHD,Ownership Breadth Stability of Institution Ownership by Holders,Price Momentum,0.021176805792215037,46.0,203.0
-NIStab,Net Income Stability,Earnings Quality,0.02116017331914266,40.0,204.0
-CFEqt,Cash Flow to Equity,Valuation,0.02063098332929325,30.0,205.0
-PTMargin,Pretax Profit Margin,Capital Efficiency,0.02036496422951073,22.0,206.0
-CVVolPrc20D,20 Day Coefficient of Variation of Volume to Price,Price Momentum,0.0203239520377414,47.0,207.0
-IO_TO,Institution Ownership Turnover,Price Momentum,0.019636507340747622,48.0,208.0
-LogMktCapCubed,Log of Market Capitalization Cubed,Size,0.019595286607511975,3.0,209.0
-DIVIDENDGROWTH,Dividend Growth,Historical Growth,0.019369345583489572,36.0,210.0
-DivP,Dividends to Price Ratio,Valuation,0.019363272682054067,31.0,211.0
-LogMktCap,Log Market Cap,Size,0.018749186971639853,4.0,212.0
-ETO,Equity Turnover,Earnings Quality,0.01844790277460584,41.0,213.0
-IO_Level_AM,Institution Ownership Level - Active Manager,Price Momentum,0.018364383176610488,49.0,214.0
-ChgDeprCapex,Change in TTM Depr. to Capex,Earnings Quality,0.018151713385974322,42.0,215.0
-IO_Level,Institution Ownership Level,Price Momentum,0.017952002827423597,50.0,216.0
-AstGrwth,Asset Growth - 1 Year,Capital Efficiency,0.017300266057681535,23.0,217.0
-FwdFCFPC,Forward Free Cash Flow to Price Ratio,Valuation,0.017158343551126443,32.0,218.0
-InvTurn,Inventory Turnover,Earnings Quality,0.016742786905496354,43.0,219.0
-WCapToSales,Working Capital to Sales,Earnings Quality,0.015366958077543291,44.0,220.0
-CFAst,Cash Flow to Total Asset,Earnings Quality,0.015274344766861958,45.0,221.0
-TTMOverheadtoSales,Trailing 12-Month Overhead/Trailing 12-Month Sales,Historical Growth,0.015216060289135136,37.0,222.0
-TotalAccruals,Balance Sheet Accruals,Earnings Quality,0.01362293856830843,46.0,223.0
-4WChgFwd12MEPS,4-Week Change in 12-Month Forward Earnings Consensus Estimate/Price,Valuation,0.013590023693079267,33.0,224.0
-CashP,Cash to Price,Valuation,0.013152179469703595,34.0,225.0
-AstAdjChg3YCF,3Y Chg in Asset Adjusted Cash Flow,Historical Growth,0.012937957319382853,38.0,226.0
-PAdjChg3YCF,3Y Chg in Cash Flow to Price,Historical Growth,0.012545143591950803,39.0,227.0
-CVVolPrc60D,60 Day Coefficient of Variation of Volume to Price,Price Momentum,0.009335698771074874,51.0,228.0
-CFIC,Cash Flow to Invested Capital,Earnings Quality,0.008971487734872774,47.0,229.0
-PAdjChg3YEPS,3Y Chg in Earnings to Price,Historical Growth,0.007141432481776233,40.0,230.0
-STO_6M,6 Month Average Share Turn Over,Price Momentum,0.007058858452324124,52.0,231.0
-LogUnadjPrice,Log of Unadjusted Stock Price,Price Momentum,0.006627918339858763,53.0,232.0
-IO_ChgofIO_AM,Change of Ownership Level - All Managers,Price Momentum,0.005272381100880352,54.0,233.0
-EbitdaToAst,EBITDA to Assets,Capital Efficiency,0.004838604925236689,24.0,234.0
-ROIC,Return on Invested Capital,Capital Efficiency,0.004243821802748071,25.0,235.0
-AstAdjChg3YEPS,3Y Chg in Asset Adjusted EPS,Historical Growth,0.0007362832312449719,41.0,236.0
-NetProfitMargin,Net Profit Margin,Earnings Quality,-0.00028637267320597015,48.0,237.0
-ROE,Return on Equity,Capital Efficiency,-0.0020317732972079394,26.0,238.0
-60MAVGTTMROE,Normalized ROE,Capital Efficiency,-0.010782344192827753,27.0,239.0
-3YAvgAnnEPSGrw,3Y Average Annual Earnings Growth,Historical Growth,-0.011868032526510919,42.0,240.0
-EP,Earnings to Price,Valuation,-0.014238582699179547,35.0,241.0
+PM6M,6 Months Price Reversal,Price Momentum,0.12429801099549609,1.0,1.0
+SalesAcc,Sales Acceleration,Historical Growth,0.12047619602659387,1.0,2.0
+52WSlope,Slope of 52W Price Trend,Price Momentum,0.10472672867712673,2.0,3.0
+RevMagFY1C,Street Revision Magnitude,Analyst Expectations,0.10173270283393632,1.0,4.0
+EPSNumRevFY1C,Number of EPS FY1 Revisions,Analyst Expectations,0.09849514234399459,2.0,5.0
+AdjEPSNumRevFY1C,Adjusted Number of EPS FY1 Revisions,Analyst Expectations,0.0952808535974825,3.0,6.0
+Rev3MFY2C,3M Revision in FY2 EPS Estimate,Analyst Expectations,0.09524035249297347,4.0,7.0
+HL52W,52W High Low,Price Momentum,0.09423125941169475,3.0,8.0
+EstDiffC,Analyst Earnings Estimate Diffusion,Analyst Expectations,0.09159076456088955,5.0,9.0
+AdjRevMagC,Adjusted Revision Magnitude,Analyst Expectations,0.09110958121931367,6.0,10.0
+SUEC,Standardized Unexpected Earnings,Analyst Expectations,0.08866200639009114,7.0,11.0
+FwdEPC,Forward Earnings to Price,Valuation,0.08864175447226197,1.0,12.0
+RskAdjRS,Risk Adjusted Relative Strength,Price Momentum,0.08838374878217814,4.0,13.0
+Rev3MFY1C,3M Revision in FY1 EPS Estimate,Analyst Expectations,0.08805774350689077,8.0,14.0
+AnnVol1M,1M Realized Price Volatility,Volatility,0.08760423157008623,1.0,15.0
+PM12M1M,12M - 1M Price Momentum,Price Momentum,0.08574023089602778,5.0,16.0
+BuyToSellRecLess3MEMA,Buy-to-Sell Recommendation Ratio Less 3M EMA,Analyst Expectations,0.08520838162983124,9.0,17.0
+BuyToSellRecLess3MSMA,Buy-to-Sell Recommendation Ratio Less 3M SMA,Analyst Expectations,0.08487086765722118,10.0,18.0
+6MTTMSalesMom,6M Momentum in Trailing 12M Sales,Historical Growth,0.08378479898789415,2.0,19.0
+14DayRSI,14-Day Relative Strength Index,Price Momentum,0.07969641651898995,6.0,20.0
+Chg1YOCF,1Y Chg in Operating Cash Flow per Share,Historical Growth,0.07873381039921434,3.0,21.0
+PA52WL20DLag,Percent Above 260-Day Low,Price Momentum,0.07809402504916796,7.0,22.0
+3MSalesMom,3M Momentum in Trailing 12M Sales,Historical Growth,0.07722142244711017,4.0,23.0
+StdErr180D,180D Price TStat,Price Momentum,0.07688939935499772,8.0,24.0
+90DCV,90 Day Coefficient of Variation,Volatility,0.07395782986990485,2.0,25.0
+EPSStab,EPS Stability,Historical Growth,0.07284709850049031,5.0,26.0
+6MChgTgtPrc,6M Chg in Target Price,Analyst Expectations,0.07249548028600872,11.0,27.0
+Beta60M,60M CAPM Beta,Volatility,0.07239669498309564,3.0,28.0
+4To52WPrcOsc,4W to 52W Price Oscillator,Price Momentum,0.07132144366372528,9.0,29.0
+6MChgTgtPrcGap,6M Chg in Target Price Gap,Analyst Expectations,0.0710817440892777,12.0,30.0
+EPSSurpC,Earnings Surprise,Analyst Expectations,0.07104810546576079,13.0,31.0
+50To200PrcRatio,50 Day to 200 Day Stock Price,Price Momentum,0.07039880068876059,10.0,32.0
+PrcTo260DL,Closing Price to 260 Day Low,Price Momentum,0.07026352915288436,11.0,33.0
+5DMoneyFlowVol,5-Day Money Flow/Volume,Price Momentum,0.07022694769449123,12.0,34.0
+SalesToInvCap,Sales to Invested Capital,Earnings Quality,0.06984179409646685,1.0,35.0
+Alpha60M,60M CAPM Alpha,Price Momentum,0.06804657575769646,13.0,36.0
+AdjEPSNumRevFY2C,Adj Number of EPS FY2 Revisions,Analyst Expectations,0.0678935674539316,14.0,37.0
+AstAdjChg1YFCF,1Y Chg in Asset Adjusted Free Cash Flow,Historical Growth,0.06551732245128616,6.0,38.0
+PRatio15To36W,15/36 Week Price Ratio,Price Momentum,0.06474185550439815,14.0,39.0
+PM1M,1M Price Reversal,Price Momentum,0.06467522936134507,15.0,40.0
+52WVPT20DLag,52-Week Volume Price Trend with 20-Day Lag,Price Momentum,0.06363669193757815,16.0,41.0
+6MAvgChg1MRecC,6M Avg Chg 1M Recommendation,Analyst Expectations,0.06360292017636349,15.0,42.0
+LTDE,Long Term Debt to Equity Ratio,Capital Efficiency,0.06264988633367152,1.0,43.0
+6MChgTgtPrcGapEMA,Target Price Gap to 6M EMA,Analyst Expectations,0.06146998611599619,16.0,44.0
+IO_Concentration,Institution Ownership Concentration,Price Momentum,0.06133097404141141,17.0,45.0
+VolAdjRtn12M,Volatility adjusted 12M return,Price Momentum,0.060603705367286986,18.0,46.0
+STO,Share Turnover,Price Momentum,0.059645957424596885,19.0,47.0
+CFROIC,Cash Flow Return on Invested Capital,Capital Efficiency,0.0578952601945566,2.0,48.0
+GPMargin,Gross Profit Margin,Earnings Quality,0.056745000024954084,2.0,49.0
+FCFEqt,Free Cash Flow to Common Equity,Valuation,0.056698856240586126,2.0,50.0
+Chg3YFCF,3Y Chg in Free Cash Flow per Share,Historical Growth,0.05642459389691101,7.0,51.0
+InvPEGYC,Inverse P/E Ratio Adj for Growth and Yield,Valuation,0.05512246439027946,3.0,52.0
+IntCovRatio,Interest Coverage Ratio,Capital Efficiency,0.05495713747583708,3.0,53.0
+FCFSales,Free Cash Flow to Sales,Earnings Quality,0.054826526566126965,3.0,54.0
+EPSToSalesChg1Y,Year over Year Change of EPS to Sales,Earnings Quality,0.05480643176108102,4.0,55.0
+50DVolSig,50 Day Volume Signal,Price Momentum,0.0543558796777317,20.0,56.0
+LTGC,Expected LTG,Analyst Expectations,0.05434747570686094,17.0,57.0
+CashEV,Cash to EV Ratio,Valuation,0.0543154580096159,4.0,58.0
+AdjAccruals,Adjusted Accruals,Earnings Quality,0.053547422520083376,5.0,59.0
+Chg1YFCF,1Y Chg in Free Cash Flow per Share,Historical Growth,0.05354735715108916,8.0,60.0
+PrcTo52WH,Closing Price to 52 Week High,Price Momentum,0.05343860785445442,21.0,61.0
+FY2OverFY1Growth,Expected Earnings Growth: Fiscal Year 2/Fiscal Year 1,Historical Growth,0.05333682059496647,9.0,62.0
+SharpeRatio,Sharpe Ratio,Price Momentum,0.05329939631617209,22.0,63.0
+LTDA,Long Term Debt to Assets Ratio,Capital Efficiency,0.053188713565844425,4.0,64.0
+AstAdjChg1YOCF,1Y Chg in Asset Adjusted Operating Cash Flow,Historical Growth,0.05182924181469528,10.0,65.0
+TTMRecInvToSales,Trailing 12-Month Receivables and Inventories/Trailing 12-Month Sales,Historical Growth,0.05162214207921623,11.0,66.0
+AdjChgEPStoSales,Change EPS to Sales,Earnings Quality,0.05138948988372416,6.0,67.0
+AdjIntCov,Adjusted Interest Coverage Ratio,Capital Efficiency,0.05131384403681416,5.0,68.0
+AnnVol12M,12M Realized Price Volatility,Volatility,0.051023098339326056,4.0,69.0
+WCAccruals,Working Capital Accruals,Earnings Quality,0.05096955634935085,7.0,70.0
+EbitToAst,EBIT to Assets,Capital Efficiency,0.05058046146626638,6.0,71.0
+PAdjChg1YCF,1Y Chg in Cash Flow to Price,Historical Growth,0.04985122010463372,12.0,72.0
+UnexpectedRecChg,Unexpected Receivables Change,Earnings Quality,0.04971572165562321,8.0,73.0
+20DStochastic,20-Day Lane's Stochastic Indicator,Price Momentum,0.049279895374250815,23.0,74.0
+EBITDAEV,EBITDA to Enterprise Value,Valuation,0.04903736949996529,5.0,75.0
+PM9M,9 Month Price Momentum,Price Momentum,0.04837510779663168,24.0,76.0
+CFP,Net Cash Flow to Price,Valuation,0.04791079360709993,6.0,77.0
+PSlopeSERR_26W,26W Price Stat,Price Momentum,0.047573371433935474,25.0,78.0
+AccrualRatioCF,Accrual Ratio - Cash Flows,Earnings Quality,0.047225704773831145,9.0,79.0
+AdjSTO_6M,Adjusted 6 Month Average Share Turn Over,Price Momentum,0.046912325641082386,26.0,80.0
+InvPEGC,Inverse PEG,Analyst Expectations,0.04684654278507949,18.0,81.0
+CashRatio,Cash Ratio,Earnings Quality,0.04657277651332459,10.0,82.0
+8WChgFwd12MEPS,8-Week Change in 12-Month Forward Earnings Consensus Estimate/Price,Valuation,0.046437558898786646,7.0,83.0
+CapAcqRatio,Capital Acquisition Ratio,Capital Efficiency,0.045308526238214686,7.0,84.0
+PAdjChg1YEPS,1Y Chg in Earnings to Price,Historical Growth,0.04529352532776998,13.0,85.0
+Alpha18M6MPChg,6M Chg in 18M CAPM Alpha,Price Momentum,0.04497472949535286,27.0,86.0
+TobinQ,Tobin's Q Ratio,Capital Efficiency,0.04474968433016069,8.0,87.0
+PAdjChg3YFCF,3Y Chg in Free Cash Flow to Price,Historical Growth,0.04420019597821789,14.0,88.0
+10DMACD,10 Day MACD Trend,Price Momentum,0.04418060370824484,28.0,89.0
+AssetTurn,Asset Turnover,Earnings Quality,0.04410092632257134,11.0,90.0
+AstAdjChg3YFCF,3Y Chg in Asset Adjusted Free Cash Flow,Historical Growth,0.04355136165338447,15.0,91.0
+39WRtnLag4W,39W Lagged Return,Price Momentum,0.04309280186987374,29.0,92.0
+Chg3YOCF,3Y Chg in Operating Cash Flow per Share,Historical Growth,0.04299750012183323,16.0,93.0
+OCFRatio,Operating Cash Flow Ratio,Capital Efficiency,0.04284183301365441,9.0,94.0
+SEV,Sales to EV Ratio,Valuation,0.04228059423404251,8.0,95.0
+EBITDAP,EBITDA to Price,Valuation,0.04221587106157765,9.0,96.0
+HL1M,1M Price High - 1M Price Low,Price Momentum,0.04195904524120464,30.0,97.0
+AccrualRatioBS,Accrual Ratio - Balance Sheet,Earnings Quality,0.041353627079799615,12.0,98.0
+OCFEqt,Operating Cash Flow to Equity,Capital Efficiency,0.04134656592131014,10.0,99.0
+AstAdjChg3YOCF,3Y Chg in Asset Adjusted Operating Cash Flow,Historical Growth,0.04132009053086505,17.0,100.0
+Alpha12M6MPChg,6M Chg in 12M CAPM Alpha,Price Momentum,0.040788798160739104,31.0,101.0
+IO_TO,Institution Ownership Turnover,Price Momentum,0.04000791415501115,32.0,102.0
+OCFEV,Operating Cash Flow to Enterprise Value,Valuation,0.039865731382702885,10.0,103.0
+PM5D,5 Day Price Reversal,Price Momentum,0.03981001605872292,33.0,104.0
+ChgSalestoChgEPS,Change of Sales to Change of EPS,Earnings Quality,0.03915175839382945,13.0,105.0
+ROEStddev20Q,ROE 20 Qtr Standard Deviation,Earnings Quality,0.03912711199198515,14.0,106.0
+PAdjChg3YSales,3Y Chg in Sales to Price,Historical Growth,0.03907507011789968,18.0,107.0
+UnexpectedInvChg,Unexpected Inventory Change,Earnings Quality,0.03777924129518917,15.0,108.0
+24MResRtnVar,24M Residual Return Variance,Price Momentum,0.03771474224997462,34.0,109.0
+RevEstDisp,Revenue Estimate Dispersion,Analyst Expectations,0.037710150978417234,19.0,110.0
+ROAStddev20Q,ROA 20 Qtr Standard Deviation,Earnings Quality,0.03766155227221879,16.0,111.0
+Chg1YCF,1Y Chg in Cash Flow per Share,Historical Growth,0.037422652669476975,19.0,112.0
+CapExToSales,Capital Expenditure to Sales,Earnings Quality,0.03732915615790611,17.0,113.0
+MaxRetPayoff,Max Daily Return in the Past 6 Months,Price Momentum,0.03732697600118251,35.0,114.0
+IO_Foreign,Foreign Institution Ownership,Price Momentum,0.03729085330167914,36.0,115.0
+AdjFwdEPC,Adjusted Forward Earnings to Price,Valuation,0.03684870160277742,11.0,116.0
+Chg1YAstTo,1Y Chg in Sales Turnover,Historical Growth,0.036765856293313526,20.0,117.0
+ROA60MSlope,ROA 60 Month Slope,Earnings Quality,0.03667598978906894,18.0,118.0
+IO_StabofChgHD,Stability of Change in Number of Holders,Price Momentum,0.03645667903038241,37.0,119.0
+WCapToAst,Working Capital to Total Assets,Earnings Quality,0.03624795558479432,19.0,120.0
+AdjEBITP,Adjusted EBIT to Price,Valuation,0.03598213992079291,12.0,121.0
+Chg3YAstTo,3Y Chg in Sales Turnover,Historical Growth,0.03569137365277686,21.0,122.0
+SalesToEPSChg,1Y Chg in Sales to Earnings,Earnings Quality,0.035437892933771975,20.0,123.0
+YoYChgDA,1Y Chg in Debt to Assets,Volatility,0.035176678130347305,5.0,124.0
+WCTurn,Working Capital Turnover Ratio,Capital Efficiency,0.03488122716795883,11.0,125.0
+CashBurn,Cash Burn Rate,Earnings Quality,0.034476839158468664,21.0,126.0
+OCFP,Operating Cash Flow to Price,Valuation,0.034305882834571255,13.0,127.0
+5DVolSig,5 Day Volume Signal,Price Momentum,0.03412133357800351,38.0,128.0
+Alpha36M6MPChg,6M Chg in 36M CAPM Alpha,Price Momentum,0.033965435907523656,39.0,129.0
+IO_BreadthStabBY,Ownership Breadth Stability of Institution Ownership by Buyers,Price Momentum,0.033945405131647455,40.0,130.0
+Chg3YOPM,3Y Chg in Operating Margin,Historical Growth,0.03387638333237786,22.0,131.0
+Chg3YEPS,3Y Chg in Earnings per Share,Historical Growth,0.03379321025177395,23.0,132.0
+SusGrwRate,Sustainable Growth Rate,Historical Growth,0.033694127053423006,24.0,133.0
+NCAP,Net Current Assets to Price Ratio,Valuation,0.03345437993531064,14.0,134.0
+PAdjChg1YSales,1Y Chg in Sales to Price,Historical Growth,0.033256246025729075,25.0,135.0
+PAdjChg1YOCF,1Y Chg in Operating Cash Flow to Price,Historical Growth,0.03319804155173567,26.0,136.0
+WCA,Working Capital to Assets Ratio,Earnings Quality,0.03318697987215735,22.0,137.0
+DA,Debt to Assets Ratio,Capital Efficiency,0.03308221570694925,12.0,138.0
+InvToAsset,Asset Adjusted Capital Investments,Earnings Quality,0.03296183717889245,23.0,139.0
+Chg1YAmihud,1Y Chg in Amihud,Volatility,0.032940703195925236,6.0,140.0
+EPSEstDispFY1C,Analyst Dispersion for FY1 EPS,Analyst Expectations,0.03292484962660791,20.0,141.0
+EBITEstDisp,EBIT Estimate Dispersion,Analyst Expectations,0.032790005282801404,21.0,142.0
+Amihud,Amihud Illiquidity Measure,Volatility,0.03263775246052991,7.0,143.0
+GrPftToAst,Gross Profit to Assets,Capital Efficiency,0.03259551957685103,13.0,144.0
+PAYOUTRATIO,Payout Ratio,Capital Efficiency,0.03240470971969067,14.0,145.0
+FCFP,Free Cash Flow to Price,Valuation,0.03224144647114957,15.0,146.0
+CurLiaP,Current Liability to Price,Valuation,0.03180773364753797,16.0,147.0
+IO_ChgofNumBY,Change in Number of Buyers,Price Momentum,0.03146061960120505,41.0,148.0
+DivperShareGrowth,Dividend per Share Growth,Historical Growth,0.03113111814723868,27.0,149.0
+Chg1YEPS,1Y Chg in Earnings per Share,Historical Growth,0.031087612884136417,28.0,150.0
+PTIP,Pretax Income Per Share to Price,Valuation,0.031030381547807906,17.0,151.0
+REToAst,Retained Earnings to Total Assets,Earnings Quality,0.030977136273474093,24.0,152.0
+DebtChg1Y,Year over Year Change of Total Debt,Capital Efficiency,0.030934747895381642,15.0,153.0
+ETO,Equity Turnover,Earnings Quality,0.03064072920466443,25.0,154.0
+IO_InvDuration,Investment Duration,Price Momentum,0.030430983708861437,42.0,155.0
+BookLev,Book Leverage,Volatility,0.030189699371550027,8.0,156.0
+CashAst,Cash to Total Assets,Valuation,0.030050914598859668,18.0,157.0
+CapExToAst,Capital Expenditure to Total Assets,Capital Efficiency,0.029514968482657,16.0,158.0
+AstAdjChg1YEPS,1Y Chg in Asset Adjusted EPS,Historical Growth,0.029364774891252887,29.0,159.0
+RecTurn,Receivables Turnover Ratio,Capital Efficiency,0.02929550113850099,17.0,160.0
+GFP,Growth Flow to Price,Valuation,0.02895415403877699,19.0,161.0
+ShareChg,1Y Chg in Shares Outstanding,Capital Efficiency,0.02886434222751255,18.0,162.0
+RSI26W,26W Relative Price Strength,Price Momentum,0.0288135223364836,43.0,163.0
+PAdjChg3YOCF,3Y Chg in Operating Cash Flow to Price,Historical Growth,0.028734823290477163,30.0,164.0
+LogTTMSales,Log TTM Sales,Size,0.028716995291769853,1.0,165.0
+PAdjChg1YFCF,1Y Chg in Free Cash Flow to Price,Historical Growth,0.02871366833955946,31.0,166.0
+CashToSales,Cash to Sales,Earnings Quality,0.028516340890202718,26.0,167.0
+IO_ChgofNumHD,Change in Number of Holders,Price Momentum,0.028477334370315077,44.0,168.0
+EPSToOCFChg,1Y Chg in EPS to Operating Cash Flow,Earnings Quality,0.028231443208214024,27.0,169.0
+InvToAst,Inventory to Assets Ratio,Earnings Quality,0.02783125997765956,28.0,170.0
+AstAdjChg1YCF,1Y Chg in Asset Adjusted Cash Flow,Historical Growth,0.02774480291649173,32.0,171.0
+DivP,Dividends to Price Ratio,Valuation,0.027584942469546236,20.0,172.0
+CVVolPrc30D,30 Day Coefficient of Variation of Volume to Price,Price Momentum,0.02751917036715823,45.0,173.0
+DivToCF,Dividends to Cash Flow,Valuation,0.027211038329484127,21.0,174.0
+CFEV,Net Cash Flow to Enterprise Value,Valuation,0.02708451932817546,22.0,175.0
+SP,Sales to Price Ratio,Valuation,0.02695190922902646,23.0,176.0
+ChgSalesMargin,Sales to Gross Profit Margin Growth,Earnings Quality,0.026933683078764092,29.0,177.0
+SGAToSales,SG&A to Sales,Earnings Quality,0.026569412073762066,30.0,178.0
+WCapToSales,Working Capital to Sales,Earnings Quality,0.026292376601481315,31.0,179.0
+FinLev,Degree of Financial Leverage,Capital Efficiency,0.026128378874552993,19.0,180.0
+LogAssets,Log of Total Last Quarter Assets,Size,0.024965422155340367,2.0,181.0
+DepToCapex,Depreciation to Capex Ratio,Earnings Quality,0.023308124246044226,32.0,182.0
+TTMOverheadtoSales,Trailing 12-Month Overhead/Trailing 12-Month Sales,Historical Growth,0.0232627243161716,33.0,183.0
+InvTurn,Inventory Turnover,Earnings Quality,0.023252491898818173,33.0,184.0
+Chg3YCF,3Y Chg in Cash Flow per Share,Historical Growth,0.02275665882809741,34.0,185.0
+EBITMargin,EBIT Margin,Earnings Quality,0.022738042701506034,34.0,186.0
+BP,Book to Price,Valuation,0.02265134573210692,24.0,187.0
+IO_Level_AM,Institution Ownership Level - Active Manager,Price Momentum,0.022536460746180653,46.0,188.0
+CACL,Current Ratio,Earnings Quality,0.022084545381759968,35.0,189.0
+QuickRatio,Quick Ratio,Earnings Quality,0.022072168651833923,36.0,190.0
+Chg1YOPM,1Y Chg in Operating Margin,Historical Growth,0.02196087739732966,35.0,191.0
+FCFEV,Free Cash Flow to Enterprise Value,Valuation,0.021791254185058673,25.0,192.0
+PTIToNOA,Pretax Income to Net Operating Assets,Earnings Quality,0.020982684177487165,37.0,193.0
+Chg1YTurnover,1Y Chg in Share Turnover,Price Momentum,0.02083788258832686,47.0,194.0
+IO_Level,Institution Ownership Level,Price Momentum,0.02061095036076388,48.0,195.0
+SGAToSalesChg1Y,Year over Year Change in SGA to Sales,Earnings Quality,0.020493371121291792,38.0,196.0
+TotalAccruals,Balance Sheet Accruals,Earnings Quality,0.02046154408498313,39.0,197.0
+InvToAstChg1Y,Year over Year Change of Inventory to Assets,Earnings Quality,0.02043371210456124,40.0,198.0
+DIVIDENDGROWTH,Dividend Growth,Historical Growth,0.020381577983911603,36.0,199.0
+PTMargin,Pretax Profit Margin,Capital Efficiency,0.02019483468162231,20.0,200.0
+60MAVGTTMROA,Normalized ROA,Capital Efficiency,0.019870742437832156,21.0,201.0
+EPSEstDispFY2C,Analyst Dispersion for FY2 EPS,Analyst Expectations,0.01968329225677312,22.0,202.0
+SolvencyRatio,Solvency Ratio,Valuation,0.01958669926965917,26.0,203.0
+RONA,Return on Net Tangible Assets,Valuation,0.01936735862382699,27.0,204.0
+FwdFCFPC,Forward Free Cash Flow to Price Ratio,Valuation,0.019182751445818047,28.0,205.0
+CVVolPrc20D,20 Day Coefficient of Variation of Volume to Price,Price Momentum,0.018420474011737076,49.0,206.0
+IO_BreadthStabHD,Ownership Breadth Stability of Institution Ownership by Holders,Price Momentum,0.01829678553205616,50.0,207.0
+NIStab,Net Income Stability,Earnings Quality,0.01818338193470148,41.0,208.0
+EbitdaToAst,EBITDA to Assets,Capital Efficiency,0.017153572983192644,22.0,209.0
+CFIC,Cash Flow to Invested Capital,Earnings Quality,0.01693132628842675,42.0,210.0
+OPM,Operating Margin,Earnings Quality,0.015520769804559853,43.0,211.0
+4WChgFwd12MEPS,4-Week Change in 12-Month Forward Earnings Consensus Estimate/Price,Valuation,0.01511617402398624,29.0,212.0
+LogMktCap,Log Market Cap,Size,0.014503234894211348,3.0,213.0
+CFEqt,Cash Flow to Equity,Valuation,0.014406863371486,30.0,214.0
+AstAdjChg3YCF,3Y Chg in Asset Adjusted Cash Flow,Historical Growth,0.014000973210006817,37.0,215.0
+AstP,Assets to Price Ratio,Valuation,0.013737131323177332,31.0,216.0
+AstGrwth,Asset Growth - 1 Year,Capital Efficiency,0.013531689703597305,23.0,217.0
+LogMktCapCubed,Log of Market Capitalization Cubed,Size,0.013168759431548382,4.0,218.0
+ChgDeprCapex,Change in TTM Depr. to Capex,Earnings Quality,0.012431807849759169,44.0,219.0
+CashP,Cash to Price,Valuation,0.012238561160792916,32.0,220.0
+130DMinRtn,130 Day Minimum Return,Volatility,0.011979258900656653,9.0,221.0
+CFAst,Cash Flow to Total Asset,Earnings Quality,0.01164757336289246,45.0,222.0
+PAdjChg3YEPS,3Y Chg in Earnings to Price,Historical Growth,0.010946639007134662,38.0,223.0
+PAdjChg3YCF,3Y Chg in Cash Flow to Price,Historical Growth,0.010229054793593928,39.0,224.0
+3YAvgAnnSalesGrw,3Y Average Annual Sales Growth,Historical Growth,0.00942689621837789,40.0,225.0
+LogUnadjPrice,Log of Unadjusted Stock Price,Price Momentum,0.008831271572640631,51.0,226.0
+OEA,Operating Earnings to Assets Ratio,Earnings Quality,0.00791683385130093,46.0,227.5
+ROA,Return on Assets,Capital Efficiency,0.00791683385130093,24.0,227.5
+IO_ChgofIO_AM,Change of Ownership Level - All Managers,Price Momentum,0.007472547646705019,52.0,229.0
+ROIC,Return on Invested Capital,Capital Efficiency,0.005957335011247844,25.0,230.0
+60MAVGTTMEP,Normalized EP,Valuation,0.005721546286745927,33.0,231.0
+CashCycle,Cash Conversion Cycle,Earnings Quality,0.005339961040217833,47.0,232.0
+ROE,Return on Equity,Capital Efficiency,0.003950686681469806,26.0,233.0
+AstAdjChg3YEPS,3Y Chg in Asset Adjusted EPS,Historical Growth,0.0033382842818052705,41.0,234.0
+CVVolPrc60D,60 Day Coefficient of Variation of Volume to Price,Price Momentum,0.0032409638074897273,53.0,235.0
+NetProfitMargin,Net Profit Margin,Earnings Quality,0.002576880696770978,48.0,236.0
+STO_6M,6 Month Average Share Turn Over,Price Momentum,0.002380856599069947,54.0,237.0
+EP,Earnings to Price,Valuation,-0.006169701969713337,34.0,238.0
+60MAVGTTMROE,Normalized ROE,Capital Efficiency,-0.008693914328521735,27.0,239.0
+OEP,Operating Earnings to Price Ratio,Valuation,-0.011072157321945553,35.0,240.0
+3YAvgAnnEPSGrw,3Y Average Annual Earnings Growth,Historical Growth,-0.012653313220598927,42.0,241.0
