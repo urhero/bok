@@ -163,12 +163,17 @@
 | Tier 2 | 3개월 | [4]~[6] | 팩터 선정 + 가중치 최적화 (IS 슬라이스만) |
 | Tier 3 | 매월 | OOS 적용 | precomputed_ret_df에서 조회만 (밀리초) |
 
-### 과적합 진단 지표 (우선순위 순)
+### 과적합 진단 3단계 테스트 (우선순위 순)
+
+파이프라인의 2단계 축소(200+ → Top-50 → 최종 weight>0 팩터)가 진짜 가치를 창출했는지 검증한다.
+
 | 순위 | 지표 | 설명 | 해석 |
 |------|------|------|------|
-| 1순위 | IS-OOS Rank Correlation | IS CAGR 순위 vs OOS 실현 수익률 순위 Spearman | >0.3 양호, ≈0 무관, <0 과적합 |
-| 2순위 | Factor Jaccard | 연속 Tier 2 리밸런싱 간 팩터셋 교집합/합집합 | >0.6 안정, 0.4~0.6 보통, <0.4 불안정 |
-| 3순위 | Deflation Ratio | OOS CAGR / IS CAGR | >0.6 양호, 0.3~0.6 주의, <0.3 심각 |
+| 1순위 | Funnel Value-Add | EW_All vs EW_Top50 vs MP_Final 비교 | C>B>A 정상, B>C>A MC과적합, A>B 필터과적합 |
+| 2순위 | OOS Percentile Tracking | weight>0 팩터의 OOS 백분위 생존율 | 상위40% 견고, 40~60% 보통, 60%+ 과적합의심 |
+| 3순위 | Strict Jaccard | weight>0 팩터 집합 안정성 | >0.5 안정, 0.3~0.5 보통, <0.3 불안정 |
+| 4순위(보조) | IS-OOS Rank Corr | IS CAGR 순위 vs OOS 실현 수익률 순위 Spearman | >0.3 양호, ≈0 무관, <0 과적합 |
+| 5순위(보조) | Deflation Ratio | OOS CAGR / IS CAGR | >0.6 양호, 0.3~0.6 주의, <0.3 심각 |
 
 ### 벤치마크 비교 (Step 0)
 `--benchmark` 옵션으로 simulation 모드 MP vs. 동일가중(1/N) 비교를 수행한다. IS 전체 기간의 Sanity Check 용도.
@@ -177,7 +182,7 @@
 - `service/backtest/walk_forward_engine.py`: WalkForwardEngine 클래스 (오케스트레이터)
 - `service/backtest/data_slicer.py`: IS/OOS 날짜 분할
 - `service/backtest/result_stitcher.py`: WalkForwardResult 컨테이너
-- `service/backtest/overfit_diagnostics.py`: 과적합 진단 3개 지표
+- `service/backtest/overfit_diagnostics.py`: 과적합 진단 5개 지표 (3단계 핵심 + 2 보조)
 - `service/pipeline/benchmark_comparison.py`: MP vs. EW 벤치마크 비교
 
 ---
@@ -223,7 +228,7 @@ service/
     ├── walk_forward_engine.py  # Walk-Forward (Expanding Window) 오케스트레이터
     ├── data_slicer.py          # 날짜 기반 IS/OOS 데이터 분할
     ├── result_stitcher.py      # OOS 결과 접합 + 성과 계산 (WalkForwardResult)
-    └── overfit_diagnostics.py  # 과적합 진단 (Rank Corr, Jaccard, Deflation Ratio)
+    └── overfit_diagnostics.py  # 과적합 진단 (Funnel Value-Add, Percentile, Strict Jaccard + 보조)
 ```
 
 ### Pipeline 사용법
@@ -312,11 +317,13 @@ Sharpe:        0.31           0.14
 Win Rate:      54.69%         -
 ```
 
-**과적합 진단 결과:**
+**과적합 진단 결과 (3단계 테스트):**
 ```
-1순위  IS-OOS Rank Corr = 0.04  ≈ 0  (IS 순위와 OOS 순위 무관)
-2순위  Factor Jaccard   = 0.77  > 0.6 (팩터 선정 안정적)
-3순위  Deflation Ratio  = 1.00  > 0.6 (양호, 참고용)
+1순위  Funnel Value-Add  — EW_All / EW_Top50 / MP_Final 비교 (backtest 재실행 후 확인)
+2순위  OOS Percentile    — weight>0 팩터의 OOS 백분위 생존율 (backtest 재실행 후 확인)
+3순위  Strict Jaccard    — weight>0 팩터 집합 안정성 (backtest 재실행 후 확인)
+4순위  IS-OOS Rank Corr  = 0.04  ≈ 0 (IS 순위와 OOS 순위 무관, 보조)
+5순위  Deflation Ratio   = 1.00  > 0.6 (양호, 보조)
 ```
 
 #### 2. 검증: 기존 mp 파이프라인 영향 없음 확인
@@ -329,8 +336,8 @@ git checkout -- data/hardcoded_weights.csv
 ```
 
 **산출 파일:**
-- `output/walk_forward_results.csv` — OOS 월별 MP/EW 수익률 + 누적 수익률
-- `output/overfit_diagnostics.csv` — 과적합 진단 지표 요약
+- `output/walk_forward_results.csv` — OOS 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
+- `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
 
 ---
 

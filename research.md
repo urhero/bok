@@ -746,11 +746,41 @@ Tier 3 (매월): OOS 수익률 조회
 | [6] MC 시뮬레이션 | 중간 | 스타일 캡 25% + Dirichlet 제약으로 자유도 낮음 |
 | [2] 5분위 분석 | 낮음 | 횡단면 정렬이라 시계열 과적합 아님 |
 
-### 6.4 진단 지표
+### 6.4 과적합 진단 3단계 테스트
 
-1. **IS-OOS Rank Correlation** (1순위): IS CAGR 순위와 OOS 실현 수익률 순위의 Spearman 상관. 환경 편향에 덜 민감
-2. **Factor Jaccard** (2순위): 연속 Tier 2 리밸런싱 간 팩터셋 교집합/합집합. 모델 안정성 측정
-3. **Deflation Ratio** (3순위, 보조): OOS CAGR / IS CAGR. OOS 기간이 짧으면 단독 판단 금지
+파이프라인의 2단계 축소(200+ → Top-50 → 최종 weight>0 팩터)가 진짜 가치를 창출했는지 해부한다.
+
+**1순위: Funnel Value-Add Test (구간별 가치 창출 검증)**
+
+OOS 구간에서 3개 포트폴리오의 성과(CAGR, MDD)를 동시 비교:
+- A. EW_All: 전체 유효 팩터 동일가중 (시장/팩터 베타)
+- B. EW_Top50: Top-50 후보군 동일가중 (1차 필터링 실력)
+- C. MP_Final: MC 최적화 가중 포트폴리오 (최종 실력)
+
+| 패턴 | 의미 |
+|------|------|
+| C > B > A | 정상 — 필터링+최적화 모두 가치 창출 |
+| B > C > A | MC 과적합 — Top-50 EW가 더 나음 |
+| A > B | 1차 필터 과적합 — CAGR 기반 필터링 자체가 과거 우연 |
+
+**2순위: OOS Percentile Tracking (최종 팩터 생존율)**
+
+각 Tier 2 구간에서 weight>0 팩터들의 OOS 실현 수익률 백분위를 계산.
+- 상위 40% 이내 → 견고한 팩터 선정
+- 40~60% → 보통 (랜덤과 차이 미미)
+- 60% 이상 → 과적합 의심 (IS 상위 팩터가 OOS에서 추락)
+
+**3순위: Strict Jaccard Index (weight>0 팩터 안정성)**
+
+Top-50이 아닌, MC 최적화를 거쳐 **실제로 비중이 할당된 최종 팩터**(스타일 수에 따라 5~14개)에만 적용.
+집합 크기가 작아 Jaccard가 예민하게 반응 → 기준값을 Top-50 Jaccard보다 낮게 설정:
+- \> 0.5 → 안정적
+- 0.3~0.5 → 보통
+- < 0.3 → 불안정 (과적합 의심)
+
+**보조 지표:**
+4. IS-OOS Rank Correlation: IS CAGR 순위와 OOS 실현 수익률 순위의 Spearman 상관
+5. Deflation Ratio: OOS CAGR / IS CAGR. OOS 기간이 짧으면 단독 판단 금지
 
 ### 6.5 방어 로직
 
@@ -813,15 +843,17 @@ Sharpe:        0.31           0.14
 Win Rate:      54.69%         -   (64개월 중 35개월 MP 우위)
 ```
 
-**과적합 진단:**
+**과적합 진단 (3단계 테스트):**
 ```
-1순위  IS-OOS Rank Corr = 0.04  ≈ 0   → IS 팩터 CAGR 순위의 OOS 예측력은 제한적
-2순위  Factor Jaccard   = 0.77  > 0.6  → 팩터 선정은 안정적 (리밸런싱마다 대부분 유지)
-3순위  Deflation Ratio  = 1.00  > 0.6  → IS 성과 대비 OOS 성과 유지 (참고용)
+1순위  Funnel Value-Add  — EW_All / EW_Top50 / MP_Final 비교 (backtest 재실행 후 확인)
+2순위  OOS Percentile    — weight>0 팩터의 OOS 백분위 생존율 (backtest 재실행 후 확인)
+3순위  Strict Jaccard    — weight>0 팩터 집합 안정성 (backtest 재실행 후 확인)
+4순위  IS-OOS Rank Corr  = 0.04  ≈ 0   → IS 팩터 CAGR 순위의 OOS 예측력은 제한적 (보조)
+5순위  Deflation Ratio   = 1.00  > 0.6  → IS 성과 대비 OOS 성과 유지 (보조)
 ```
 
 **산출 파일:**
-- `output/walk_forward_results.csv` — OOS 64개월 월별 MP/EW 수익률 + 누적 수익률
-- `output/overfit_diagnostics.csv` — 과적합 진단 3개 지표 요약
+- `output/walk_forward_results.csv` — OOS 64개월 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
+- `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
 
 **주의:** backtest는 내부적으로 simulation 모드를 사용하여 `data/hardcoded_weights.csv`를 덮어쓴다. 실행 후 `git checkout -- data/hardcoded_weights.csv`로 프로덕션 가중치를 반드시 복원할 것.

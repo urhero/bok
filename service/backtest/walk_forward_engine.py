@@ -332,6 +332,7 @@ class WalkForwardEngine:
         cached_weights: dict[str, float] | None = None
         cached_meta: pd.DataFrame | None = None
         cached_selected_factors: list[str] | None = None
+        cached_top50_factors: list[str] | None = None
 
         results: list[dict[str, Any]] = []
 
@@ -366,6 +367,7 @@ class WalkForwardEngine:
                 cached_weights = None
                 cached_meta = None
                 cached_selected_factors = None
+                cached_top50_factors = None
 
             if precomputed_ret_df is None or precomputed_ret_df.empty:
                 continue
@@ -426,6 +428,7 @@ class WalkForwardEngine:
                         top_n = min(pp["top_factor_count"], len(meta_df))
                         meta_top = meta_df.head(top_n)
                         selected = meta_top["factorAbbreviation"].tolist()
+                        cached_top50_factors = list(selected)
                         ret_df_selected = ret_df_is[selected]
 
                         neg_corr = calculate_downside_correlation(
@@ -472,6 +475,9 @@ class WalkForwardEngine:
 
             oos_factor_returns = precomputed_ret_df.loc[oos_date, available_factors]
 
+            # 전체 팩터 OOS 수익률 (Funnel Value-Add + Percentile Tracking용)
+            oos_all_factor_returns = precomputed_ret_df.loc[oos_date]
+
             # 가용 팩터에 맞춰 가중치 정규화
             avail_weights = {f: cached_weights[f] for f in available_factors if f in cached_weights}
             total_w = sum(avail_weights.values())
@@ -490,6 +496,9 @@ class WalkForwardEngine:
                 "is_meta": cached_meta.copy() if cached_meta is not None else None,
                 "is_rule_rebal": is_rule_rebal,
                 "is_weight_rebal": is_weight_rebal,
+                "oos_all_factor_returns": oos_all_factor_returns.to_dict(),
+                "top50_factors": list(cached_top50_factors) if cached_top50_factors else [],
+                "active_factors": [f for f, w in cached_weights.items() if w > 0],
             })
 
         elapsed = time.time() - t0

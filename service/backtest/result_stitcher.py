@@ -2,6 +2,7 @@
 """Walk-Forward 결과 컨테이너 및 성과 계산.
 
 OOS 월별 결과를 접합하여 누적 수익률, 성과 지표, 가중치 이력 등을 제공한다.
+Funnel Value-Add Test를 위해 EW_All, EW_Top50 수익률도 관리한다.
 """
 from __future__ import annotations
 
@@ -19,11 +20,15 @@ class WalkForwardResult:
 
     Attributes:
         oos_returns: OOS 월간 MP 수익률 Series.
-        oos_ew_returns: OOS 월간 동일가중 수익률 Series.
+        oos_ew_returns: OOS 월간 동일가중 수익률 Series (선정 팩터).
+        oos_ew_all_returns: OOS 월간 전체 유효 팩터 동일가중 수익률.
+        oos_ew_top50_returns: OOS 월간 Top-50 후보군 동일가중 수익률.
         oos_cumulative: OOS MP 누적 수익률.
         oos_ew_cumulative: OOS EW 누적 수익률.
         weight_history: 팩터 가중치 이력 DataFrame.
         is_meta_history: Tier 2 리밸런싱 시점별 IS meta 리스트.
+        active_factors_history: Tier 2 시점별 weight>0 팩터 set 리스트.
+        oos_all_factor_returns_history: OOS 월별 전체 팩터 수익률 dict 리스트.
         rebalance_log: 리밸런싱 로그 DataFrame.
     """
 
@@ -33,11 +38,17 @@ class WalkForwardResult:
         if not results:
             self.oos_returns = pd.Series(dtype=float)
             self.oos_ew_returns = pd.Series(dtype=float)
+            self.oos_ew_all_returns = pd.Series(dtype=float)
+            self.oos_ew_top50_returns = pd.Series(dtype=float)
             self.oos_cumulative = pd.Series(dtype=float)
             self.oos_ew_cumulative = pd.Series(dtype=float)
+            self.oos_ew_all_cumulative = pd.Series(dtype=float)
+            self.oos_ew_top50_cumulative = pd.Series(dtype=float)
             self.weight_history = pd.DataFrame()
             self.is_meta_history = []
             self.oos_factor_returns_history = []
+            self.active_factors_history = []
+            self.oos_all_factor_returns_history = []
             self.rebalance_log = pd.DataFrame()
             return
 
@@ -49,6 +60,27 @@ class WalkForwardResult:
         self.oos_ew_returns = pd.Series(ew_rets, index=dates, name="oos_ew_return")
         self.oos_cumulative = (1 + self.oos_returns).cumprod()
         self.oos_ew_cumulative = (1 + self.oos_ew_returns).cumprod()
+
+        # EW_All: 전체 유효 팩터 동일가중 수익률
+        ew_all_rets = []
+        for r in results:
+            all_fr = r.get("oos_all_factor_returns", {})
+            ew_all_rets.append(np.mean(list(all_fr.values())) if all_fr else 0.0)
+        self.oos_ew_all_returns = pd.Series(ew_all_rets, index=dates, name="oos_ew_all_return")
+        self.oos_ew_all_cumulative = (1 + self.oos_ew_all_returns).cumprod()
+
+        # EW_Top50: Top-50 후보군 동일가중 수익률
+        ew_top50_rets = []
+        for r in results:
+            all_fr = r.get("oos_all_factor_returns", {})
+            top50 = r.get("top50_factors", [])
+            if all_fr and top50:
+                top50_vals = [all_fr[f] for f in top50 if f in all_fr]
+                ew_top50_rets.append(np.mean(top50_vals) if top50_vals else 0.0)
+            else:
+                ew_top50_rets.append(0.0)
+        self.oos_ew_top50_returns = pd.Series(ew_top50_rets, index=dates, name="oos_ew_top50_return")
+        self.oos_ew_top50_cumulative = (1 + self.oos_ew_top50_returns).cumprod()
 
         # 가중치 이력
         weight_records = []
@@ -62,8 +94,17 @@ class WalkForwardResult:
         # IS meta 이력 (Tier 2 리밸런싱 시점만)
         self.is_meta_history = [r["is_meta"] for r in results if r.get("is_weight_rebal") and r.get("is_meta") is not None]
 
+        # Active factors 이력 (Tier 2 리밸런싱 시점만, weight>0 팩터 set)
+        self.active_factors_history = [
+            set(r.get("active_factors", []))
+            for r in results if r.get("is_weight_rebal")
+        ]
+
         # OOS 팩터 수익률 이력
         self.oos_factor_returns_history = [r.get("oos_factor_returns", {}) for r in results]
+
+        # 전체 팩터 수익률 이력 (Percentile Tracking용)
+        self.oos_all_factor_returns_history = [r.get("oos_all_factor_returns", {}) for r in results]
 
         # 리밸런싱 로그
         log_rows = [{
@@ -78,8 +119,16 @@ class WalkForwardResult:
         return self._calc_perf(self.oos_returns, self.oos_cumulative)
 
     def calc_ew_performance(self) -> dict[str, float]:
-        """OOS EW 성과 지표를 계산한다."""
+        """OOS EW 성과 지표를 계산한다 (선정 팩터 동일가중)."""
         return self._calc_perf(self.oos_ew_returns, self.oos_ew_cumulative)
+
+    def calc_ew_all_performance(self) -> dict[str, float]:
+        """OOS EW_All 성과: 전체 유효 팩터 동일가중."""
+        return self._calc_perf(self.oos_ew_all_returns, self.oos_ew_all_cumulative)
+
+    def calc_ew_top50_performance(self) -> dict[str, float]:
+        """OOS EW_Top50 성과: Top-50 후보군 동일가중."""
+        return self._calc_perf(self.oos_ew_top50_returns, self.oos_ew_top50_cumulative)
 
     def compare_mp_vs_ew_oos(self) -> dict[str, Any]:
         """OOS 구간에서 MP vs. EW를 비교한다."""
@@ -105,8 +154,12 @@ class WalkForwardResult:
             "date": self.oos_returns.index,
             "mp_return": self.oos_returns.values,
             "ew_return": self.oos_ew_returns.values,
+            "ew_all_return": self.oos_ew_all_returns.values,
+            "ew_top50_return": self.oos_ew_top50_returns.values,
             "mp_cumulative": self.oos_cumulative.values,
             "ew_cumulative": self.oos_ew_cumulative.values,
+            "ew_all_cumulative": self.oos_ew_all_cumulative.values,
+            "ew_top50_cumulative": self.oos_ew_top50_cumulative.values,
         })
         df.to_csv(path, index=False)
         logger.info("Walk-Forward results saved to %s", path)

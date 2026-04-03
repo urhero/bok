@@ -205,10 +205,24 @@ def _run_backtest(args):
         return f"{v:.4f}" if isinstance(v, float) and not np.isnan(v) else "N/A"
 
     rows = [
-        ("과적합 진단 (1순위)", "IS-OOS Rank Correlation", _dec(oos_report["is_oos_rank_spearman"]), oos_report["rank_corr_interpretation"]),
-        ("과적합 진단 (1순위)", "Rank Corr p-value", _dec(oos_report["rank_corr_p_value"]), ""),
-        ("과적합 진단 (2순위)", "Factor Jaccard", _dec(oos_report["avg_factor_jaccard"]), oos_report["jaccard_interpretation"]),
-        ("과적합 진단 (3순위)", "Deflation Ratio", _dec(oos_report["deflation_ratio"]), oos_report["deflation_interpretation"]),
+        # 1순위: Funnel Value-Add Test
+        ("1순위 - Funnel Value-Add", "패턴", oos_report["funnel_pattern"], oos_report["funnel_interpretation"]),
+        ("1순위 - Funnel Value-Add", "EW_All CAGR", _pct(oos_report["funnel_ew_all_cagr"]), "전체 유효 팩터 동일가중"),
+        ("1순위 - Funnel Value-Add", "EW_Top50 CAGR", _pct(oos_report["funnel_ew_top50_cagr"]), "Top-50 후보군 동일가중"),
+        ("1순위 - Funnel Value-Add", "MP_Final CAGR", _pct(oos_report["funnel_mp_cagr"]), "MC 최적화 가중 포트폴리오"),
+        ("1순위 - Funnel Value-Add", "EW_All MDD", _pct(oos_report["funnel_ew_all_mdd"]), ""),
+        ("1순위 - Funnel Value-Add", "EW_Top50 MDD", _pct(oos_report["funnel_ew_top50_mdd"]), ""),
+        ("1순위 - Funnel Value-Add", "MP_Final MDD", _pct(oos_report["funnel_mp_mdd"]), ""),
+        # 2순위: OOS Percentile Tracking
+        ("2순위 - OOS Percentile", "평균 백분위", _pct(oos_report["oos_avg_percentile"]), oos_report["oos_percentile_interpretation"]),
+        # 3순위: Strict Jaccard
+        ("3순위 - Strict Jaccard", "Strict Jaccard", _dec(oos_report["strict_jaccard"]), oos_report["strict_jaccard_interpretation"]),
+        # 4순위 (보조): IS-OOS Rank Correlation
+        ("4순위(보조) - Rank Corr", "IS-OOS Rank Correlation", _dec(oos_report["is_oos_rank_spearman"]), oos_report["rank_corr_interpretation"]),
+        ("4순위(보조) - Rank Corr", "Rank Corr p-value", _dec(oos_report["rank_corr_p_value"]), ""),
+        # 5순위 (보조): Deflation Ratio
+        ("5순위(보조) - Deflation", "Deflation Ratio", _dec(oos_report["deflation_ratio"]), oos_report["deflation_interpretation"]),
+        # OOS 성과
         ("OOS 성과 - MP", "CAGR", _pct(oos_report["oos_cagr"]), ""),
         ("OOS 성과 - MP", "MDD", _pct(oos_report["oos_mdd"]), ""),
         ("OOS 성과 - MP", "Sharpe", _dec(oos_report["oos_sharpe"]), ""),
