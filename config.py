@@ -36,7 +36,7 @@ PIPELINE_PARAMS = {
     "min_sector_stocks": 10,           # 섹터-날짜 최소 종목 수 (프로덕션)
     "max_zero_return_months": 10,      # 0 수익률 허용 최대 월 수
     "backtest_start": "2017-12-31",    # 백테스트 시작일
-    "backtest_end": "2026-02-28",      # 백테스트 종료일
+    "backtest_end": "2026-03-31",      # 백테스트 종료일
     "min_downside_obs": 20,            # 하락 상관관계 최소 관측 수
     "num_sims": 1_000_000,             # 몬테카를로 시뮬레이션 횟수
     "simulation_mode": "hardcoded",    # "hardcoded": 사전 결정 가중치, "simulation": 몬테카를로 탐색
