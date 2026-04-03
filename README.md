@@ -151,6 +151,37 @@
 
 ---
 
+## [B] Walk-Forward 백테스트 (OOS 과적합 진단)
+
+### 개요
+기존 파이프라인([1]~[7])을 수정하지 않고, 외부에서 감싸는 방식으로 Expanding Window 백테스트를 수행한다. IS 데이터만으로 팩터 선정과 가중치를 결정하고 OOS 1개월 수익률을 기록하는 "의사 실전" 시뮬레이션이다.
+
+### 계층적 리밸런싱 (Tiered Rebalancing)
+| Tier | 주기 | 대상 | 설명 |
+|------|------|------|------|
+| Tier 1 | 6개월 | [2]~[3] | 규칙 학습 + 전기간 팩터 수익률 사전 계산 |
+| Tier 2 | 3개월 | [4]~[6] | 팩터 선정 + 가중치 최적화 (IS 슬라이스만) |
+| Tier 3 | 매월 | OOS 적용 | precomputed_ret_df에서 조회만 (밀리초) |
+
+### 과적합 진단 지표 (우선순위 순)
+| 순위 | 지표 | 설명 | 해석 |
+|------|------|------|------|
+| 1순위 | IS-OOS Rank Correlation | IS CAGR 순위 vs OOS 실현 수익률 순위 Spearman | >0.3 양호, ≈0 무관, <0 과적합 |
+| 2순위 | Factor Jaccard | 연속 Tier 2 리밸런싱 간 팩터셋 교집합/합집합 | >0.6 안정, 0.4~0.6 보통, <0.4 불안정 |
+| 3순위 | Deflation Ratio | OOS CAGR / IS CAGR | >0.6 양호, 0.3~0.6 주의, <0.3 심각 |
+
+### 벤치마크 비교 (Step 0)
+`--benchmark` 옵션으로 simulation 모드 MP vs. 동일가중(1/N) 비교를 수행한다. IS 전체 기간의 Sanity Check 용도.
+
+### 핵심 모듈
+- `service/backtest/walk_forward_engine.py`: WalkForwardEngine 클래스 (오케스트레이터)
+- `service/backtest/data_slicer.py`: IS/OOS 날짜 분할
+- `service/backtest/result_stitcher.py`: WalkForwardResult 컨테이너
+- `service/backtest/overfit_diagnostics.py`: 과적합 진단 3개 지표
+- `service/pipeline/benchmark_comparison.py`: MP vs. EW 벤치마크 비교
+
+---
+
 ## ✅ 전체 프로세스 요약
 
 | 단계 | 목적 | 핵심 함수 |
@@ -162,6 +193,7 @@
 | `[5]` 팩터 믹스 | 스타일 대표성 + 하락 상관관계 고려 | `find_optimal_mix` |
 | `[6]` 비중 결정 | 스타일 캡 하 최적화 | `simulate_constrained_weights` |
 | `[7]` MP 구성 + 출력 | 종목별 최종 비중, CSV 저장 | `_construct_and_export` |
+| `[B]` Walk-Forward 백테스트 | OOS 과적합 진단 | `WalkForwardEngine.run` |
 
 ---
 
@@ -178,13 +210,20 @@ service/
 │   ├── download_factors.py    # SQL → 연도별 parquet 다운로드 + 검증
 │   └── parquet_io.py          # 연도별 분할 저장/로드/검증 유틸리티
 │
-└── pipeline/
-    ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
-    ├── factor_analysis.py      # calculate_factor_stats, calculate_factor_stats_batch, filter_and_label_factors
-    ├── correlation.py          # calculate_downside_correlation
-    ├── optimization.py         # find_optimal_mix, simulate_constrained_weights (hardcoded/simulation)
-    ├── weight_construction.py  # construct_long_short_df, calculate_vectorized_return
-    └── pipeline_utils.py       # prepend_start_zero
+├── pipeline/
+│   ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
+│   ├── factor_analysis.py      # calculate_factor_stats, calculate_factor_stats_batch, filter_and_label_factors
+│   ├── correlation.py          # calculate_downside_correlation
+│   ├── optimization.py         # find_optimal_mix, simulate_constrained_weights (hardcoded/simulation)
+│   ├── weight_construction.py  # construct_long_short_df, calculate_vectorized_return
+│   ├── pipeline_utils.py       # prepend_start_zero
+│   └── benchmark_comparison.py # MP vs. 동일가중(1/N) 벤치마크 비교
+│
+└── backtest/
+    ├── walk_forward_engine.py  # Walk-Forward (Expanding Window) 오케스트레이터
+    ├── data_slicer.py          # 날짜 기반 IS/OOS 데이터 분할
+    ├── result_stitcher.py      # OOS 결과 접합 + 성과 계산 (WalkForwardResult)
+    └── overfit_diagnostics.py  # 과적합 진단 (Rank Corr, Jaccard, Deflation Ratio)
 ```
 
 ### Pipeline 사용법
@@ -199,6 +238,99 @@ pipeline.meta           # 팩터 성과/랭크 테이블
 pipeline.weights        # 최적 가중치
 pipeline.return_matrix  # 월간 수익률 행렬
 ```
+
+### Walk-Forward 백테스트 사용법
+```bash
+# 기본 실행 (Expanding Window, IS 36개월, OOS 매월)
+python main.py backtest 2017-12-31 2026-03-31
+
+# 파라미터 조정
+python main.py backtest 2017-12-31 2026-03-31 \
+  --min-is-months 36 \
+  --factor-rebal-months 6 \
+  --weight-rebal-months 3 \
+  --num-sims 100000 \
+  --top-factors 50
+
+# 테스트 모드
+python main.py backtest test test_data.csv --min-is-months 4
+
+# 벤치마크 비교 (MP vs. 동일가중)
+python main.py mp 2017-12-31 2026-03-31 --benchmark
+```
+
+```python
+# 프로그래밍 방식
+from service.backtest.walk_forward_engine import WalkForwardEngine
+
+engine = WalkForwardEngine(min_is_months=36, factor_rebal_months=6, weight_rebal_months=3)
+result = engine.run("2017-12-31", "2026-03-31")
+
+# OOS 성과 확인
+result.calc_performance()           # CAGR, MDD, Sharpe, Calmar
+result.compare_mp_vs_ew_oos()       # MP vs. EW 비교
+result.to_csv("output/wf.csv")      # 결과 저장
+```
+
+### 실제 실행 예시 및 결과 (2026-04-03 기준)
+
+#### 1. 실제 데이터 백테스트 실행
+```bash
+python main.py backtest 2017-12-31 2026-03-31 \
+  --min-is-months 36 \
+  --factor-rebal-months 6 \
+  --weight-rebal-months 3 \
+  --num-sims 100000
+# → 651초(~11분), OOS 64개월 (2020-12 ~ 2026-03)
+```
+
+**IS/OOS 구간:**
+```
+전체 데이터: 2017-12 ~ 2026-03 (100개월)
+IS 시작: 항상 2017-12 고정 (Expanding Window)
+IS 최소: 36개월 (2017-12 ~ 2020-11)
+OOS 구간: 2020-12 ~ 2026-03 (64개월, 매월 기록)
+
+매월 IS가 1개월씩 확장:
+  OOS#1  → IS 36개월 (2017-12 ~ 2020-11) → OOS 2020-12
+  OOS#2  → IS 37개월 (2017-12 ~ 2020-12) → OOS 2021-01
+  ...
+  OOS#64 → IS 99개월 (2017-12 ~ 2026-02) → OOS 2026-03
+
+Tier 1 (규칙 재학습): 11회 (6개월마다)
+Tier 2 (가중치 재최적화): 22회 (3개월마다)
+Tier 3 (OOS 수익률 조회): 64회 (매월)
+```
+
+**OOS 성과 결과:**
+```
+              MP (최적화)    EW (동일가중)
+CAGR:         +2.34%         +0.89%
+Excess CAGR:  +1.45%         -
+MDD:          -18.94%        -21.88%
+Sharpe:        0.31           0.14
+Win Rate:      54.69%         -
+```
+
+**과적합 진단 결과:**
+```
+1순위  IS-OOS Rank Corr = 0.04  ≈ 0  (IS 순위와 OOS 순위 무관)
+2순위  Factor Jaccard   = 0.77  > 0.6 (팩터 선정 안정적)
+3순위  Deflation Ratio  = 1.00  > 0.6 (양호, 참고용)
+```
+
+#### 2. 검증: 기존 mp 파이프라인 영향 없음 확인
+```bash
+# 백테스트 전후 mp test 실행 → 동일 결과 확인
+python main.py mp test test_data.csv
+
+# simulation 모드가 덮어쓴 hardcoded_weights.csv 복원
+git checkout -- data/hardcoded_weights.csv
+```
+
+**산출 파일:**
+- `output/walk_forward_results.csv` — OOS 월별 MP/EW 수익률 + 누적 수익률
+- `output/overfit_diagnostics.csv` — 과적합 진단 지표 요약
 
 ---
 

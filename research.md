@@ -417,15 +417,22 @@ main.py
   │    ├→ db/factor_query.py
   │    │    └→ config.py (PARAM)
   │    └→ service/download/parquet_io.py (save/load/validate)
-  └→ service/pipeline/model_portfolio.py
-       ├→ config.py (PARAM)
-       ├→ service/download/parquet_io.py (load_factor_parquet)
-       ├→ service/pipeline/factor_analysis.py
-       │    └→ service/pipeline/pipeline_utils.py (prepend_start_zero)
-       ├→ service/pipeline/correlation.py
-       ├→ service/pipeline/optimization.py
-       ├→ service/pipeline/pipeline_utils.py (prepend_start_zero만)
-       └→ service/pipeline/weight_construction.py
+  ├→ service/pipeline/model_portfolio.py
+  │    ├→ config.py (PARAM)
+  │    ├→ service/download/parquet_io.py (load_factor_parquet)
+  │    ├→ service/pipeline/factor_analysis.py
+  │    │    └→ service/pipeline/pipeline_utils.py (prepend_start_zero)
+  │    ├→ service/pipeline/correlation.py
+  │    ├→ service/pipeline/optimization.py
+  │    ├→ service/pipeline/pipeline_utils.py (prepend_start_zero만)
+  │    ├→ service/pipeline/weight_construction.py
+  │    └→ service/pipeline/benchmark_comparison.py (--benchmark 옵션)
+  └→ service/backtest/ (backtest 커맨드)
+       ├→ walk_forward_engine.py (WalkForwardEngine)
+       │    ├→ data_slicer.py
+       │    ├→ result_stitcher.py (WalkForwardResult)
+       │    └→ 기존 pipeline 모듈 순수 함수 직접 호출
+       └→ overfit_diagnostics.py
 ```
 
 ### 3.2 모듈별 상세 의존성
@@ -439,6 +446,11 @@ main.py
 | `optimization.py` | (없음) | - | `model_portfolio._optimize_mixes()`, `model_portfolio.run()` [simulate_constrained_weights] |
 | `weight_construction.py` | (없음) | - | `model_portfolio.aggregate_factor_returns()` |
 | `pipeline_utils.py` | (없음) | - | `factor_analysis.calculate_factor_stats()` |
+| `benchmark_comparison.py` | scipy.stats | `ttest_1samp()` | `main.py` (`--benchmark` 옵션) |
+| `walk_forward_engine.py` | factor_analysis, correlation, optimization, model_portfolio, data_slicer, result_stitcher | 기존 pipeline 순수 함수 | `main.py` (`backtest` 커맨드) |
+| `data_slicer.py` | (없음) | - | `walk_forward_engine.py` |
+| `result_stitcher.py` | (없음) | - | `walk_forward_engine.py` |
+| `overfit_diagnostics.py` | scipy.stats | `spearmanr()` | `main.py` (`backtest` 커맨드) |
 
 ### 3.3 외부 의존성
 
@@ -694,3 +706,122 @@ room = max(cap - style_weight, 0)  (for under-allocated styles)
 redistributed = excess × (room / total_room)
 fitted = shrunk + redistributed
 ```
+
+---
+
+## 6. Walk-Forward 백테스트 레이어
+
+### 6.1 설계 원칙
+
+기존 파이프라인([1]~[7])의 내부 코드를 **한 줄도 수정하지 않고**, 외부에서 감싸는(wrapper) 방식으로 구현한다.
+
+- **Factor-Level Backtest**: 종목(stock-level) MP까지 내려가지 않고, 팩터 수익률(net-of-cost) × 팩터 가중치로 포트폴리오 수익률을 산출
+- **거래비용 이중 적용 금지**: 기존 `calculate_vectorized_return()`이 팩터 내부 종목 리밸런싱에서 30bp를 이미 차감. 팩터 가중치 변경에 대한 별도 거래비용은 적용하지 않음
+- **simulation 모드 통일**: 백테스트 전체에서 simulation 모드만 사용. hardcoded 모드는 프로덕션 전용
+
+### 6.2 계층적 리밸런싱 (Tiered Rebalancing)
+
+```
+Tier 1 (6개월마다): 규칙 학습 + 팩터 수익률 사전 계산
+  - IS 데이터로 [2]~[3] 수행 → rule_bundle 생성
+  - 전체 데이터에 규칙 적용(transform) → aggregate_factor_returns 1회 실행
+  - 산출물: precomputed_ret_df (전기간 × 전팩터 수익률 행렬)
+
+Tier 2 (3개월마다): 팩터 선정 + 가중치 최적화
+  - precomputed_ret_df에서 IS 구간만 슬라이스 (aggregate 재실행 불필요)
+  - CAGR → 상위 팩터 선정 → [5]~[6] 실행
+  - 산출물: cached_weights, cached_meta
+
+Tier 3 (매월): OOS 수익률 조회
+  - precomputed_ret_df.loc[oos_date, selected_factors] (밀리초)
+  - portfolio_return = sum(weight[f] × oos_factor_return[f])
+```
+
+### 6.3 과적합 위험 지점
+
+| 단계 | 과적합 위험 | 이유 |
+|------|------------|------|
+| [4] 상위 50 팩터 선정 | **높음** | 전체 기간 CAGR 순위로 선정. "미래를 보고 고른 팩터" |
+| [5] 2-팩터 믹스 그리드 서치 | **높음** | 전체 기간 수익률로 101포인트 탐색. IS 최적화 |
+| [6] MC 시뮬레이션 | 중간 | 스타일 캡 25% + Dirichlet 제약으로 자유도 낮음 |
+| [2] 5분위 분석 | 낮음 | 횡단면 정렬이라 시계열 과적합 아님 |
+
+### 6.4 진단 지표
+
+1. **IS-OOS Rank Correlation** (1순위): IS CAGR 순위와 OOS 실현 수익률 순위의 Spearman 상관. 환경 편향에 덜 민감
+2. **Factor Jaccard** (2순위): 연속 Tier 2 리밸런싱 간 팩터셋 교집합/합집합. 모델 안정성 측정
+3. **Deflation Ratio** (3순위, 보조): OOS CAGR / IS CAGR. OOS 기간이 짧으면 단독 판단 금지
+
+### 6.5 방어 로직
+
+- **MIN_REQUIRED_FACTORS = 5**: 유효 팩터가 5개 미만이면 Tier 2 스킵, 이전 가중치 유지
+- **Style cap fallback**: MC feasibility 실패 시 style_cap을 0.25 → 0.40 → 1.00으로 단계적 완화
+- **EMA 가중치 블렌딩**: `turnover_smoothing_alpha` (0~1)로 가중치 변화 스무딩. 과적합 진단 시 1.0(스무딩 없음) 사용
+
+### 6.6 CLI 커맨드
+
+```
+python main.py backtest <start> <end> [옵션]
+  --min-is-months        최소 IS 기간 (기본: 36)
+  --factor-rebal-months  Tier 1 리밸런싱 주기 (기본: 6)
+  --weight-rebal-months  Tier 2 리밸런싱 주기 (기본: 3)
+  --top-factors          상위 팩터 수 (기본: 50)
+  --num-sims             MC 시뮬레이션 횟수 (기본: 1,000,000)
+  --turnover-alpha       EMA 블렌딩 비율 (기본: 1.0)
+
+python main.py mp <start> <end> --benchmark
+  → simulation 모드 MP vs. 동일가중(1/N) 비교 리포트
+```
+
+### 6.7 실제 실행 결과 (2026-04-03 기준)
+
+**실행 커맨드:**
+```bash
+python main.py backtest 2017-12-31 2026-03-31 \
+  --min-is-months 36 --factor-rebal-months 6 --weight-rebal-months 3 --num-sims 100000
+```
+
+**IS/OOS 구간 상세:**
+```
+전체 데이터: 2017-12 ~ 2026-03 (100개월)
+IS 고정 시작: 2017-12 (Expanding Window — 시작점 고정, 끝점만 확장)
+IS 최소 길이: 36개월 (2017-12 ~ 2020-11)
+OOS 구간: 2020-12 ~ 2026-03 (64개월, 매월 1개월씩 기록)
+
+  OOS#1  → IS 36개월 (2017-12 ~ 2020-11) → OOS 2020-12  [Tier1+2 재학습]
+  OOS#2  → IS 37개월 (2017-12 ~ 2020-12) → OOS 2021-01  [조회만]
+  OOS#3  → IS 38개월 (2017-12 ~ 2021-01) → OOS 2021-02  [조회만]
+  OOS#4  → IS 39개월 (2017-12 ~ 2021-02) → OOS 2021-03  [Tier2 재최적화]
+  ...
+  OOS#7  → IS 42개월 (2017-12 ~ 2021-05) → OOS 2021-06  [Tier1+2 재학습]
+  ...
+  OOS#64 → IS 99개월 (2017-12 ~ 2026-02) → OOS 2026-03  [Tier2 재최적화]
+
+Tier 1 실행: 11회 (6개월마다, 규칙 재학습 + 팩터 수익률 사전 계산)
+Tier 2 실행: 22회 (3개월마다, 팩터 선정 + 가중치 재최적화)
+Tier 3 실행: 64회 (매월, precomputed_ret_df 조회)
+총 소요 시간: 651초 (~11분)
+```
+
+**OOS 성과 비교:**
+```
+              MP (최적화)    EW (동일가중)
+CAGR:         +2.34%         +0.89%
+Excess CAGR:  +1.45%         -
+MDD:          -18.94%        -21.88%
+Sharpe:        0.31           0.14
+Win Rate:      54.69%         -   (64개월 중 35개월 MP 우위)
+```
+
+**과적합 진단:**
+```
+1순위  IS-OOS Rank Corr = 0.04  ≈ 0   → IS 팩터 CAGR 순위의 OOS 예측력은 제한적
+2순위  Factor Jaccard   = 0.77  > 0.6  → 팩터 선정은 안정적 (리밸런싱마다 대부분 유지)
+3순위  Deflation Ratio  = 1.00  > 0.6  → IS 성과 대비 OOS 성과 유지 (참고용)
+```
+
+**산출 파일:**
+- `output/walk_forward_results.csv` — OOS 64개월 월별 MP/EW 수익률 + 누적 수익률
+- `output/overfit_diagnostics.csv` — 과적합 진단 3개 지표 요약
+
+**주의:** backtest는 내부적으로 simulation 모드를 사용하여 `data/hardcoded_weights.csv`를 덮어쓴다. 실행 후 `git checkout -- data/hardcoded_weights.csv`로 프로덕션 가중치를 반드시 복원할 것.
