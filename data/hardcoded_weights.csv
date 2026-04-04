@@ -1,6 +1,8 @@
 factor,raw_weight,styleName
-qual_factor_1,0.39302582,Quality
-mom_factor_2,0.32579854,Momentum
-val_factor_2,0.19282356,Valuation
-val_factor_1,0.05625586,Valuation
-mom_factor_1,0.032096226,Momentum
+SalesAcc,0.26324284,Historical Growth
+RevMagFY1C,0.26171172,Analyst Expectations
+FwdEPC,0.21799916,Valuation
+PM6M,0.15885353,Price Momentum
+LTDE,0.044633407,Capital Efficiency
+AnnVol1M,0.0342702,Volatility
+SalesToInvCap,0.019289095,Earnings Quality
