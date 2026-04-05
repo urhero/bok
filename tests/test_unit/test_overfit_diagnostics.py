@@ -30,12 +30,15 @@ def _make_result(
 ):
     """간단한 WalkForwardResult 생성 헬퍼.
 
+    결정적 테스트를 위해 시드를 고정한다.
+
     Args:
         all_factor_returns: 전체 팩터 수익률 dict (EW_All/Percentile용).
             None이면 기본값 사용.
         top50_factors: Top-50 팩터 리스트 (EW_Top50용).
         active_factors: weight>0 팩터 리스트 (Strict Jaccard용).
     """
+    np.random.seed(42)
     dates = pd.date_range("2021-01-31", periods=n_months, freq="ME")
     default_all_fr = {
         "F1": 0.012, "F2": 0.008, "F3": 0.005,
@@ -91,21 +94,27 @@ class TestFunnelValueAdd:
         assert funnel["mp_cagr"] > funnel["ew_top50_cagr"]
 
     def test_mc_overfit_pattern(self):
-        """B > C > A → MC_OVERFIT 패턴."""
-        # Top50 EW가 MP보다 높은 수익률
+        """B > C > A → MC_OVERFIT 패턴.
+
+        조건: EW_All(A) < EW_Top50(B) > MP_Final(C)
+        - Top50에 고수익 팩터 배치 → EW_Top50 높음
+        - 전체에 저수익 팩터 포함 → EW_All 낮음
+        - MP는 Top50 EW보다 낮게 설정
+        """
         result = _make_result(
-            n_months=12, mp_ret=0.005, ew_ret=0.01,
+            n_months=12, mp_ret=0.003, ew_ret=0.01,
             all_factor_returns={
+                # Top50: 평균 +1.02%
                 "F1": 0.015, "F2": 0.012, "F3": 0.010,
                 "F4": 0.008, "F5": 0.006,
-                "F6": -0.010, "F7": -0.015, "F8": -0.020,
-                "F9": -0.008, "F10": -0.012,
+                # 나머지: 전체 평균을 끌어내림
+                "F6": -0.020, "F7": -0.025, "F8": -0.030,
+                "F9": -0.018, "F10": -0.022,
             },
             top50_factors=["F1", "F2", "F3", "F4", "F5"],
         )
         funnel = calc_funnel_value_add(result)
-        # EW_Top50이 MP보다 높으면 MC_OVERFIT 또는 FILTER_OVERFIT
-        assert funnel["pattern"] in ("MC_OVERFIT", "FILTER_OVERFIT")
+        assert funnel["pattern"] == "MC_OVERFIT"
 
     def test_filter_overfit_pattern(self):
         """A > B → FILTER_OVERFIT 패턴."""
@@ -130,6 +139,50 @@ class TestFunnelValueAdd:
         assert "ew_top50_cagr" in funnel
         assert "mp_cagr" in funnel
         assert "interpretation" in funnel
+
+    def test_insufficient_data(self):
+        """OOS 데이터 0건 → INSUFFICIENT_DATA 패턴."""
+        result = WalkForwardResult([])
+        funnel = calc_funnel_value_add(result)
+        assert funnel["pattern"] == "INSUFFICIENT_DATA"
+        assert "부족" in funnel["interpretation"]
+
+
+# ── EW_All / EW_Top50 계산 로직 검증 ──
+
+
+class TestEWCalculationLogic:
+    def test_ew_all_is_mean_of_all_factors(self):
+        """EW_All 수익률은 전체 팩터의 단순 평균이어야 한다."""
+        all_fr = {"F1": 0.10, "F2": 0.20, "F3": 0.30}
+        result = _make_result(n_months=3, all_factor_returns=all_fr, top50_factors=["F1"])
+        # 각 월의 EW_All = mean(0.10, 0.20, 0.30) = 0.20
+        for val in result.oos_ew_all_returns:
+            assert abs(val - 0.20) < 1e-10
+
+    def test_ew_top50_is_mean_of_top50_subset(self):
+        """EW_Top50 수익률은 Top-50 팩터만의 평균이어야 한다."""
+        all_fr = {"F1": 0.10, "F2": 0.20, "F3": 0.30, "F4": -0.50}
+        result = _make_result(
+            n_months=3,
+            all_factor_returns=all_fr,
+            top50_factors=["F1", "F2"],
+        )
+        # 각 월의 EW_Top50 = mean(0.10, 0.20) = 0.15
+        for val in result.oos_ew_top50_returns:
+            assert abs(val - 0.15) < 1e-10
+
+    def test_ew_top50_excludes_non_top50(self):
+        """EW_Top50은 Top-50에 없는 팩터를 제외해야 한다."""
+        all_fr = {"F1": 0.10, "F2": -0.50}
+        result = _make_result(
+            n_months=3,
+            all_factor_returns=all_fr,
+            top50_factors=["F1"],
+        )
+        # EW_Top50 = mean(0.10) = 0.10 (F2 제외)
+        for val in result.oos_ew_top50_returns:
+            assert abs(val - 0.10) < 1e-10
 
 
 # ── 2순위: OOS Percentile Tracking ──

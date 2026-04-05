@@ -41,6 +41,16 @@ def calc_funnel_value_add(walk_forward_result: WalkForwardResult) -> dict[str, A
       B > C > A → MC 과적합 (최적화가 오히려 수익 깎음)
       A > B     → 1차 필터 과적합 (CAGR 기준 필터링 자체가 과거 우연)
     """
+    # OOS 데이터가 없으면 판별 불가
+    if len(walk_forward_result.oos_returns) == 0:
+        return {
+            "pattern": "INSUFFICIENT_DATA",
+            "ew_all_cagr": 0.0, "ew_top50_cagr": 0.0, "mp_cagr": 0.0,
+            "ew_all_mdd": 0.0, "ew_top50_mdd": 0.0, "mp_mdd": 0.0,
+            "ew_all_sharpe": 0.0, "ew_top50_sharpe": 0.0, "mp_sharpe": 0.0,
+            "interpretation": "OOS 데이터 부족 - Funnel Value-Add 판별 불가",
+        }
+
     mp_perf = walk_forward_result.calc_performance()
     ew_all_perf = walk_forward_result.calc_ew_all_performance()
     ew_top50_perf = walk_forward_result.calc_ew_top50_performance()
@@ -128,6 +138,13 @@ def calc_oos_percentile_tracking(walk_forward_result: WalkForwardResult) -> dict
             "period_percentiles": [],
             "interpretation": "Tier 2 리밸런싱 없음 - Percentile Tracking 계산 불가",
         }
+
+    # 방어적 검증: active_factors_history와 weight_rebal_indices 길이 일치 확인
+    if len(active_history) != len(weight_rebal_indices):
+        logger.warning(
+            "active_factors_history(%d) != weight_rebal_indices(%d) - 인덱스 불일치 가능",
+            len(active_history), len(weight_rebal_indices),
+        )
 
     period_percentiles = []
     active_idx = 0
