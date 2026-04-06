@@ -871,7 +871,7 @@ Sharpe:        0.05          -0.16
 Win Rate:      56.25%         -   (64개월 중 36개월 MP 우위)
 ```
 
-**과적합 진단 (3단계 테스트, 2026-04-06 실행, OOS look-ahead bias 수정 후):**
+**과적합 진단 (3단계 테스트, 2026-04-06 실행):**
 ```
 1순위  Funnel Value-Add = MC_OVERFIT
          EW_All CAGR   = -0.43%   (전체 유효 팩터 동일가중)
@@ -879,10 +879,10 @@ Win Rate:      56.25%         -   (64개월 중 36개월 MP 우위)
          MP_Final CAGR = +0.14%   (MC 최적화 가중)
        -> MC 과적합: Top-50 필터링은 유효하나, MC 최적화가 IS를 외워서 OOS 수익을 깎음
 
-2순위  OOS Percentile   = 50.13% (상위 50%) -> 보통 (랜덤과 차이 미미)
+2순위  OOS Percentile   = 50.34% (상위 50%) -> 보통 (랜덤과 차이 미미)
 3순위  Strict Jaccard   = 0.42   (0.3~0.5)  -> 보통
-4순위  IS-OOS Rank Corr = 0.01   ~= 0       -> IS 순위와 OOS 순위 무관 (보조)
-5순위  Deflation Ratio  = 1.00   > 0.6      -> 양호 (보조)
+4순위  IS-OOS Rank Corr = 0.03   ~= 0       -> IS 순위와 OOS 순위 무관 (보조)
+5순위  Deflation Ratio  = 0.01   < 0.3      -> 심각 (IS CAGR 10.4% 대비 OOS 0.14%)
 ```
 
 **산출 파일:**

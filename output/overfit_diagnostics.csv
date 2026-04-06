@@ -6,11 +6,11 @@
 1순위 - Funnel Value-Add,EW_All MDD,-8.9824%,
 1순위 - Funnel Value-Add,EW_Top50 MDD,-15.5662%,
 1순위 - Funnel Value-Add,MP_Final MDD,-14.7172%,
-2순위 - OOS Percentile,평균 백분위,50.1268%,평균 백분위 = 50.13% (상위 50%) -> 보통 (랜덤과 차이 미미)
+2순위 - OOS Percentile,평균 백분위,50.3442%,평균 백분위 = 50.34% (상위 50%) -> 보통 (랜덤과 차이 미미)
 3순위 - Strict Jaccard,Strict Jaccard,0.4214,Strict Jaccard = 0.42 (0.3~0.5) -> 보통
-4순위(보조) - Rank Corr,IS-OOS Rank Correlation,0.0077,Rank Corr = 0.01 ~= 0 -> IS 순위와 OOS 순위 무관
-4순위(보조) - Rank Corr,Rank Corr p-value,0.5044,
-5순위(보조) - Deflation,Deflation Ratio,1.0000,Deflation Ratio = 1.00 > 0.6 -> 양호 (참고용)
+4순위(보조) - Rank Corr,IS-OOS Rank Correlation,0.0250,Rank Corr = 0.03 ~= 0 -> IS 순위와 OOS 순위 무관
+4순위(보조) - Rank Corr,Rank Corr p-value,0.5255,
+5순위(보조) - Deflation,Deflation Ratio,0.0134,Deflation Ratio = 0.01 < 0.3 -> 심각 (참고용)
 OOS 성과 - MP,CAGR,0.1391%,
 OOS 성과 - MP,MDD,-14.7172%,
 OOS 성과 - MP,Sharpe,0.0544,

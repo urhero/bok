@@ -341,15 +341,15 @@ Sharpe:        0.05          -0.16
 Win Rate:      56.25%         -
 ```
 
-**과적합 진단 결과 (3단계 테스트, 2026-04-06, OOS bias 수정 후):**
+**과적합 진단 결과 (3단계 테스트, 2026-04-06):**
 ```
 1순위  Funnel Value-Add = MC_OVERFIT
          EW_All -0.43% < EW_Top50 +0.25% > MP +0.14%
          (MC 과적합: Top-50 필터링은 유효하나 MC 최적화가 수익을 깎음)
-2순위  OOS Percentile   = 50.13% (상위 50%) -> 보통
+2순위  OOS Percentile   = 50.34% (상위 50%) -> 보통
 3순위  Strict Jaccard   = 0.42   (0.3~0.5)  -> 보통
-4순위  IS-OOS Rank Corr = 0.01   ~= 0       -> IS/OOS 무관 (보조)
-5순위  Deflation Ratio  = 1.00   > 0.6      -> 양호 (보조)
+4순위  IS-OOS Rank Corr = 0.03   ~= 0       -> IS/OOS 무관 (보조)
+5순위  Deflation Ratio  = 0.01   < 0.3      -> 심각 (보조)
 ```
 
 #### 2. 검증: 기존 mp 파이프라인 영향 없음 확인

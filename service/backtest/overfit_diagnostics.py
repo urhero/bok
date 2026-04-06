@@ -166,19 +166,18 @@ def calc_oos_percentile_tracking(walk_forward_result: WalkForwardResult) -> dict
         if not oos_slice:
             continue
 
-        # 구간 내 팩터별 누적 수익률
+        # 구간 내 팩터별 누적 수익률 (기하 복리)
         cum_returns: dict[str, float] = {}
         for month_dict in oos_slice:
             for f, r in month_dict.items():
-                cum_returns[f] = cum_returns.get(f, 0.0) + r
+                cum_returns[f] = (1 + cum_returns.get(f, 0.0)) * (1 + r) - 1
 
         if len(cum_returns) < 3:
             continue
 
-        # 전체 팩터 순위 (높은 수익률 = 낮은 백분위 = 좋음)
-        all_factors_sorted = sorted(cum_returns.keys(), key=lambda f: cum_returns[f], reverse=True)
-        n_total = len(all_factors_sorted)
-        rank_map = {f: (i + 1) / n_total for i, f in enumerate(all_factors_sorted)}
+        # 전체 팩터 순위 (높은 수익률 = 낮은 백분위 = 좋음, 동률 평균 처리)
+        cum_series = pd.Series(cum_returns)
+        rank_map = (cum_series.rank(ascending=False, method="average") / len(cum_series)).to_dict()
 
         # 선정 팩터의 평균 백분위
         active_percentiles = [rank_map[f] for f in active_set if f in rank_map]
@@ -297,7 +296,7 @@ def calc_is_oos_rank_correlation(walk_forward_result: WalkForwardResult) -> dict
     weight_rebal_indices = [i for i, (_, row) in enumerate(rebal_log.iterrows()) if row.get("is_weight_rebal", False)]
 
     meta_idx = 0
-    for rebal_i in weight_rebal_indices:
+    for k, rebal_i in enumerate(weight_rebal_indices):
         if meta_idx >= len(meta_history):
             break
 
@@ -311,17 +310,17 @@ def calc_is_oos_rank_correlation(walk_forward_result: WalkForwardResult) -> dict
         is_cagr = meta["cagr"].tolist()
 
         # OOS 기간: 현재 리밸런싱 ~ 다음 리밸런싱 (또는 끝)
-        next_rebal_i = weight_rebal_indices[weight_rebal_indices.index(rebal_i) + 1] if rebal_i != weight_rebal_indices[-1] else len(oos_history)
+        next_rebal_i = weight_rebal_indices[k + 1] if k + 1 < len(weight_rebal_indices) else len(oos_history)
         oos_slice = oos_history[rebal_i:next_rebal_i]
 
         if not oos_slice:
             continue
 
-        # OOS 팩터별 누적 수익률
+        # OOS 팩터별 누적 수익률 (기하 복리)
         oos_returns_by_factor: dict[str, float] = {}
         for oos_dict in oos_slice:
             for f, r in oos_dict.items():
-                oos_returns_by_factor[f] = oos_returns_by_factor.get(f, 0.0) + r
+                oos_returns_by_factor[f] = (1 + oos_returns_by_factor.get(f, 0.0)) * (1 + r) - 1
 
         # IS와 OOS에 공통으로 존재하는 팩터만
         common_factors = [f for f in is_factors if f in oos_returns_by_factor]

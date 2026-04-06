@@ -187,9 +187,8 @@ def _run_backtest(args):
     # 결과 저장
     result.to_csv(str(OUTPUT_DIR / "walk_forward_results.csv"))
 
-    # 과적합 진단 (full_period_cagr은 전체 기간 simulation 모드 CAGR)
-    mp_perf = result.calc_performance()
-    oos_report = generate_overfit_report(result, full_period_cagr=mp_perf["cagr"])
+    # 과적합 진단 (full_period_cagr은 마지막 Tier 2 시점의 IS MP CAGR)
+    oos_report = generate_overfit_report(result, full_period_cagr=result.is_full_period_cagr)
     print_overfit_report(oos_report)
 
     # 진단 결과 CSV 저장 (세로 형태: Category / Metric / Value / Interpretation)

@@ -364,6 +364,7 @@ class WalkForwardEngine:
         cached_meta: pd.DataFrame | None = None
         cached_selected_factors: list[str] | None = None
         cached_top50_factors: list[str] | None = None
+        cached_is_mp_cagr: float = 0.0  # IS 구간 MP CAGR (Deflation Ratio용)
 
         results: list[dict[str, Any]] = []
 
@@ -477,6 +478,16 @@ class WalkForwardEngine:
                             raw_new_weights = None
 
                         if raw_new_weights is not None:
+                            # IS 구간 MP CAGR 계산 (Deflation Ratio용)
+                            is_months = len(ret_df_selected) - 1
+                            if is_months > 0:
+                                is_weighted_ret = sum(
+                                    ret_df_selected[f] * raw_new_weights.get(f, 0)
+                                    for f in ret_df_selected.columns if f in raw_new_weights
+                                )
+                                is_cum = (1 + is_weighted_ret).cumprod().iloc[-1]
+                                cached_is_mp_cagr = is_cum ** (12 / is_months) - 1
+
                             # EMA 가중치 블렌딩
                             if self.turnover_smoothing_alpha >= 1.0 or cached_weights is None:
                                 cached_weights = raw_new_weights
@@ -530,6 +541,7 @@ class WalkForwardEngine:
                 "oos_all_factor_returns": oos_all_factor_returns.to_dict(),
                 "top50_factors": list(cached_top50_factors) if cached_top50_factors else [],
                 "active_factors": [f for f, w in cached_weights.items() if w > 0],
+                "is_mp_cagr": cached_is_mp_cagr,
             })
 
         elapsed = time.time() - t0
