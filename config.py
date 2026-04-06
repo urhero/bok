@@ -41,4 +41,5 @@ PIPELINE_PARAMS = {
     "num_sims": 1_000_000,             # 몬테카를로 시뮬레이션 횟수
     "simulation_mode": "hardcoded",    # "hardcoded": 사전 결정 가중치, "simulation": 몬테카를로 탐색, "equal_weight": 동일가중
     "skip_factor_mix": False,          # True면 [5] 2-팩터 믹스 스킵
+    "factor_ranking_method": "cagr",   # "cagr" 또는 "tstat" (t-통계량 기반 랭킹)
 }

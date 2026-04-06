@@ -438,14 +438,25 @@ class WalkForwardEngine:
                         if cached_weights is None:
                             continue
                     else:
-                        # CAGR 계산 → 상위 팩터 선정
+                        # 팩터 랭킹 계산
                         months = len(ret_df_is) - 1
                         cum = (1 + ret_df_is).cumprod().iloc[-1]
                         cagr_series = cum ** (12 / months) - 1
 
+                        ranking_method = pp.get("factor_ranking_method", "cagr")
+
+                        if ranking_method == "tstat":
+                            # t-stat: mean / (std / sqrt(N)) -- 노이즈 팩터 페널티
+                            monthly_rets = ret_df_is.iloc[1:]  # 첫 행(기준점 0) 제외
+                            t_stats = monthly_rets.mean() / (monthly_rets.std() / np.sqrt(len(monthly_rets)))
+                            rank_score = t_stats
+                        else:
+                            rank_score = cagr_series
+
                         meta_df = pd.DataFrame({
                             "factorAbbreviation": ret_df_is.columns,
                             "cagr": cagr_series.values,
+                            "rank_score": rank_score.values,
                         })
 
                         # kept_styles 매핑
@@ -461,9 +472,9 @@ class WalkForwardEngine:
                             meta_df["styleName"] = "Unknown"
                             meta_df["factorName"] = meta_df["factorAbbreviation"]
 
-                        meta_df["rank_style"] = meta_df.groupby("styleName")["cagr"].rank(ascending=False)
-                        meta_df["rank_total"] = meta_df["cagr"].rank(ascending=False)
-                        meta_df = meta_df.sort_values("cagr", ascending=False).reset_index(drop=True)
+                        meta_df["rank_style"] = meta_df.groupby("styleName")["rank_score"].rank(ascending=False)
+                        meta_df["rank_total"] = meta_df["rank_score"].rank(ascending=False)
+                        meta_df = meta_df.sort_values("rank_score", ascending=False).reset_index(drop=True)
 
                         top_n = min(pp["top_factor_count"], len(meta_df))
                         meta_top = meta_df.head(top_n)
