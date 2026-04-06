@@ -39,5 +39,6 @@ PIPELINE_PARAMS = {
     "backtest_end": "2026-03-31",      # 백테스트 종료일
     "min_downside_obs": 20,            # 하락 상관관계 최소 관측 수
     "num_sims": 1_000_000,             # 몬테카를로 시뮬레이션 횟수
-    "simulation_mode": "hardcoded",    # "hardcoded": 사전 결정 가중치, "simulation": 몬테카를로 탐색
+    "simulation_mode": "hardcoded",    # "hardcoded": 사전 결정 가중치, "simulation": 몬테카를로 탐색, "equal_weight": 동일가중
+    "skip_factor_mix": False,          # True면 [5] 2-팩터 믹스 스킵
 }

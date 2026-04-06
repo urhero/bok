@@ -172,6 +172,51 @@ def simulate_constrained_weights(
         logger.info("Using hardcoded weights (production mode)")
         return _get_hardcoded_weights()
 
+    if mode == "equal_weight":
+        # --- Equal-weight 모드: 1/K 동일가중 + 스타일 캡 재분배 ---
+        K = rtn_df.shape[1]
+        factors = rtn_df.columns.to_numpy()
+        styles_arr = np.asarray(style_list)
+
+        w = np.ones(K, dtype=np.float32) / K
+
+        # 스타일 캡 재분배 (수렴까지 반복)
+        uniq_styles = np.unique(styles_arr)
+        if not test_mode:
+            for _ in range(10):
+                for s in uniq_styles:
+                    mask_s = styles_arr == s
+                    style_w = w[mask_s].sum()
+                    if style_w > style_cap + tol:
+                        w[mask_s] *= style_cap / style_w
+                w /= w.sum()
+                if all(w[styles_arr == s].sum() <= style_cap + tol for s in uniq_styles):
+                    break
+
+        weights_tbl = pd.DataFrame({
+            "factor": factors,
+            "raw_weight": w,
+            "styleName": styles_arr,
+            "fitted_weight": w,
+        })
+
+        # CAGR/MDD 계산 (기록용)
+        port_np = rtn_df.to_numpy(dtype=np.float32)
+        T = port_np.shape[0]
+        sim = port_np @ w
+        cum = np.cumprod(1 + sim)
+        ann_exp = 12 / max(T - 1, 1)
+        cagr_val = float(cum[-1] ** ann_exp - 1)
+        mdd_val = float((cum / np.maximum.accumulate(cum) - 1).min())
+
+        best_stats = pd.DataFrame({
+            "cagr": [cagr_val], "mdd": [mdd_val],
+            "rank_cagr": [np.nan], "rank_mdd": [np.nan], "rank_total": [np.nan],
+        })
+
+        logger.info("Equal-weight allocation: %d factors, CAGR=%.4f, MDD=%.4f", K, cagr_val, mdd_val)
+        return best_stats, weights_tbl
+
     # --- 시뮬레이션 모드 ---
     K = rtn_df.shape[1]
     T = rtn_df.shape[0]

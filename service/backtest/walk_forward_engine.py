@@ -230,32 +230,40 @@ def _run_weight_optimization(
     if style_caps_to_try is None:
         style_caps_to_try = [0.25, 0.40, 1.00]
 
-    # [5] 스타일별 2-팩터 믹스
-    top_metrics = meta.groupby("styleName", as_index=False).first()
-    grids = []
-    for _, row in top_metrics.iterrows():
-        grid = find_optimal_mix(
-            ret_df_is, row.to_frame().T.reset_index(drop=True), neg_corr,
-            sub_factor_rank_weights=pp["sub_factor_rank_weights"],
-            portfolio_rank_weights=pp["portfolio_rank_weights"],
-        )
-        grid["styleName"] = row["styleName"]
-        grids.append(grid)
-    mix_grid = pd.concat(grids, ignore_index=True)
-
-    best_sub = (
-        mix_grid.sort_values("rank_total")
-        .groupby("main_factor", as_index=False)
-        .first()[["main_factor", "sub_factor"]]
-    )
-
+    skip_mix = pp.get("skip_factor_mix", False)
     style_map = meta.set_index("factorAbbreviation")["styleName"]
-    cols_to_keep = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel())
-    ret_subset = ret_df_is[cols_to_keep]
-    factor_list = cols_to_keep.tolist()
-    style_list = [style_map[f] for f in factor_list]
 
-    # [6] MC 시뮬레이션 — style_cap fallback
+    if skip_mix:
+        # [5] 스킵: meta의 전체 팩터를 바로 [6]에 전달
+        factor_list = meta["factorAbbreviation"].tolist()
+        style_list = [style_map[f] for f in factor_list]
+        ret_subset = ret_df_is[factor_list]
+    else:
+        # [5] 스타일별 2-팩터 믹스
+        top_metrics = meta.groupby("styleName", as_index=False).first()
+        grids = []
+        for _, row in top_metrics.iterrows():
+            grid = find_optimal_mix(
+                ret_df_is, row.to_frame().T.reset_index(drop=True), neg_corr,
+                sub_factor_rank_weights=pp["sub_factor_rank_weights"],
+                portfolio_rank_weights=pp["portfolio_rank_weights"],
+            )
+            grid["styleName"] = row["styleName"]
+            grids.append(grid)
+        mix_grid = pd.concat(grids, ignore_index=True)
+
+        best_sub = (
+            mix_grid.sort_values("rank_total")
+            .groupby("main_factor", as_index=False)
+            .first()[["main_factor", "sub_factor"]]
+        )
+
+        cols_to_keep = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel())
+        ret_subset = ret_df_is[cols_to_keep]
+        factor_list = cols_to_keep.tolist()
+        style_list = [style_map[f] for f in factor_list]
+
+    # [6] 가중치 결정 — style_cap fallback
     base_seed = pp.get("random_seed", 42) or 42
     seed = base_seed + loop_index
 
