@@ -861,29 +861,31 @@ Tier 3 실행: 64회 (매월, precomputed_ret_df 조회)
 총 소요 시간: 651초 (~11분)
 ```
 
-**OOS 성과 비교 (OOS look-ahead bias 수정 후):**
+**OOS 성과 비교 (EW + t-stat 최적 설정):**
 ```
-              MP (최적화)    EW (동일가중)
-CAGR:         +0.14%         -1.15%
-Excess CAGR:  +1.28%         -
-MDD:          -14.72%        -14.19%
-Sharpe:        0.05          -0.16
-Win Rate:      56.25%         -   (64개월 중 36개월 MP 우위)
+              EW+t-stat(현재)    기존 MC(참고)
+CAGR:         +0.95%              +0.14%
+MDD:          -8.51%             -14.72%
+Sharpe:        0.243               0.054
+Deflation:     0.139               0.013
 ```
 
-**과적합 진단 (3단계 테스트, 2026-04-06 실행):**
+**과적합 진단 및 최적화 이력 (2026-04-06):**
 ```
-1순위  Funnel Value-Add = MC_OVERFIT
-         EW_All CAGR   = -0.43%   (전체 유효 팩터 동일가중)
-         EW_Top50 CAGR = +0.25%   (Top-50 후보군 동일가중)
-         MP_Final CAGR = +0.14%   (MC 최적화 가중)
-       -> MC 과적합: Top-50 필터링은 유효하나, MC 최적화가 IS를 외워서 OOS 수익을 깎음
+[기존 MC+믹스]       CAGR=+0.14%, Sharpe=0.054, MDD=-14.72%, Deflation=0.013
+  -> MC_OVERFIT 판정, IS 10.4% 대비 OOS 0.14% (IS의 1.3%만 실현)
 
-2순위  OOS Percentile   = 50.34% (상위 50%) -> 보통 (랜덤과 차이 미미)
-3순위  Strict Jaccard   = 0.42   (0.3~0.5)  -> 보통
-4순위  IS-OOS Rank Corr = 0.03   ~= 0       -> IS 순위와 OOS 순위 무관 (보조)
-5순위  Deflation Ratio  = 0.01   < 0.3      -> 심각 (IS CAGR 10.4% 대비 OOS 0.14%)
+[Phase 1: EW+스킵]   CAGR=+0.39%, Sharpe=0.092, MDD=-14.91%, Deflation=0.049
+  -> MC 제거 + 2-팩터 믹스 스킵으로 DOF 제거
+
+[Phase 2: EW+t-stat] CAGR=+0.95%, Sharpe=0.243, MDD=-8.51%, Deflation=0.139 (현재)
+  -> t-stat 랭킹으로 노이즈 팩터 필터, OOS CAGR 6.8x 개선
 ```
+
+**현재 기본 설정 (config.py):**
+- `simulation_mode = "equal_weight"` (MC 1M 시행 대신 동일가중)
+- `skip_factor_mix = True` ([5] 2-팩터 믹스 스킵)
+- `factor_ranking_method = "tstat"` (CAGR 대신 t-통계량 랭킹)
 
 **산출 파일:**
 - `output/walk_forward_results.csv` — OOS 64개월 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률

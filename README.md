@@ -107,26 +107,27 @@
   - `weight_construction.calculate_vectorized_return()` — 리밸런싱 반영, 턴오버 계산, 거래비용(30bp) 차감
   - `model_portfolio.aggregate_factor_returns()` — 팩터별 **월간 롱-숏 수익률** 생성
 
-### (b) 팩터 유니버스 최종 선정 (200+ → Top-50 후보군)
+### (b) 팩터 유니버스 최종 선정 (200+ -> Top-50 후보군)
 - **핵심 함수:** `ModelPortfolioPipeline._evaluate_universe()`
 - 팩터별 월간 롱-숏 수익률 행렬 구성
-- CAGR 계산 → 스타일 내 / 전체 랭킹 산출
-- **CAGR 기준 상위 50개 팩터를 후보군(Candidate Pool)으로 선정**
+- 랭킹 산출: **t-stat 기반** (기본값, 노이즈 팩터 페널티) 또는 CAGR 기반 (기존)
+- **상위 50개 팩터를 후보군(Candidate Pool)으로 선정**
 - **하락 상관관계** 계산
-- *이 50개는 [5]~[6] 최적화기에 투입할 후보일 뿐, 최종 비중 할당은 [6]에서 결정*
+- *이 50개는 [5]~[6]에 투입할 후보일 뿐, 최종 비중 할당은 [6]에서 결정*
 
 ---
 
-## [5] 2-팩터 믹스 최적화
+## [5] 2-팩터 믹스 최적화 (기본값: 스킵)
 
 ### 핵심 함수
 `optimization.find_optimal_mix()`
 
-### 절차
+> **기본값 `skip_factor_mix=True`:** OOS 실험에서 2-팩터 믹스가 과적합의 주범으로 확인되어 기본 스킵. 기존 방식은 `config.py`에서 `skip_factor_mix=False`로 복원 가능.
+
+### 절차 (skip_factor_mix=False일 때)
 - 스타일별 CAGR 기준 **1위 팩터를 메인 팩터로 선정**
 - 메인 팩터 대비 CAGR + 하락 상관관계를 고려하여 **보조 팩터** 도출
-- 메인–보조 팩터 조합에 대해 비중 0~100% 그리드 탐색 → CAGR 및 MDD 평가
-- **팩터 간 중복을 줄이면서 성과·안정성 개선**
+- 메인-보조 팩터 조합에 대해 비중 0~100% 그리드 탐색 -> CAGR 및 MDD 평가
 
 ---
 
@@ -135,16 +136,14 @@
 ### 핵심 함수
 `optimization.simulate_constrained_weights()`
 
-### 가중치 결정 모드 (hardcoded/simulation)
-- `mode="hardcoded"` (기본값): `data/hardcoded_weights.csv`에서 프로덕션 비중 로드
-- `mode="simulation"`: 몬테카를로 시뮬레이션으로 탐색
+### 가중치 결정 모드 (3가지)
+- `mode="equal_weight"` **(기본값, 권장)**: 1/K 동일가중 + 스타일 캡 25% 재분배
+- `mode="hardcoded"`: `data/hardcoded_weights.csv`에서 프로덕션 고정 비중 로드
+- `mode="simulation"`: 몬테카를로 시뮬레이션으로 탐색 (과적합 위험)
 
-### 절차 (simulation 모드) — Top-50 후보군 → 최종 weight>0 팩터
-- 몬테카를로 방식으로 다수의 랜덤 포트폴리오 생성
-- 스타일별 비중 합계가 **스타일 캡(25%)**을 넘지 않도록 제약
-- 각 포트폴리오의 CAGR / MDD를 동시에 평가
-- 스타일 분산을 유지한 **최적 팩터 비중 도출**
-- **비중이 0%를 초과하는 팩터만이 최종 선정** (스타일 수에 따라 5~14개)
+### 절차 (equal_weight 모드)
+- 선정된 팩터에 1/K 동일가중 부여
+- 스타일별 비중 합계가 **스타일 캡(25%)**을 넘지 않도록 비례 재분배
 - `random_seed` 파라미터로 재현성 보장 (기본값 42, None이면 랜덤)
 
 ---
@@ -331,25 +330,20 @@ Tier 2 (가중치 재최적화): 22회 (3개월마다)
 Tier 3 (OOS 수익률 조회): 64회 (매월)
 ```
 
-**OOS 성과 결과 (OOS bias 수정 후):**
+**OOS 성과 결과 (EW + t-stat 최적 설정, 2026-04-06):**
 ```
-              MP (최적화)    EW (동일가중)
-CAGR:         +0.14%         -1.15%
-Excess CAGR:  +1.28%         -
-MDD:          -14.72%        -14.19%
-Sharpe:        0.05          -0.16
-Win Rate:      56.25%         -
+              EW+t-stat(현재)    기존 MC(참고)
+CAGR:         +0.95%              +0.14%
+MDD:          -8.51%             -14.72%
+Sharpe:        0.243               0.054
+Deflation:     0.139               0.013
 ```
 
-**과적합 진단 결과 (3단계 테스트, 2026-04-06):**
+**과적합 개선 이력:**
 ```
-1순위  Funnel Value-Add = MC_OVERFIT
-         EW_All -0.43% < EW_Top50 +0.25% > MP +0.14%
-         (MC 과적합: Top-50 필터링은 유효하나 MC 최적화가 수익을 깎음)
-2순위  OOS Percentile   = 50.34% (상위 50%) -> 보통
-3순위  Strict Jaccard   = 0.42   (0.3~0.5)  -> 보통
-4순위  IS-OOS Rank Corr = 0.03   ~= 0       -> IS/OOS 무관 (보조)
-5순위  Deflation Ratio  = 0.01   < 0.3      -> 심각 (보조)
+기존 MC+믹스:        CAGR=+0.14%, Sharpe=0.054, Deflation=0.013
+Phase 1 EW+스킵:     CAGR=+0.39%, Sharpe=0.092, Deflation=0.049
+Phase 2 EW+t-stat:   CAGR=+0.95%, Sharpe=0.243, Deflation=0.139 (현재)
 ```
 
 #### 2. 검증: 기존 mp 파이프라인 영향 없음 확인
