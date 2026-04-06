@@ -174,9 +174,10 @@ def filter_and_label_factors(
             logger.debug("Factor %d discarded - all sectors dropped", idx)
             continue
 
-        # 남은 데이터로 분위별 평균 재계산
+        # 남은 데이터로 분위별 기하평균 수익률 재계산
+        # 기하평균 = 변동성 드래그 내장 (AM - GM ~= sigma^2/2)
         q_ret = raw_clean.groupby(["ddt", "quantile"], observed=False)["M_RETURN"].mean().unstack(fill_value=0)
-        q_mean = q_ret.mean(axis=0).to_frame("mean")
+        q_mean = (np.exp(np.log(1 + q_ret).mean(axis=0)) - 1).to_frame("mean")
 
         # 임계값 기반 L/N/S 라벨 결정
         thresh = abs(q_mean.loc["Q1", "mean"] - q_mean.loc["Q5", "mean"]) * spread_threshold_pct
