@@ -737,28 +737,41 @@ fitted = shrunk + redistributed
 ### 6.2 계층적 리밸런싱 (Tiered Rebalancing)
 
 ```
-Tier 1 (6개월마다): 규칙 학습 + 팩터 수익률 사전 계산
-  - IS 데이터로 [2]~[3] 수행 → rule_bundle 생성
-  - 전체 데이터에 규칙 적용(transform) → aggregate_factor_returns 1회 실행
-  - 산출물: precomputed_ret_df (전기간 × 전팩터 수익률 행렬)
+Tier 1 (6개월마다): 규칙 학습 + IS 규칙을 전체 데이터에 적용
+  - IS 데이터로 [2]~[3] 수행 -> rule_bundle 생성 (dropped_sectors, label_rules)
+  - 전체 데이터에 [2] 5분위 랭킹 수행 (횡단면, 시계열 오염 없음)
+  - IS에서 학습한 규칙(섹터 제거, L/N/S 라벨)을 전체 데이터에 직접 매핑 (재학습 아님!)
+  - aggregate_factor_returns 1회 실행
+  - 산출물: precomputed_ret_df (전기간 x 유효 팩터 수익률 행렬)
 
 Tier 2 (3개월마다): 팩터 선정 + 가중치 최적화
   - precomputed_ret_df에서 IS 구간만 슬라이스 (aggregate 재실행 불필요)
-  - CAGR → 상위 팩터 선정 → [5]~[6] 실행
+  - CAGR -> 상위 팩터 선정 -> [5]~[6] 실행
   - 산출물: cached_weights, cached_meta
 
 Tier 3 (매월): OOS 수익률 조회
   - precomputed_ret_df.loc[oos_date, selected_factors] (밀리초)
-  - portfolio_return = sum(weight[f] × oos_factor_return[f])
+  - portfolio_return = sum(weight[f] x oos_factor_return[f])
 ```
+
+**OOS look-ahead bias 방지 (핵심):**
+
+`_apply_rules_and_aggregate()`에서 `filter_and_label_factors()`를 전체 데이터로 재실행하면 섹터 제거와 L/N/S 라벨이 OOS 수익률에 오염된다. 반드시 `rule_bundle`의 IS 전용 규칙을 직접 적용해야 한다.
+
+| 항목 | 안전 (횡단면) | 오염 위험 (시간 평균) |
+|------|-------------|---------------------|
+| 5분위 랭킹 (rank within sector-date) | O | - |
+| 섹터 제거 (Q1-Q5 스프레드 기반) | - | O -> rule_bundle["dropped_sectors"] 사용 |
+| L/N/S 라벨 (분위별 평균 수익률 기반) | - | O -> rule_bundle["label_rules"] 사용 |
 
 ### 6.3 과적합 위험 지점
 
 | 단계 | 과적합 위험 | 이유 |
 |------|------------|------|
-| [4] 상위 50 팩터 선정 | **높음** | 전체 기간 CAGR 순위로 선정. "미래를 보고 고른 팩터" |
-| [5] 2-팩터 믹스 그리드 서치 | **높음** | 전체 기간 수익률로 101포인트 탐색. IS 최적화 |
-| [6] MC 시뮬레이션 | 중간 | 스타일 캡 25% + Dirichlet 제약으로 자유도 낮음 |
+| [4] 상위 50 팩터 선정 | **높음** | IS CAGR 순위로 선정. 평균 회귀 위험 |
+| [5] 2-팩터 믹스 그리드 서치 | **높음** | IS 수익률로 101포인트 탐색 |
+| [6] MC 시뮬레이션 | 중간 | 스타일 캡 25% + Dirichlet 제약으로 자유도 낮음. 실측: MC_OVERFIT 판정 |
+| [3] 섹터 제거 + L/N/S 라벨 | **낮음 (수정 완료)** | IS 전용 rule_bundle 적용으로 OOS 오염 제거됨 |
 | [2] 5분위 분석 | 낮음 | 횡단면 정렬이라 시계열 과적합 아님 |
 
 ### 6.4 과적합 진단 3단계 테스트
