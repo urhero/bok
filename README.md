@@ -329,24 +329,24 @@ Tier 2 (가중치 재최적화): 22회 (3개월마다)
 Tier 3 (OOS 수익률 조회): 64회 (매월)
 ```
 
-**OOS 성과 결과:**
+**OOS 성과 결과 (OOS bias 수정 후):**
 ```
               MP (최적화)    EW (동일가중)
-CAGR:         +2.34%         +0.89%
-Excess CAGR:  +1.45%         -
-MDD:          -18.94%        -21.88%
-Sharpe:        0.31           0.14
-Win Rate:      54.69%         -
+CAGR:         +0.14%         -1.15%
+Excess CAGR:  +1.28%         -
+MDD:          -14.72%        -14.19%
+Sharpe:        0.05          -0.16
+Win Rate:      56.25%         -
 ```
 
-**과적합 진단 결과 (3단계 테스트, 2026-04-06):**
+**과적합 진단 결과 (3단계 테스트, 2026-04-06, OOS bias 수정 후):**
 ```
-1순위  Funnel Value-Add = FILTER_OVERFIT
-         EW_All +4.46% > EW_Top50 +3.03% > MP +2.34%
-         (1차 필터 과적합: CAGR 기준 Top-50 선정이 과거 우연)
-2순위  OOS Percentile   = 52.43% (상위 52%) -> 보통
-3순위  Strict Jaccard   = 0.55   > 0.5      -> 안정적
-4순위  IS-OOS Rank Corr = 0.04   ~= 0       -> IS/OOS 무관 (보조)
+1순위  Funnel Value-Add = MC_OVERFIT
+         EW_All -0.43% < EW_Top50 +0.25% > MP +0.14%
+         (MC 과적합: Top-50 필터링은 유효하나 MC 최적화가 수익을 깎음)
+2순위  OOS Percentile   = 50.13% (상위 50%) -> 보통
+3순위  Strict Jaccard   = 0.42   (0.3~0.5)  -> 보통
+4순위  IS-OOS Rank Corr = 0.01   ~= 0       -> IS/OOS 무관 (보조)
 5순위  Deflation Ratio  = 1.00   > 0.6      -> 양호 (보조)
 ```
 

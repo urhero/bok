@@ -848,27 +848,27 @@ Tier 3 실행: 64회 (매월, precomputed_ret_df 조회)
 총 소요 시간: 651초 (~11분)
 ```
 
-**OOS 성과 비교:**
+**OOS 성과 비교 (OOS look-ahead bias 수정 후):**
 ```
               MP (최적화)    EW (동일가중)
-CAGR:         +2.34%         +0.89%
-Excess CAGR:  +1.45%         -
-MDD:          -18.94%        -21.88%
-Sharpe:        0.31           0.14
-Win Rate:      54.69%         -   (64개월 중 35개월 MP 우위)
+CAGR:         +0.14%         -1.15%
+Excess CAGR:  +1.28%         -
+MDD:          -14.72%        -14.19%
+Sharpe:        0.05          -0.16
+Win Rate:      56.25%         -   (64개월 중 36개월 MP 우위)
 ```
 
-**과적합 진단 (3단계 테스트, 2026-04-06 실행):**
+**과적합 진단 (3단계 테스트, 2026-04-06 실행, OOS look-ahead bias 수정 후):**
 ```
-1순위  Funnel Value-Add = FILTER_OVERFIT
-         EW_All CAGR   = +4.46%   (전체 유효 팩터 동일가중)
-         EW_Top50 CAGR = +3.03%   (Top-50 후보군 동일가중)
-         MP_Final CAGR = +2.34%   (MC 최적화 가중)
-       -> 1차 필터 과적합: CAGR 기준 Top-50 선정이 과거 우연. 하위 150개 평균보다 못함
+1순위  Funnel Value-Add = MC_OVERFIT
+         EW_All CAGR   = -0.43%   (전체 유효 팩터 동일가중)
+         EW_Top50 CAGR = +0.25%   (Top-50 후보군 동일가중)
+         MP_Final CAGR = +0.14%   (MC 최적화 가중)
+       -> MC 과적합: Top-50 필터링은 유효하나, MC 최적화가 IS를 외워서 OOS 수익을 깎음
 
-2순위  OOS Percentile   = 52.43% (상위 52%) -> 보통 (랜덤과 차이 미미)
-3순위  Strict Jaccard   = 0.55   > 0.5      -> 안정적 (핵심 팩터 유지)
-4순위  IS-OOS Rank Corr = 0.04   ~= 0       -> IS 순위와 OOS 순위 무관 (보조)
+2순위  OOS Percentile   = 50.13% (상위 50%) -> 보통 (랜덤과 차이 미미)
+3순위  Strict Jaccard   = 0.42   (0.3~0.5)  -> 보통
+4순위  IS-OOS Rank Corr = 0.01   ~= 0       -> IS 순위와 OOS 순위 무관 (보조)
 5순위  Deflation Ratio  = 1.00   > 0.6      -> 양호 (보조)
 ```
 

@@ -1,24 +1,24 @@
 ﻿Category,Metric,Value,Interpretation
-1순위 - Funnel Value-Add,패턴,FILTER_OVERFIT,A(EW_All)=4.4600% > B(EW_Top50)=3.0284% -> 1차 필터 과적합: CAGR 기반 Top-50 선정 자체가 과거 우연. 하위 150개 팩터 평균보다도 못함
-1순위 - Funnel Value-Add,EW_All CAGR,4.4600%,전체 유효 팩터 동일가중
-1순위 - Funnel Value-Add,EW_Top50 CAGR,3.0284%,Top-50 후보군 동일가중
-1순위 - Funnel Value-Add,MP_Final CAGR,2.3371%,MC 최적화 가중 포트폴리오
-1순위 - Funnel Value-Add,EW_All MDD,-3.8171%,
-1순위 - Funnel Value-Add,EW_Top50 MDD,-14.1945%,
-1순위 - Funnel Value-Add,MP_Final MDD,-18.9447%,
-2순위 - OOS Percentile,평균 백분위,52.4262%,평균 백분위 = 52.43% (상위 52%) -> 보통 (랜덤과 차이 미미)
-3순위 - Strict Jaccard,Strict Jaccard,0.5517,Strict Jaccard = 0.55 > 0.5 -> 안정적 (핵심 팩터 유지)
-4순위(보조) - Rank Corr,IS-OOS Rank Correlation,0.0425,Rank Corr = 0.04 ~= 0 -> IS 순위와 OOS 순위 무관
-4순위(보조) - Rank Corr,Rank Corr p-value,0.5427,
+1순위 - Funnel Value-Add,패턴,MC_OVERFIT,"B(EW_Top50)=0.2525% > C(MP)=0.1391% > A(EW_All)=-0.4274% -> MC 과적합: Top-50 필터링은 유효하나, MC 최적화가 IS를 외워서 OOS 수익을 깎음. Top-50 동일가중이 더 나은 결과"
+1순위 - Funnel Value-Add,EW_All CAGR,-0.4274%,전체 유효 팩터 동일가중
+1순위 - Funnel Value-Add,EW_Top50 CAGR,0.2525%,Top-50 후보군 동일가중
+1순위 - Funnel Value-Add,MP_Final CAGR,0.1391%,MC 최적화 가중 포트폴리오
+1순위 - Funnel Value-Add,EW_All MDD,-8.9824%,
+1순위 - Funnel Value-Add,EW_Top50 MDD,-15.5662%,
+1순위 - Funnel Value-Add,MP_Final MDD,-14.7172%,
+2순위 - OOS Percentile,평균 백분위,50.1268%,평균 백분위 = 50.13% (상위 50%) -> 보통 (랜덤과 차이 미미)
+3순위 - Strict Jaccard,Strict Jaccard,0.4214,Strict Jaccard = 0.42 (0.3~0.5) -> 보통
+4순위(보조) - Rank Corr,IS-OOS Rank Correlation,0.0077,Rank Corr = 0.01 ~= 0 -> IS 순위와 OOS 순위 무관
+4순위(보조) - Rank Corr,Rank Corr p-value,0.5044,
 5순위(보조) - Deflation,Deflation Ratio,1.0000,Deflation Ratio = 1.00 > 0.6 -> 양호 (참고용)
-OOS 성과 - MP,CAGR,2.3371%,
-OOS 성과 - MP,MDD,-18.9447%,
-OOS 성과 - MP,Sharpe,0.3063,
-OOS 성과 - MP,Calmar,0.1234,
-OOS 성과 - EW,CAGR,0.8902%,
-OOS 성과 - EW,MDD,-21.8763%,
-OOS 성과 - EW,Sharpe,0.1430,
-MP vs EW 비교,Excess CAGR,1.4470%,
-MP vs EW 비교,Win Rate,54.6875%,
+OOS 성과 - MP,CAGR,0.1391%,
+OOS 성과 - MP,MDD,-14.7172%,
+OOS 성과 - MP,Sharpe,0.0544,
+OOS 성과 - MP,Calmar,0.0095,
+OOS 성과 - EW,CAGR,-1.1451%,
+OOS 성과 - EW,MDD,-14.1864%,
+OOS 성과 - EW,Sharpe,-0.1609,
+MP vs EW 비교,Excess CAGR,1.2843%,
+MP vs EW 비교,Win Rate,56.2500%,
 주의사항,경고,,OOS 기간이 64개월(5.3년)이므로 특정 매크로 환경에 편향되었을 수 있음. Funnel Value-Add Test(단계별 가치 창출)를 가장 먼저 확인할 것.
 주의사항,한계점,,"본 백테스트는 factor-level에서 수행되었으며, 팩터 내부 종목 리밸런싱 비용(30bp)만 반영됨. 팩터 간 비중 변경(inter-factor rebalancing)에 따른 자산 배분 차원의 거래비용은 미반영이므로, OOS 수익률에 약간의 상방 편향이 존재할 수 있음."

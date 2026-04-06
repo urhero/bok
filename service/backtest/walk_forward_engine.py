@@ -119,8 +119,14 @@ def _apply_rules_and_aggregate(
 ) -> pd.DataFrame:
     """IS에서 학습한 규칙을 전체 데이터에 적용하고 팩터 수익률을 사전 계산한다.
 
-    Tier 1 핵심: 전체 데이터에 규칙을 적용(transform)하여 aggregate_factor_returns를
+    Tier 1 핵심: 전체 데이터의 횡단면 5분위 랭킹(안전)에 IS 전용 규칙
+    (dropped_sectors, label_rules)을 적용하여 aggregate_factor_returns를
     1회만 실행, 전기간 팩터 수익률 행렬을 생성한다.
+
+    OOS look-ahead bias 방지:
+      - 5분위 랭킹: 횡단면(같은 날짜·섹터 내 순위) → 시계열 오염 없음, 전체 데이터 안전
+      - 섹터 제거: IS에서 학습한 dropped_sectors 직접 적용 (재계산 아님)
+      - L/N/S 라벨: IS에서 학습한 label_rules 직접 매핑 (재계산 아님)
 
     Returns:
         precomputed_ret_df: (전체 월 × 유효 팩터) 수익률 행렬
@@ -132,8 +138,7 @@ def _apply_rules_and_aggregate(
         raw_data, mreturn_df
     )
 
-    # 전체 데이터에 대해 [2]~[3] 수행 (IS에서 학습한 규칙은 이미 있지만,
-    # 전체 데이터에 대한 filtered_data가 필요하므로 전체로 재실행)
+    # [2] 전체 데이터에서 횡단면 5분위 랭킹 (시계열 오염 없음, 안전)
     analyze_cols = ["gvkeyiid", "ticker", "isin", "ddt", "sec", "val", "M_RETURN", "factorAbbreviation", "factorOrder"]
     slim_data = merged_data_full[[c for c in analyze_cols if c in merged_data_full.columns]]
     factor_stats_full = calculate_factor_stats_batch(
@@ -142,36 +147,62 @@ def _apply_rules_and_aggregate(
         min_sector_stocks=pp["min_sector_stocks"],
     )
 
-    factor_name_list = factor_metadata.factorName.tolist()
-    style_name_list = factor_metadata.styleName.tolist()
+    # [3] IS 규칙을 전체 데이터에 적용 (재학습 아님)
+    # factor_abbr_list → factor_stats_full 인덱스 매핑
+    abbr_to_stats_idx = {a: i for i, a in enumerate(factor_abbr_list)}
 
-    # IS에서 선정된 kept_abbrs에 해당하는 팩터만 필터+라벨링
     kept_abbrs = rule_bundle["kept_abbrs"]
-    kept_names = rule_bundle["kept_names"]
-    kept_styles = rule_bundle["kept_styles"]
+    dropped_sectors = rule_bundle["dropped_sectors"]
+    label_rules = rule_bundle["label_rules"]
 
-    _, _, _, _, _, filtered_data_full = filter_and_label_factors(
-        factor_abbr_list, factor_name_list, style_name_list, factor_stats_full,
-        spread_threshold_pct=pp["spread_threshold_pct"],
-    )
+    valid_abbrs: list[str] = []
+    valid_filtered: list[pd.DataFrame] = []
 
-    # kept_abbrs에 해당하는 filtered_data만 추출
-    # filter_and_label_factors가 반환하는 kept_abbrs와 매칭
-    # 반환된 kept_abbrs 중 IS의 kept_abbrs에 해당하는 것만 선택
-    full_kept_abbrs, _, _, _, _, full_filtered = filter_and_label_factors(
-        factor_abbr_list, factor_name_list, style_name_list, factor_stats_full,
-        spread_threshold_pct=pp["spread_threshold_pct"],
-    )
+    for abbr in kept_abbrs:
+        if abbr not in abbr_to_stats_idx:
+            continue
 
-    # IS kept_abbrs와 full_kept_abbrs의 교집합
-    valid_abbrs = [a for a in kept_abbrs if a in full_kept_abbrs]
+        stats_idx = abbr_to_stats_idx[abbr]
+        stats = factor_stats_full[stats_idx]
+        if stats[0] is None:
+            continue
+
+        raw_df = stats[3]  # merged_df (quantile 컬럼 포함, 횡단면 안전)
+
+        # IS에서 학습한 dropped_sectors 적용
+        dropped = dropped_sectors.get(abbr, [])
+        if dropped:
+            raw_clean = raw_df[~raw_df["sec"].isin(dropped)].copy()
+        else:
+            raw_clean = raw_df.copy()
+
+        if raw_clean.empty:
+            continue
+
+        # IS에서 학습한 label_rules 적용 (quintile -> L/N/S 매핑)
+        labels = label_rules.get(abbr, {})
+        if not labels:
+            continue
+
+        raw_clean["label"] = raw_clean["quantile"].map(labels)
+        merged = raw_clean.dropna(subset=["label"])
+
+        if merged.empty:
+            continue
+
+        # L/S 양쪽이 모두 존재해야 롱-숏 포트폴리오 구성 가능
+        has_long = (merged["label"] == 1).any()
+        has_short = (merged["label"] == -1).any()
+        if not (has_long and has_short):
+            logger.debug("Factor %s skipped - missing long or short after IS rule application", abbr)
+            continue
+
+        valid_abbrs.append(abbr)
+        valid_filtered.append(merged)
+
     if not valid_abbrs:
-        logger.warning("No common factors between IS rules and full data")
+        logger.warning("No valid factors after applying IS rules to full data")
         return pd.DataFrame()
-
-    # valid_abbrs에 대응하는 filtered_data 인덱스 찾기
-    full_abbr_to_idx = {a: i for i, a in enumerate(full_kept_abbrs)}
-    valid_filtered = [full_filtered[full_abbr_to_idx[a]] for a in valid_abbrs]
 
     # aggregate_factor_returns 1회 실행 (전기간)
     precomputed_ret_df = aggregate_factor_returns(
