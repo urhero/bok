@@ -11,6 +11,19 @@
 
 BOK은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 모델 포트폴리오(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다.
 
+### 핵심 Funnel 구조 (2단계 축소)
+
+```
+200+ 유효 팩터 ──[4]──→ Top-50 후보군 ──[5][6]──→ 최종 weight>0 팩터 (5~14개)
+  (데이터 로딩           (CAGR 기준         (2-팩터 믹스 + MC 시뮬레이션
+   + 5분위 분석           상위 선별)          + 스타일 캡 25% 제약)
+   + 섹터 필터)
+```
+
+- **Top-50은 최적화기에 투입할 후보 풀(Candidate Pool)**일 뿐이다
+- 진짜 의사결정의 결정체는 MC 시뮬레이션을 거쳐 **비중>0으로 살아남은 최종 팩터**(스타일 수에 따라 5~14개 가변)
+- 과적합 진단의 3단계 테스트(Funnel Value-Add, OOS Percentile, Strict Jaccard)는 이 2단계 축소 각각이 진짜 가치를 창출했는지를 검증한다
+
 핵심 비즈니스 가치:
 - PIT(Point-in-Time) 데이터로 미래 정보 편향(look-ahead bias) 방지
 - 5분위 포트폴리오 기법으로 팩터 유효성 검증
@@ -57,6 +70,8 @@ main.py (CLI)
 | `python main.py mp <start> <end>` | parquet → MP CSV 생성 | `run_model_portfolio_pipeline()` → `ModelPortfolioPipeline.run()` |
 | `python main.py mp test <file>` | 소량 데이터 테스트 모드 | 동일 경로, `test_file` 인자 활성 |
 | `python main.py mp --report` | PDF 보고서만 생성 후 종료 | `_generate_report()` → `return` (early return) |
+| `python main.py backtest <start> <end>` | Walk-Forward OOS 백테스트 + 과적합 진단 | `WalkForwardEngine.run()` → `generate_overfit_report()` |
+| `python main.py mp <start> <end> --benchmark` | MP vs. 동일가중 벤치마크 비교 | `compare_vs_benchmark()` |
 
 ---
 
