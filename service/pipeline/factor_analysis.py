@@ -192,7 +192,7 @@ def filter_and_label_factors(
         n_long = (q_mean["label"] == 1).sum()
         n_short = (q_mean["label"] == -1).sum()
         if n_short == 0:
-            logger.warning("Factor %s has no short labels — long-only portfolio", factor_abbr_list[idx])
+            logger.warning("Factor %s has no short labels - long-only portfolio", factor_abbr_list[idx])
         if n_long == 0:
             logger.warning("Factor %s has no long labels", factor_abbr_list[idx])
 

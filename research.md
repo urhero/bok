@@ -858,13 +858,18 @@ Sharpe:        0.31           0.14
 Win Rate:      54.69%         -   (64개월 중 35개월 MP 우위)
 ```
 
-**과적합 진단 (3단계 테스트):**
+**과적합 진단 (3단계 테스트, 2026-04-06 실행):**
 ```
-1순위  Funnel Value-Add  — EW_All / EW_Top50 / MP_Final 비교 (backtest 재실행 후 확인)
-2순위  OOS Percentile    — weight>0 팩터의 OOS 백분위 생존율 (backtest 재실행 후 확인)
-3순위  Strict Jaccard    — weight>0 팩터 집합 안정성 (backtest 재실행 후 확인)
-4순위  IS-OOS Rank Corr  = 0.04  ≈ 0   → IS 팩터 CAGR 순위의 OOS 예측력은 제한적 (보조)
-5순위  Deflation Ratio   = 1.00  > 0.6  → IS 성과 대비 OOS 성과 유지 (보조)
+1순위  Funnel Value-Add = FILTER_OVERFIT
+         EW_All CAGR   = +4.46%   (전체 유효 팩터 동일가중)
+         EW_Top50 CAGR = +3.03%   (Top-50 후보군 동일가중)
+         MP_Final CAGR = +2.34%   (MC 최적화 가중)
+       -> 1차 필터 과적합: CAGR 기준 Top-50 선정이 과거 우연. 하위 150개 평균보다 못함
+
+2순위  OOS Percentile   = 52.43% (상위 52%) -> 보통 (랜덤과 차이 미미)
+3순위  Strict Jaccard   = 0.55   > 0.5      -> 안정적 (핵심 팩터 유지)
+4순위  IS-OOS Rank Corr = 0.04   ~= 0       -> IS 순위와 OOS 순위 무관 (보조)
+5순위  Deflation Ratio  = 1.00   > 0.6      -> 양호 (보조)
 ```
 
 **산출 파일:**

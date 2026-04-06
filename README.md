@@ -339,13 +339,15 @@ Sharpe:        0.31           0.14
 Win Rate:      54.69%         -
 ```
 
-**과적합 진단 결과 (3단계 테스트):**
+**과적합 진단 결과 (3단계 테스트, 2026-04-06):**
 ```
-1순위  Funnel Value-Add  — EW_All / EW_Top50 / MP_Final 비교 (backtest 재실행 후 확인)
-2순위  OOS Percentile    — weight>0 팩터의 OOS 백분위 생존율 (backtest 재실행 후 확인)
-3순위  Strict Jaccard    — weight>0 팩터 집합 안정성 (backtest 재실행 후 확인)
-4순위  IS-OOS Rank Corr  = 0.04  ≈ 0 (IS 순위와 OOS 순위 무관, 보조)
-5순위  Deflation Ratio   = 1.00  > 0.6 (양호, 보조)
+1순위  Funnel Value-Add = FILTER_OVERFIT
+         EW_All +4.46% > EW_Top50 +3.03% > MP +2.34%
+         (1차 필터 과적합: CAGR 기준 Top-50 선정이 과거 우연)
+2순위  OOS Percentile   = 52.43% (상위 52%) -> 보통
+3순위  Strict Jaccard   = 0.55   > 0.5      -> 안정적
+4순위  IS-OOS Rank Corr = 0.04   ~= 0       -> IS/OOS 무관 (보조)
+5순위  Deflation Ratio  = 1.00   > 0.6      -> 양호 (보조)
 ```
 
 #### 2. 검증: 기존 mp 파이프라인 영향 없음 확인

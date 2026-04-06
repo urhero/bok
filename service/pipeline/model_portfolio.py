@@ -409,7 +409,7 @@ class ModelPortfolioPipeline:
             weight_frames.append(df[["ddt", "ticker", "isin", "gvkeyiid", "mp_ls_weight", "ls_weight", "factor_weight", "factor", "style", "name", "count"]].reset_index(drop=True))
 
         if not weight_frames:
-            logger.warning("No matching factors found in filtered data — skipping CSV export")
+            logger.warning("No matching factors found in filtered data - skipping CSV export")
             return
 
         weight_raw = pd.concat(weight_frames, ignore_index=True)

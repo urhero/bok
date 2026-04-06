@@ -37,9 +37,9 @@ def calc_funnel_value_add(walk_forward_result: WalkForwardResult) -> dict[str, A
     C. MP_Final:  MC 최적화 가중 포트폴리오 (최종 실력)
 
     판별 기준 (CAGR 기준):
-      C > B > A → 정상 (필터링+최적화 모두 가치 창출)
-      B > C > A → MC 과적합 (최적화가 오히려 수익 깎음)
-      A > B     → 1차 필터 과적합 (CAGR 기준 필터링 자체가 과거 우연)
+      C > B > A -> 정상 (필터링+최적화 모두 가치 창출)
+      B > C > A -> MC 과적합 (최적화가 오히려 수익 깎음)
+      A > B     -> 1차 필터 과적합 (CAGR 기준 필터링 자체가 과거 우연)
     """
     # OOS 데이터가 없으면 판별 불가
     if len(walk_forward_result.oos_returns) == 0:
@@ -68,21 +68,21 @@ def calc_funnel_value_add(walk_forward_result: WalkForwardResult) -> dict[str, A
         pattern = "FILTER_OVERFIT"
         interpretation = (
             f"A(EW_All)={cagr_a:.4%} > B(EW_Top50)={cagr_b:.4%} "
-            f"→ 1차 필터 과적합: CAGR 기반 Top-50 선정 자체가 과거 우연. "
+            f"-> 1차 필터 과적합: CAGR 기반 Top-50 선정 자체가 과거 우연. "
             f"하위 150개 팩터 평균보다도 못함"
         )
     elif cagr_b > cagr_c:
         pattern = "MC_OVERFIT"
         interpretation = (
             f"B(EW_Top50)={cagr_b:.4%} > C(MP)={cagr_c:.4%} > A(EW_All)={cagr_a:.4%} "
-            f"→ MC 과적합: Top-50 필터링은 유효하나, MC 최적화가 IS를 외워서 OOS 수익을 깎음. "
+            f"-> MC 과적합: Top-50 필터링은 유효하나, MC 최적화가 IS를 외워서 OOS 수익을 깎음. "
             f"Top-50 동일가중이 더 나은 결과"
         )
     else:
         pattern = "NORMAL"
         interpretation = (
             f"C(MP)={cagr_c:.4%} > B(EW_Top50)={cagr_b:.4%} > A(EW_All)={cagr_a:.4%} "
-            f"→ 정상: 필터링과 MC 최적화 모두 가치 창출"
+            f"-> 정상: 필터링과 MC 최적화 모두 가치 창출"
         )
 
     return {
@@ -111,9 +111,9 @@ def calc_oos_percentile_tracking(walk_forward_result: WalkForwardResult) -> dict
     2. weight>0 팩터들의 평균 백분위 계산
 
     해석:
-      평균 백분위 상위 40% 이내(값 ≤ 0.40) → 견고
-      평균 백분위 40~60%                      → 보통
-      평균 백분위 60% 이상(값 ≥ 0.60)          → 과적합 의심
+      평균 백분위 상위 40% 이내(값 <= 0.40) -> 견고
+      평균 백분위 40~60%                      -> 보통
+      평균 백분위 60% 이상(값 >= 0.60)          -> 과적합 의심
     """
     rebal_log = walk_forward_result.rebalance_log
     all_fr_history = walk_forward_result.oos_all_factor_returns_history
@@ -195,11 +195,11 @@ def calc_oos_percentile_tracking(walk_forward_result: WalkForwardResult) -> dict
     avg_pct = np.mean(period_percentiles)
 
     if avg_pct <= 0.40:
-        interp = f"평균 백분위 = {avg_pct:.2%} (상위 {avg_pct:.0%}) → 견고한 팩터 선정"
+        interp = f"평균 백분위 = {avg_pct:.2%} (상위 {avg_pct:.0%}) -> 견고한 팩터 선정"
     elif avg_pct <= 0.60:
-        interp = f"평균 백분위 = {avg_pct:.2%} (상위 {avg_pct:.0%}) → 보통 (랜덤과 차이 미미)"
+        interp = f"평균 백분위 = {avg_pct:.2%} (상위 {avg_pct:.0%}) -> 보통 (랜덤과 차이 미미)"
     else:
-        interp = f"평균 백분위 = {avg_pct:.2%} (상위 {avg_pct:.0%}) → 과적합 의심 (IS 상위 팩터가 OOS에서 추락)"
+        interp = f"평균 백분위 = {avg_pct:.2%} (상위 {avg_pct:.0%}) -> 과적합 의심 (IS 상위 팩터가 OOS에서 추락)"
 
     return {
         "avg_percentile": avg_pct,
@@ -218,9 +218,9 @@ def calc_strict_jaccard(active_factors_history: list[set[str]]) -> dict[str, Any
     최종 팩터 집합(스타일 수에 따라 5~14개)에만 적용한다.
 
     해석:
-      > 0.5 → 안정적 (핵심 팩터 유지)
-      0.3~0.5 → 보통
-      < 0.3 → 불안정 (매 리밸런싱마다 완전히 다른 조합 → 과적합 의심)
+      > 0.5 -> 안정적 (핵심 팩터 유지)
+      0.3~0.5 -> 보통
+      < 0.3 -> 불안정 (매 리밸런싱마다 완전히 다른 조합 -> 과적합 의심)
 
     Note: 집합 크기가 10개 내외로 작아 Jaccard가 예민하게 반응.
     """
@@ -252,11 +252,11 @@ def calc_strict_jaccard(active_factors_history: list[set[str]]) -> dict[str, Any
     avg_jaccard = np.mean(jaccard_values)
 
     if avg_jaccard > 0.5:
-        interp = f"Strict Jaccard = {avg_jaccard:.2f} > 0.5 → 안정적 (핵심 팩터 유지)"
+        interp = f"Strict Jaccard = {avg_jaccard:.2f} > 0.5 -> 안정적 (핵심 팩터 유지)"
     elif avg_jaccard > 0.3:
-        interp = f"Strict Jaccard = {avg_jaccard:.2f} (0.3~0.5) → 보통"
+        interp = f"Strict Jaccard = {avg_jaccard:.2f} (0.3~0.5) -> 보통"
     else:
-        interp = f"Strict Jaccard = {avg_jaccard:.2f} < 0.3 → 불안정 (과적합 의심: 매번 다른 조합)"
+        interp = f"Strict Jaccard = {avg_jaccard:.2f} < 0.3 -> 불안정 (과적합 의심: 매번 다른 조합)"
 
     return {
         "avg_jaccard": avg_jaccard,
@@ -352,11 +352,11 @@ def calc_is_oos_rank_correlation(walk_forward_result: WalkForwardResult) -> dict
     avg_p_value = np.mean(p_values)
 
     if avg_spearman > 0.3:
-        interp = f"Rank Corr = {avg_spearman:.2f} > 0.3 → 양의 상관 (팩터 예측력 있음)"
+        interp = f"Rank Corr = {avg_spearman:.2f} > 0.3 -> 양의 상관 (팩터 예측력 있음)"
     elif avg_spearman > -0.1:
-        interp = f"Rank Corr = {avg_spearman:.2f} ≈ 0 → IS 순위와 OOS 순위 무관"
+        interp = f"Rank Corr = {avg_spearman:.2f} ~= 0 -> IS 순위와 OOS 순위 무관"
     else:
-        interp = f"Rank Corr = {avg_spearman:.2f} < 0 → 음의 상관 (과적합 의심)"
+        interp = f"Rank Corr = {avg_spearman:.2f} < 0 -> 음의 상관 (과적합 의심)"
 
     return {
         "avg_spearman": avg_spearman,
@@ -397,11 +397,11 @@ def calc_deflation_ratio(walk_forward_result: WalkForwardResult, full_period_cag
         ratio = oos_cagr / full_period_cagr
         result["deflation_ratio"] = ratio
         if ratio > 0.6:
-            result["interpretation"] = f"Deflation Ratio = {ratio:.2f} > 0.6 → 양호 (참고용)"
+            result["interpretation"] = f"Deflation Ratio = {ratio:.2f} > 0.6 -> 양호 (참고용)"
         elif ratio > 0.3:
-            result["interpretation"] = f"Deflation Ratio = {ratio:.2f} (0.3~0.6) → 주의 (참고용)"
+            result["interpretation"] = f"Deflation Ratio = {ratio:.2f} (0.3~0.6) -> 주의 (참고용)"
         else:
-            result["interpretation"] = f"Deflation Ratio = {ratio:.2f} < 0.3 → 심각 (참고용)"
+            result["interpretation"] = f"Deflation Ratio = {ratio:.2f} < 0.3 -> 심각 (참고용)"
 
     return result
 
