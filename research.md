@@ -11,6 +11,19 @@
 
 BOK은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 모델 포트폴리오(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다.
 
+### 핵심 Funnel 구조 (2단계 축소)
+
+```
+200+ 유효 팩터 ──[4]──→ Top-50 후보군 ──[5][6]──→ 최종 weight>0 팩터 (5~14개)
+  (데이터 로딩           (CAGR 기준         (2-팩터 믹스 + MC 시뮬레이션
+   + 5분위 분석           상위 선별)          + 스타일 캡 25% 제약)
+   + 섹터 필터)
+```
+
+- **Top-50은 최적화기에 투입할 후보 풀(Candidate Pool)**일 뿐이다
+- 진짜 의사결정의 결정체는 MC 시뮬레이션을 거쳐 **비중>0으로 살아남은 최종 팩터**(스타일 수에 따라 5~14개 가변)
+- 과적합 진단의 3단계 테스트(Funnel Value-Add, OOS Percentile, Strict Jaccard)는 이 2단계 축소 각각이 진짜 가치를 창출했는지를 검증한다
+
 핵심 비즈니스 가치:
 - PIT(Point-in-Time) 데이터로 미래 정보 편향(look-ahead bias) 방지
 - 5분위 포트폴리오 기법으로 팩터 유효성 검증
@@ -57,6 +70,8 @@ main.py (CLI)
 | `python main.py mp <start> <end>` | parquet → MP CSV 생성 | `run_model_portfolio_pipeline()` → `ModelPortfolioPipeline.run()` |
 | `python main.py mp test <file>` | 소량 데이터 테스트 모드 | 동일 경로, `test_file` 인자 활성 |
 | `python main.py mp --report` | PDF 보고서만 생성 후 종료 | `_generate_report()` → `return` (early return) |
+| `python main.py backtest <start> <end>` | Walk-Forward OOS 백테스트 + 과적합 진단 | `WalkForwardEngine.run()` → `generate_overfit_report()` |
+| `python main.py mp <start> <end> --benchmark` | MP vs. 동일가중 벤치마크 비교 | `compare_vs_benchmark()` |
 
 ---
 
@@ -417,15 +432,22 @@ main.py
   │    ├→ db/factor_query.py
   │    │    └→ config.py (PARAM)
   │    └→ service/download/parquet_io.py (save/load/validate)
-  └→ service/pipeline/model_portfolio.py
-       ├→ config.py (PARAM)
-       ├→ service/download/parquet_io.py (load_factor_parquet)
-       ├→ service/pipeline/factor_analysis.py
-       │    └→ service/pipeline/pipeline_utils.py (prepend_start_zero)
-       ├→ service/pipeline/correlation.py
-       ├→ service/pipeline/optimization.py
-       ├→ service/pipeline/pipeline_utils.py (prepend_start_zero만)
-       └→ service/pipeline/weight_construction.py
+  ├→ service/pipeline/model_portfolio.py
+  │    ├→ config.py (PARAM)
+  │    ├→ service/download/parquet_io.py (load_factor_parquet)
+  │    ├→ service/pipeline/factor_analysis.py
+  │    │    └→ service/pipeline/pipeline_utils.py (prepend_start_zero)
+  │    ├→ service/pipeline/correlation.py
+  │    ├→ service/pipeline/optimization.py
+  │    ├→ service/pipeline/pipeline_utils.py (prepend_start_zero만)
+  │    ├→ service/pipeline/weight_construction.py
+  │    └→ service/pipeline/benchmark_comparison.py (--benchmark 옵션)
+  └→ service/backtest/ (backtest 커맨드)
+       ├→ walk_forward_engine.py (WalkForwardEngine)
+       │    ├→ data_slicer.py
+       │    ├→ result_stitcher.py (WalkForwardResult)
+       │    └→ 기존 pipeline 모듈 순수 함수 직접 호출
+       └→ overfit_diagnostics.py
 ```
 
 ### 3.2 모듈별 상세 의존성
@@ -439,6 +461,11 @@ main.py
 | `optimization.py` | (없음) | - | `model_portfolio._optimize_mixes()`, `model_portfolio.run()` [simulate_constrained_weights] |
 | `weight_construction.py` | (없음) | - | `model_portfolio.aggregate_factor_returns()` |
 | `pipeline_utils.py` | (없음) | - | `factor_analysis.calculate_factor_stats()` |
+| `benchmark_comparison.py` | scipy.stats | `ttest_1samp()` | `main.py` (`--benchmark` 옵션) |
+| `walk_forward_engine.py` | factor_analysis, correlation, optimization, model_portfolio, data_slicer, result_stitcher | 기존 pipeline 순수 함수 | `main.py` (`backtest` 커맨드) |
+| `data_slicer.py` | (없음) | - | `walk_forward_engine.py` |
+| `result_stitcher.py` | (없음) | - | `walk_forward_engine.py` |
+| `overfit_diagnostics.py` | scipy.stats | `spearmanr()` | `main.py` (`backtest` 커맨드) |
 
 ### 3.3 외부 의존성
 
@@ -694,3 +721,174 @@ room = max(cap - style_weight, 0)  (for under-allocated styles)
 redistributed = excess × (room / total_room)
 fitted = shrunk + redistributed
 ```
+
+---
+
+## 6. Walk-Forward 백테스트 레이어
+
+### 6.1 설계 원칙
+
+기존 파이프라인([1]~[7])의 내부 코드를 **한 줄도 수정하지 않고**, 외부에서 감싸는(wrapper) 방식으로 구현한다.
+
+- **Factor-Level Backtest**: 종목(stock-level) MP까지 내려가지 않고, 팩터 수익률(net-of-cost) × 팩터 가중치로 포트폴리오 수익률을 산출
+- **거래비용 이중 적용 금지**: 기존 `calculate_vectorized_return()`이 팩터 내부 종목 리밸런싱에서 30bp를 이미 차감. 팩터 가중치 변경에 대한 별도 거래비용은 적용하지 않음
+- **simulation 모드 통일**: 백테스트 전체에서 simulation 모드만 사용. hardcoded 모드는 프로덕션 전용
+
+### 6.2 계층적 리밸런싱 (Tiered Rebalancing)
+
+```
+Tier 1 (6개월마다): 규칙 학습 + IS 규칙을 전체 데이터에 적용
+  - IS 데이터로 [2]~[3] 수행 -> rule_bundle 생성 (dropped_sectors, label_rules)
+  - 전체 데이터에 [2] 5분위 랭킹 수행 (횡단면, 시계열 오염 없음)
+  - IS에서 학습한 규칙(섹터 제거, L/N/S 라벨)을 전체 데이터에 직접 매핑 (재학습 아님!)
+  - aggregate_factor_returns 1회 실행
+  - 산출물: precomputed_ret_df (전기간 x 유효 팩터 수익률 행렬)
+
+Tier 2 (3개월마다): 팩터 선정 + 가중치 최적화
+  - precomputed_ret_df에서 IS 구간만 슬라이스 (aggregate 재실행 불필요)
+  - CAGR -> 상위 팩터 선정 -> [5]~[6] 실행
+  - 산출물: cached_weights, cached_meta
+
+Tier 3 (매월): OOS 수익률 조회
+  - precomputed_ret_df.loc[oos_date, selected_factors] (밀리초)
+  - portfolio_return = sum(weight[f] x oos_factor_return[f])
+```
+
+**OOS look-ahead bias 방지 (핵심):**
+
+`_apply_rules_and_aggregate()`에서 `filter_and_label_factors()`를 전체 데이터로 재실행하면 섹터 제거와 L/N/S 라벨이 OOS 수익률에 오염된다. 반드시 `rule_bundle`의 IS 전용 규칙을 직접 적용해야 한다.
+
+| 항목 | 안전 (횡단면) | 오염 위험 (시간 평균) |
+|------|-------------|---------------------|
+| 5분위 랭킹 (rank within sector-date) | O | - |
+| 섹터 제거 (Q1-Q5 스프레드 기반) | - | O -> rule_bundle["dropped_sectors"] 사용 |
+| L/N/S 라벨 (분위별 평균 수익률 기반) | - | O -> rule_bundle["label_rules"] 사용 |
+
+### 6.3 과적합 위험 지점
+
+| 단계 | 과적합 위험 | 이유 |
+|------|------------|------|
+| [4] 상위 50 팩터 선정 | **높음** | IS CAGR 순위로 선정. 평균 회귀 위험 |
+| [5] 2-팩터 믹스 그리드 서치 | **높음** | IS 수익률로 101포인트 탐색 |
+| [6] MC 시뮬레이션 | 중간 | 스타일 캡 25% + Dirichlet 제약으로 자유도 낮음. 실측: MC_OVERFIT 판정 |
+| [3] 섹터 제거 + L/N/S 라벨 | **낮음 (수정 완료)** | IS 전용 rule_bundle 적용으로 OOS 오염 제거됨 |
+| [2] 5분위 분석 | 낮음 | 횡단면 정렬이라 시계열 과적합 아님 |
+
+### 6.4 과적합 진단 3단계 테스트
+
+파이프라인의 2단계 축소(200+ → Top-50 → 최종 weight>0 팩터)가 진짜 가치를 창출했는지 해부한다.
+
+**1순위: Funnel Value-Add Test (구간별 가치 창출 검증)**
+
+OOS 구간에서 3개 포트폴리오의 성과(CAGR, MDD)를 동시 비교:
+- A. EW_All: 전체 유효 팩터 동일가중 (시장/팩터 베타)
+- B. EW_Top50: Top-50 후보군 동일가중 (1차 필터링 실력)
+- C. MP_Final: MC 최적화 가중 포트폴리오 (최종 실력)
+
+| 패턴 | 의미 |
+|------|------|
+| C > B > A | 정상 — 필터링+최적화 모두 가치 창출 |
+| B > C > A | MC 과적합 — Top-50 EW가 더 나음 |
+| A > B | 1차 필터 과적합 — CAGR 기반 필터링 자체가 과거 우연 |
+
+**2순위: OOS Percentile Tracking (최종 팩터 생존율)**
+
+각 Tier 2 구간에서 weight>0 팩터들의 OOS 실현 수익률 백분위를 계산.
+- 상위 40% 이내 → 견고한 팩터 선정
+- 40~60% → 보통 (랜덤과 차이 미미)
+- 60% 이상 → 과적합 의심 (IS 상위 팩터가 OOS에서 추락)
+
+**3순위: Strict Jaccard Index (weight>0 팩터 안정성)**
+
+Top-50이 아닌, MC 최적화를 거쳐 **실제로 비중이 할당된 최종 팩터**(스타일 수에 따라 5~14개)에만 적용.
+집합 크기가 작아 Jaccard가 예민하게 반응 → 기준값을 Top-50 Jaccard보다 낮게 설정:
+- \> 0.5 → 안정적
+- 0.3~0.5 → 보통
+- < 0.3 → 불안정 (과적합 의심)
+
+**보조 지표:**
+4. IS-OOS Rank Correlation: IS CAGR 순위와 OOS 실현 수익률 순위의 Spearman 상관
+5. Deflation Ratio: OOS CAGR / IS CAGR. OOS 기간이 짧으면 단독 판단 금지
+
+### 6.5 방어 로직
+
+- **MIN_REQUIRED_FACTORS = 5**: 유효 팩터가 5개 미만이면 Tier 2 스킵, 이전 가중치 유지
+- **Style cap fallback**: MC feasibility 실패 시 style_cap을 0.25 → 0.40 → 1.00으로 단계적 완화
+- **EMA 가중치 블렌딩**: `turnover_smoothing_alpha` (0~1)로 가중치 변화 스무딩. 과적합 진단 시 1.0(스무딩 없음) 사용
+
+### 6.6 CLI 커맨드
+
+```
+python main.py backtest <start> <end> [옵션]
+  --min-is-months        최소 IS 기간 (기본: 36)
+  --factor-rebal-months  Tier 1 리밸런싱 주기 (기본: 6)
+  --weight-rebal-months  Tier 2 리밸런싱 주기 (기본: 3)
+  --top-factors          상위 팩터 수 (기본: 50)
+  --num-sims             MC 시뮬레이션 횟수 (기본: 1,000,000)
+  --turnover-alpha       EMA 블렌딩 비율 (기본: 1.0)
+
+python main.py mp <start> <end> --benchmark
+  → simulation 모드 MP vs. 동일가중(1/N) 비교 리포트
+```
+
+### 6.7 실제 실행 결과 (2026-04-03 기준)
+
+**실행 커맨드:**
+```bash
+python main.py backtest 2017-12-31 2026-03-31 \
+  --min-is-months 36 --factor-rebal-months 6 --weight-rebal-months 3 --num-sims 100000
+```
+
+**IS/OOS 구간 상세:**
+```
+전체 데이터: 2017-12 ~ 2026-03 (100개월)
+IS 고정 시작: 2017-12 (Expanding Window — 시작점 고정, 끝점만 확장)
+IS 최소 길이: 36개월 (2017-12 ~ 2020-11)
+OOS 구간: 2020-12 ~ 2026-03 (64개월, 매월 1개월씩 기록)
+
+  OOS#1  → IS 36개월 (2017-12 ~ 2020-11) → OOS 2020-12  [Tier1+2 재학습]
+  OOS#2  → IS 37개월 (2017-12 ~ 2020-12) → OOS 2021-01  [조회만]
+  OOS#3  → IS 38개월 (2017-12 ~ 2021-01) → OOS 2021-02  [조회만]
+  OOS#4  → IS 39개월 (2017-12 ~ 2021-02) → OOS 2021-03  [Tier2 재최적화]
+  ...
+  OOS#7  → IS 42개월 (2017-12 ~ 2021-05) → OOS 2021-06  [Tier1+2 재학습]
+  ...
+  OOS#64 → IS 99개월 (2017-12 ~ 2026-02) → OOS 2026-03  [Tier2 재최적화]
+
+Tier 1 실행: 11회 (6개월마다, 규칙 재학습 + 팩터 수익률 사전 계산)
+Tier 2 실행: 22회 (3개월마다, 팩터 선정 + 가중치 재최적화)
+Tier 3 실행: 64회 (매월, precomputed_ret_df 조회)
+총 소요 시간: 651초 (~11분)
+```
+
+**OOS 성과 비교 (EW + t-stat 최적 설정):**
+```
+              EW+t-stat(현재)    기존 MC(참고)
+CAGR:         +0.95%              +0.14%
+MDD:          -8.51%             -14.72%
+Sharpe:        0.243               0.054
+Deflation:     0.139               0.013
+```
+
+**과적합 진단 및 최적화 이력 (2026-04-06):**
+```
+[기존 MC+믹스]       CAGR=+0.14%, Sharpe=0.054, MDD=-14.72%, Deflation=0.013
+  -> MC_OVERFIT 판정, IS 10.4% 대비 OOS 0.14% (IS의 1.3%만 실현)
+
+[Phase 1: EW+스킵]   CAGR=+0.39%, Sharpe=0.092, MDD=-14.91%, Deflation=0.049
+  -> MC 제거 + 2-팩터 믹스 스킵으로 DOF 제거
+
+[Phase 2: EW+t-stat] CAGR=+0.95%, Sharpe=0.243, MDD=-8.51%, Deflation=0.139 (현재)
+  -> t-stat 랭킹으로 노이즈 팩터 필터, OOS CAGR 6.8x 개선
+```
+
+**현재 기본 설정 (config.py):**
+- `simulation_mode = "equal_weight"` (MC 1M 시행 대신 동일가중)
+- `skip_factor_mix = True` ([5] 2-팩터 믹스 스킵)
+- `factor_ranking_method = "tstat"` (CAGR 대신 t-통계량 랭킹)
+
+**산출 파일:**
+- `output/walk_forward_results.csv` — OOS 64개월 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
+- `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
+
+**주의:** backtest는 내부적으로 simulation 모드를 사용하여 `data/hardcoded_weights.csv`를 덮어쓴다. 실행 후 `git checkout -- data/hardcoded_weights.csv`로 프로덕션 가중치를 반드시 복원할 것.
