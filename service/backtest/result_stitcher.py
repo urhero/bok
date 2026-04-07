@@ -66,7 +66,8 @@ class WalkForwardResult:
         ew_all_rets = []
         for r in results:
             all_fr = r.get("oos_all_factor_returns", {})
-            ew_all_rets.append(np.nanmean(list(all_fr.values())) if all_fr else 0.0)
+            val = np.nanmean(list(all_fr.values())) if all_fr else 0.0
+            ew_all_rets.append(0.0 if np.isnan(val) else val)
         self.oos_ew_all_returns = pd.Series(ew_all_rets, index=dates, name="oos_ew_all_return")
         self.oos_ew_all_cumulative = (1 + self.oos_ew_all_returns).cumprod()
 
@@ -77,7 +78,8 @@ class WalkForwardResult:
             top50 = r.get("top50_factors", [])
             if all_fr and top50:
                 top50_vals = [all_fr[f] for f in top50 if f in all_fr]
-                ew_top50_rets.append(np.nanmean(top50_vals) if top50_vals else 0.0)
+                val50 = np.nanmean(top50_vals) if top50_vals else 0.0
+                ew_top50_rets.append(0.0 if np.isnan(val50) else val50)
             else:
                 ew_top50_rets.append(0.0)
         self.oos_ew_top50_returns = pd.Series(ew_top50_rets, index=dates, name="oos_ew_top50_return")
@@ -108,7 +110,7 @@ class WalkForwardResult:
         self.oos_all_factor_returns_history = [r.get("oos_all_factor_returns", {}) for r in results]
 
         # IS 전체 기간 MP CAGR (Deflation Ratio용 - 마지막 Tier 2 시점 기준)
-        is_cagrs = [r.get("is_mp_cagr", 0.0) for r in results if r.get("is_weight_rebal") and r.get("is_mp_cagr")]
+        is_cagrs = [r.get("is_mp_cagr", 0.0) for r in results if r.get("is_weight_rebal") and r.get("is_mp_cagr") is not None]
         self.is_full_period_cagr = is_cagrs[-1] if is_cagrs else 0.0
 
         # 리밸런싱 로그

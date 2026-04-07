@@ -339,9 +339,10 @@ class WalkForwardEngine:
         t0 = time.time()
         logger.info("Walk-Forward backtest starting: %s ~ %s", start_date, end_date)
 
-        # pipeline_params 커스텀 (simulation 모드 강제)
+        # pipeline_params 커스텀 (config의 simulation_mode 유지)
         pp = dict(PIPELINE_PARAMS)
-        pp["simulation_mode"] = "simulation"
+        if pp["simulation_mode"] == "hardcoded":
+            pp["simulation_mode"] = "simulation"  # hardcoded는 backtest에서 사용 불가
         pp["num_sims"] = self.num_sims
         pp["top_factor_count"] = self.top_factors
 
