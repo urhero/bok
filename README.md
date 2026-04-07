@@ -4,6 +4,26 @@
 *(Code → Investment Process 매핑)*
 
 > 각 섹션의 `[N]` 번호는 `model_portfolio.py:run()` 코드의 단계 주석과 동일합니다.
+> 함수별 Input/Output 상세, 코드 수준 구현 세부사항은 [`research.md`](research.md) 참조.
+
+---
+
+## 파이프라인 핵심 구조 (Funnel)
+
+```
+200+ 유효 팩터                      [1]~[3] 데이터 로딩 + 5분위 + 섹터 필터
+       │
+       ▼
+   Top-50 후보군 (Candidate Pool)   [4] CAGR 기준 상위 50개 선별
+       │
+       ▼                            [5] 스타일별 2-팩터 믹스 최적화
+   최종 weight>0 팩터 (5~14개)       [6] MC 시뮬레이션으로 비중 할당
+       │                                 (스타일 수에 따라 가변)
+       ▼
+   종목별 MP 비중 산출               [7] CSV 출력 → Bloomberg Optimizer
+```
+
+**Top-50은 최적화기에 던져줄 후보 풀일 뿐이다.** 진짜 의사결정의 결정체는 [5]~[6]을 거쳐 비중이 0%를 초과하여 할당된 최종 5~14개 팩터이다.
 
 ---
 
@@ -87,25 +107,27 @@
   - `weight_construction.calculate_vectorized_return()` — 리밸런싱 반영, 턴오버 계산, 거래비용(30bp) 차감
   - `model_portfolio.aggregate_factor_returns()` — 팩터별 **월간 롱-숏 수익률** 생성
 
-### (b) 팩터 유니버스 최종 선정
+### (b) 팩터 유니버스 최종 선정 (200+ -> Top-50 후보군)
 - **핵심 함수:** `ModelPortfolioPipeline._evaluate_universe()`
 - 팩터별 월간 롱-숏 수익률 행렬 구성
-- CAGR 계산 → 스타일 내 / 전체 랭킹 산출
-- **CAGR 기준 상위 50개 팩터 선정**
+- 랭킹 산출: **t-stat 기반** (기본값, 노이즈 팩터 페널티) 또는 CAGR 기반 (기존)
+- **상위 50개 팩터를 후보군(Candidate Pool)으로 선정**
 - **하락 상관관계** 계산
+- *이 50개는 [5]~[6]에 투입할 후보일 뿐, 최종 비중 할당은 [6]에서 결정*
 
 ---
 
-## [5] 2-팩터 믹스 최적화
+## [5] 2-팩터 믹스 최적화 (기본값: 스킵)
 
 ### 핵심 함수
 `optimization.find_optimal_mix()`
 
-### 절차
+> **기본값 `skip_factor_mix=True`:** OOS 실험에서 2-팩터 믹스가 과적합의 주범으로 확인되어 기본 스킵. 기존 방식은 `config.py`에서 `skip_factor_mix=False`로 복원 가능.
+
+### 절차 (skip_factor_mix=False일 때)
 - 스타일별 CAGR 기준 **1위 팩터를 메인 팩터로 선정**
 - 메인 팩터 대비 CAGR + 하락 상관관계를 고려하여 **보조 팩터** 도출
-- 메인–보조 팩터 조합에 대해 비중 0~100% 그리드 탐색 → CAGR 및 MDD 평가
-- **팩터 간 중복을 줄이면서 성과·안정성 개선**
+- 메인-보조 팩터 조합에 대해 비중 0~100% 그리드 탐색 -> CAGR 및 MDD 평가
 
 ---
 
@@ -114,15 +136,14 @@
 ### 핵심 함수
 `optimization.simulate_constrained_weights()`
 
-### 가중치 결정 모드 (hardcoded/simulation)
-- `mode="hardcoded"` (기본값): `data/hardcoded_weights.csv`에서 프로덕션 비중 로드
-- `mode="simulation"`: 몬테카를로 시뮬레이션으로 탐색
+### 가중치 결정 모드 (3가지)
+- `mode="equal_weight"` **(기본값, 권장)**: 1/K 동일가중 + 스타일 캡 25% 재분배
+- `mode="hardcoded"`: `data/hardcoded_weights.csv`에서 프로덕션 고정 비중 로드
+- `mode="simulation"`: 몬테카를로 시뮬레이션으로 탐색 (과적합 위험)
 
-### 절차 (simulation 모드)
-- 몬테카를로 방식으로 다수의 랜덤 포트폴리오 생성
-- 스타일별 비중 합계가 **스타일 캡(25%)**을 넘지 않도록 제약
-- 각 포트폴리오의 CAGR / MDD를 동시에 평가
-- 스타일 분산을 유지한 **최적 팩터 비중 도출**
+### 절차 (equal_weight 모드)
+- 선정된 팩터에 1/K 동일가중 부여
+- 스타일별 비중 합계가 **스타일 캡(25%)**을 넘지 않도록 비례 재분배
 - `random_seed` 파라미터로 재현성 보장 (기본값 42, None이면 랜덤)
 
 ---
@@ -151,6 +172,44 @@
 
 ---
 
+## [8] Walk-Forward 백테스트 (OOS 과적합 진단)
+
+### 개요
+기존 파이프라인([1]~[7])을 수정하지 않고, 외부에서 감싸는 방식으로 Expanding Window 백테스트를 수행한다. IS 데이터만으로 팩터 선정과 가중치를 결정하고 OOS 1개월 수익률을 기록하는 "의사 실전" 시뮬레이션이다.
+
+### 계층적 리밸런싱 (Tiered Rebalancing)
+| Tier | 주기 | 대상 | 설명 |
+|------|------|------|------|
+| Tier 1 | 6개월 | [2]~[3] | IS 데이터로 규칙 학습(섹터 제거, L/N/S 라벨) -> 전체 데이터에 IS 규칙 적용 -> 팩터 수익률 사전 계산 |
+| Tier 2 | 3개월 | [4]~[6] | 팩터 선정 + 가중치 최적화 (IS 슬라이스만) |
+| Tier 3 | 매월 | OOS 적용 | precomputed_ret_df에서 조회만 (밀리초) |
+
+> **OOS look-ahead bias 방지:** Tier 1에서 5분위 랭킹(횡단면, 안전)은 전체 데이터에서 계산하되, 섹터 제거와 L/N/S 라벨은 IS 전용 규칙(`rule_bundle`)을 직접 적용한다. `filter_and_label_factors()`를 전체 데이터로 재실행하지 않는다.
+
+### 과적합 진단 3단계 테스트 (우선순위 순)
+
+파이프라인의 2단계 축소(200+ → Top-50 → 최종 weight>0 팩터)가 진짜 가치를 창출했는지 검증한다.
+
+| 순위 | 지표 | 설명 | 해석 |
+|------|------|------|------|
+| 1순위 | Funnel Value-Add | EW_All vs EW_Top50 vs MP_Final 비교 | C>B>A 정상, B>C>A MC과적합, A>B 필터과적합 |
+| 2순위 | OOS Percentile Tracking | weight>0 팩터의 OOS 백분위 생존율 | 상위40% 견고, 40~60% 보통, 60%+ 과적합의심 |
+| 3순위 | Strict Jaccard | weight>0 팩터 집합 안정성 | >0.5 안정, 0.3~0.5 보통, <0.3 불안정 |
+| 4순위(보조) | IS-OOS Rank Corr | IS CAGR 순위 vs OOS 실현 수익률 순위 Spearman | >0.3 양호, ≈0 무관, <0 과적합 |
+| 5순위(보조) | Deflation Ratio | OOS CAGR / IS CAGR | >0.6 양호, 0.3~0.6 주의, <0.3 심각 |
+
+### 벤치마크 비교 (Step 0)
+`--benchmark` 옵션으로 simulation 모드 MP vs. 동일가중(1/N) 비교를 수행한다. IS 전체 기간의 Sanity Check 용도.
+
+### 핵심 모듈
+- `service/backtest/walk_forward_engine.py`: WalkForwardEngine 클래스 (오케스트레이터)
+- `service/backtest/data_slicer.py`: IS/OOS 날짜 분할
+- `service/backtest/result_stitcher.py`: WalkForwardResult 컨테이너
+- `service/backtest/overfit_diagnostics.py`: 과적합 진단 5개 지표 (3단계 핵심 + 2 보조)
+- `service/pipeline/benchmark_comparison.py`: MP vs. EW 벤치마크 비교
+
+---
+
 ## ✅ 전체 프로세스 요약
 
 | 단계 | 목적 | 핵심 함수 |
@@ -162,6 +221,7 @@
 | `[5]` 팩터 믹스 | 스타일 대표성 + 하락 상관관계 고려 | `find_optimal_mix` |
 | `[6]` 비중 결정 | 스타일 캡 하 최적화 | `simulate_constrained_weights` |
 | `[7]` MP 구성 + 출력 | 종목별 최종 비중, CSV 저장 | `_construct_and_export` |
+| `[8]` Walk-Forward 백테스트 | OOS 과적합 진단 | `WalkForwardEngine.run` |
 
 ---
 
@@ -178,13 +238,20 @@ service/
 │   ├── download_factors.py    # SQL → 연도별 parquet 다운로드 + 검증
 │   └── parquet_io.py          # 연도별 분할 저장/로드/검증 유틸리티
 │
-└── pipeline/
-    ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
-    ├── factor_analysis.py      # calculate_factor_stats, calculate_factor_stats_batch, filter_and_label_factors
-    ├── correlation.py          # calculate_downside_correlation
-    ├── optimization.py         # find_optimal_mix, simulate_constrained_weights (hardcoded/simulation)
-    ├── weight_construction.py  # construct_long_short_df, calculate_vectorized_return
-    └── pipeline_utils.py       # prepend_start_zero
+├── pipeline/
+│   ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
+│   ├── factor_analysis.py      # calculate_factor_stats, calculate_factor_stats_batch, filter_and_label_factors
+│   ├── correlation.py          # calculate_downside_correlation
+│   ├── optimization.py         # find_optimal_mix, simulate_constrained_weights (hardcoded/simulation)
+│   ├── weight_construction.py  # construct_long_short_df, calculate_vectorized_return
+│   ├── pipeline_utils.py       # prepend_start_zero
+│   └── benchmark_comparison.py # MP vs. 동일가중(1/N) 벤치마크 비교
+│
+└── backtest/
+    ├── walk_forward_engine.py  # Walk-Forward (Expanding Window) 오케스트레이터
+    ├── data_slicer.py          # 날짜 기반 IS/OOS 데이터 분할
+    ├── result_stitcher.py      # OOS 결과 접합 + 성과 계산 (WalkForwardResult)
+    └── overfit_diagnostics.py  # 과적합 진단 (Funnel Value-Add, Percentile, Strict Jaccard + 보조)
 ```
 
 ### Pipeline 사용법
@@ -200,85 +267,97 @@ pipeline.weights        # 최적 가중치
 pipeline.return_matrix  # 월간 수익률 행렬
 ```
 
----
+### Walk-Forward 백테스트 사용법
+```bash
+# 기본 실행 (Expanding Window, IS 36개월, OOS 매월)
+python main.py backtest 2017-12-31 2026-03-31
 
-## 📎 Appendix: 함수별 Input / Output 정리 (I/O Reference)
+# 파라미터 조정
+python main.py backtest 2017-12-31 2026-03-31 \
+  --min-is-months 36 \
+  --factor-rebal-months 6 \
+  --weight-rebal-months 3 \
+  --num-sims 100000 \
+  --top-factors 50
 
-> 아래는 본 코드에서 정의된 주요 함수들을 기준으로, **입력(필수 컬럼/형식)**과 **출력(산출물)**을 정리한 섹션입니다.
-> (실제 구현/타입힌트/사용 흐름을 기준으로 작성)
+# 테스트 모드
+python main.py backtest test test_data.csv --min-is-months 4
 
----
+# 벤치마크 비교 (MP vs. 동일가중)
+python main.py mp 2017-12-31 2026-03-31 --benchmark
+```
 
-### `[2]` `factor_analysis.calculate_factor_stats(factor_abbr, sort_order, factor_data_df, test_mode)`
-`-> Tuple[sector_ret, quantile_ret, spread, merged] | (None,)*4`
-- **Input**
-  - `factor_abbr`: 팩터 약어(컬럼명으로 사용)
-  - `sort_order`: 정렬 방향 (1=ascending, 0=descending)
-  - `factor_data_df`: 단일 팩터의 데이터프레임 (M_RETURN 이미 병합된 상태)
-    - **필수 컬럼**: `["gvkeyiid","ddt","sec","val","M_RETURN","factorAbbreviation"]`
-  - `test_mode`: True이면 최소 종목수 검증 생략
-- **Output**: `(sector_return_df, quantile_return_df, spread_series, merged_df)` 또는 `(None,)*4`
+```python
+# 프로그래밍 방식
+from service.backtest.walk_forward_engine import WalkForwardEngine
 
-> **프로덕션에서는 `calculate_factor_stats_batch()`가 호출됨** (하이브리드: batch lag + per-factor rank). 개별 함수는 리포트·유닛 테스트에서 사용.
+engine = WalkForwardEngine(min_is_months=36, factor_rebal_months=6, weight_rebal_months=3)
+result = engine.run("2017-12-31", "2026-03-31")
 
----
+# OOS 성과 확인
+result.calc_performance()           # CAGR, MDD, Sharpe, Calmar
+result.compare_mp_vs_ew_oos()       # MP vs. EW 비교
+result.to_csv("output/wf.csv")      # 결과 저장
+```
 
-### `[3]` `factor_analysis.filter_and_label_factors(factor_abbr_list, factor_name_list, style_name_list, factor_data_list)`
-`-> (kept_abbr, kept_name, kept_style, kept_idx, dropped_sec, filtered_raw)`
-- **Input**: 팩터 메타 리스트 + `calculate_factor_stats` 결과 리스트
-- **Output**: 섹터 필터 후 살아남은 팩터 메타 + `label` 컬럼이 추가된 종목 데이터
+### 실제 실행 예시 및 결과 (2026-04-03 기준)
 
----
+#### 1. 실제 데이터 백테스트 실행
+```bash
+python main.py backtest 2017-12-31 2026-03-31 \
+  --min-is-months 36 \
+  --factor-rebal-months 6 \
+  --weight-rebal-months 3 \
+  --num-sims 100000
+# → 651초(~11분), OOS 64개월 (2020-12 ~ 2026-03)
+```
 
-### `[4]` `correlation.calculate_downside_correlation(df, min_obs=20) -> pd.DataFrame`
-- **Input**: 월간 수익률 행렬 (행=날짜, 열=팩터)
-- **Output**: 열×열 하락 상관행렬 (각 열에서 음수 구간만 골라 상관 계산)
+**IS/OOS 구간:**
+```
+전체 데이터: 2017-12 ~ 2026-03 (100개월)
+IS 시작: 항상 2017-12 고정 (Expanding Window)
+IS 최소: 36개월 (2017-12 ~ 2020-11)
+OOS 구간: 2020-12 ~ 2026-03 (64개월, 매월 기록)
 
----
+매월 IS가 1개월씩 확장:
+  OOS#1  → IS 36개월 (2017-12 ~ 2020-11) → OOS 2020-12
+  OOS#2  → IS 37개월 (2017-12 ~ 2020-12) → OOS 2021-01
+  ...
+  OOS#64 → IS 99개월 (2017-12 ~ 2026-02) → OOS 2026-03
 
-### `[4]` `weight_construction.construct_long_short_df(labeled_data_df) -> (long_df, short_df)`
-- **Input**: 라벨 포함 종목 데이터 (`label` ∈ {+1, 0, -1})
-- **Output**: 롱/숏 종목군 (neutral 먼저 제거, `signal` L/S, `return_weight`, `turnover_weight`)
+Tier 1 (규칙 재학습): 11회 (6개월마다)
+Tier 2 (가중치 재최적화): 22회 (3개월마다)
+Tier 3 (OOS 수익률 조회): 64회 (매월)
+```
 
----
+**OOS 성과 결과 (EW + t-stat 최적 설정, 2026-04-06):**
+```
+              EW+t-stat(현재)    기존 MC(참고)
+CAGR:         +0.95%              +0.14%
+MDD:          -8.51%             -14.72%
+Sharpe:        0.243               0.054
+Deflation:     0.139               0.013
+```
 
-### `[4]` `weight_construction.calculate_vectorized_return(portfolio_data_df, factor_abbr, cost_bps=30.0)`
-`-> (gross_return_df, net_return_df, trading_cost_df)`
-- **Input**: 롱 또는 숏 포지션 (`return_weight`, `turnover_weight`, `M_RETURN`)
-- **Output**: 날짜별 gross/net/cost DataFrame (열=`factor_abbr`)
+**과적합 개선 이력:**
+```
+기존 MC+믹스:        CAGR=+0.14%, Sharpe=0.054, Deflation=0.013
+Phase 1 EW+스킵:     CAGR=+0.39%, Sharpe=0.092, Deflation=0.049
+Phase 2 EW+t-stat:   CAGR=+0.95%, Sharpe=0.243, Deflation=0.139 (현재)
+```
 
----
+#### 2. 검증: 기존 mp 파이프라인 영향 없음 확인
+```bash
+# 백테스트 전후 mp test 실행 → 동일 결과 확인
+python main.py mp test test_data.csv
 
-### `[4]` `model_portfolio.aggregate_factor_returns(factor_data_list, factor_abbr_list, backtest_start, cost_bps) -> pd.DataFrame`
-- **Input**: 팩터별 종목 데이터 리스트 + 약어 리스트 (길이 일치 검증 포함) + `backtest_start` (기본 `"2017-12-31"`) + `cost_bps` (기본 `30.0`)
-- **Output**: `net_return_df` — 팩터별 net return 매트릭스 (열=팩터, 행=날짜)
-- **NaN 처리**: 결합 후 NaN이 있는 팩터 컬럼은 `dropna(axis=1)`로 제거하며, 드롭된 팩터명을 warning 로그로 출력
-- **위치 변경**: `pipeline_utils.py`에서 `model_portfolio.py`로 이동 (오케스트레이션 로직이므로)
+# simulation 모드가 덮어쓴 hardcoded_weights.csv 복원
+git checkout -- data/hardcoded_weights.csv
+```
 
----
-
-### `[5]` `optimization.find_optimal_mix(factor_rets, data_raw, data_neg) -> pd.DataFrame`
-- **Input**: 월간 수익률 행렬, 메인 팩터 메타 (1행), downside 상관행렬
-- **Output**: `df_mix` — 메인–보조 팩터 조합별 CAGR/MDD 및 랭킹 테이블
-
----
-
-### `[6]` `optimization.simulate_constrained_weights(rtn_df, style_list, mode, ...)`
-`-> (best_stats, weights_tbl)`
-- **Input**: 월간 수익률 행렬 + 스타일명 리스트 + 모드/파라미터
-- **Output**: 최적 CAGR/MDD 요약 (1행) + 팩터 비중 테이블
-
----
-
-### `[7]` `model_portfolio._construct_and_export(sim_result, kept_abbrs, filtered_data, end_date, test_file)`
-- 종목별 비중 산출 → MP 집계 → style_ls_weight 계산 → CSV 3종 + meta 출력
-
----
-
-### `model_portfolio.run_model_portfolio_pipeline(start_date, end_date) -> None`
-- backward compatibility wrapper
-- 내부에서 `ModelPortfolioPipeline` 생성 → `run()` 호출
-- `run()` 내부: `[1]` → `[2]` → `[3]` → `[4]` → `[5]` → `[6]` → `[7]` 순차 실행
+**산출 파일:**
+- `output/walk_forward_results.csv` — OOS 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
+- `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
 
 ---
 
