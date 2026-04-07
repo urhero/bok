@@ -124,100 +124,70 @@ def _get_hardcoded_weights() -> Tuple[pd.DataFrame, pd.DataFrame]:
     return best_stats, weights_tbl
 
 
-def simulate_constrained_weights(
+def _equal_weight_allocation(
     rtn_df: pd.DataFrame,
     style_list: List[str],
-    mode: str = "hardcoded",
-    num_sims: int = 1_000_000,
-    style_cap: float = 0.25,
-    tol: float = 1e-12,
-    test_mode: bool = False,
-    batch_size: int = 100_000,
-    random_seed: int | None = 42,
-    portfolio_rank_weights: tuple = (0.6, 0.4),
+    style_cap: float,
+    tol: float,
+    test_mode: bool,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """스타일 캡 하 최적 포트폴리오 가중치를 결정한다.
+    """Equal-weight 모드: 1/K 동일가중 + 스타일 캡 재분배."""
+    K = rtn_df.shape[1]
+    factors = rtn_df.columns.to_numpy()
+    styles_arr = np.asarray(style_list)
 
-    두 가지 모드를 지원한다:
-    - "hardcoded": 프로덕션용 고정 가중치 반환 (기본값)
-    - "simulation": 몬테카를로 시뮬레이션으로 최적 가중치 탐색
+    w = np.ones(K, dtype=np.float32) / K
 
-    시뮬레이션 모드에서는 100만 개의 랜덤 포트폴리오를 생성하고,
-    각 스타일의 비중이 style_cap(기본 25%) 이하인 포트폴리오만 유효하다.
-    CAGR(60%) + MDD(40%) 복합 랭크로 최적 포트폴리오를 선택한다.
+    # 스타일 캡 재분배 (수렴까지 반복)
+    uniq_styles = np.unique(styles_arr)
+    if not test_mode:
+        for _ in range(10):
+            for s in uniq_styles:
+                mask_s = styles_arr == s
+                style_w = w[mask_s].sum()
+                if style_w > style_cap + tol:
+                    w[mask_s] *= style_cap / style_w
+            w /= w.sum()
+            if all(w[styles_arr == s].sum() <= style_cap + tol for s in uniq_styles):
+                break
 
-    Args:
-        rtn_df: (날짜 × 팩터) 월간 수익률 행렬
-        style_list: 각 팩터의 스타일명 (rtn_df 컬럼 순서와 동일)
-        mode: "hardcoded" (고정 가중치) 또는 "simulation" (몬테카를로)
-        num_sims: 시뮬레이션 횟수 (기본 1,000,000)
-        style_cap: 스타일별 최대 비중 (기본 0.25 = 25%)
-        tol: 제약 검사 허용 오차
-        test_mode: True이면 style_cap을 1.0으로 완화
-        batch_size: 메모리 효율을 위한 배치 크기
+    weights_tbl = pd.DataFrame({
+        "factor": factors,
+        "raw_weight": w,
+        "styleName": styles_arr,
+        "fitted_weight": w,
+    })
 
-    Returns:
-        (best_stats, weights_tbl) 튜플
-        - best_stats: 1행 DataFrame (cagr, mdd, rank_cagr, rank_mdd, rank_total)
-        - weights_tbl: 팩터별 가중치 (factor, raw_weight, styleName, fitted_weight)
+    # CAGR/MDD 계산 (기록용)
+    port_np = rtn_df.to_numpy(dtype=np.float32)
+    T = port_np.shape[0]
+    sim = port_np @ w
+    cum = np.cumprod(1 + sim)
+    ann_exp = 12 / max(T - 1, 1)
+    cagr_val = float(cum[-1] ** ann_exp - 1)
+    mdd_val = float((cum / np.maximum.accumulate(cum) - 1).min())
 
-    예시 Output (weights_tbl):
-        | factor   | raw_weight | styleName         | fitted_weight |
-        |----------|------------|-------------------|---------------|
-        | SalesAcc | 0.2246     | Historical Growth | 0.2246        |
-        | PM6M     | 0.2209     | Price Momentum    | 0.2209        |
-        | 90DCV    | 0.1969     | Volatility        | 0.1969        |
-    """
-    if mode == "hardcoded":
-        logger.info("Using hardcoded weights (production mode)")
-        return _get_hardcoded_weights()
+    best_stats = pd.DataFrame({
+        "cagr": [cagr_val], "mdd": [mdd_val],
+        "rank_cagr": [np.nan], "rank_mdd": [np.nan], "rank_total": [np.nan],
+    })
 
-    if mode == "equal_weight":
-        # --- Equal-weight 모드: 1/K 동일가중 + 스타일 캡 재분배 ---
-        K = rtn_df.shape[1]
-        factors = rtn_df.columns.to_numpy()
-        styles_arr = np.asarray(style_list)
+    logger.info("Equal-weight allocation: %d factors, CAGR=%.4f, MDD=%.4f", K, cagr_val, mdd_val)
+    return best_stats, weights_tbl
 
-        w = np.ones(K, dtype=np.float32) / K
 
-        # 스타일 캡 재분배 (수렴까지 반복)
-        uniq_styles = np.unique(styles_arr)
-        if not test_mode:
-            for _ in range(10):
-                for s in uniq_styles:
-                    mask_s = styles_arr == s
-                    style_w = w[mask_s].sum()
-                    if style_w > style_cap + tol:
-                        w[mask_s] *= style_cap / style_w
-                w /= w.sum()
-                if all(w[styles_arr == s].sum() <= style_cap + tol for s in uniq_styles):
-                    break
-
-        weights_tbl = pd.DataFrame({
-            "factor": factors,
-            "raw_weight": w,
-            "styleName": styles_arr,
-            "fitted_weight": w,
-        })
-
-        # CAGR/MDD 계산 (기록용)
-        port_np = rtn_df.to_numpy(dtype=np.float32)
-        T = port_np.shape[0]
-        sim = port_np @ w
-        cum = np.cumprod(1 + sim)
-        ann_exp = 12 / max(T - 1, 1)
-        cagr_val = float(cum[-1] ** ann_exp - 1)
-        mdd_val = float((cum / np.maximum.accumulate(cum) - 1).min())
-
-        best_stats = pd.DataFrame({
-            "cagr": [cagr_val], "mdd": [mdd_val],
-            "rank_cagr": [np.nan], "rank_mdd": [np.nan], "rank_total": [np.nan],
-        })
-
-        logger.info("Equal-weight allocation: %d factors, CAGR=%.4f, MDD=%.4f", K, cagr_val, mdd_val)
-        return best_stats, weights_tbl
-
-    # --- 시뮬레이션 모드 ---
+def _mc_simulation(
+    rtn_df: pd.DataFrame,
+    style_list: List[str],
+    num_sims: int,
+    style_cap: float,
+    tol: float,
+    test_mode: bool,
+    batch_size: int,
+    random_seed: int | None,
+    portfolio_rank_weights: tuple,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """몬테카를로 시뮬레이션으로 스타일 캡 하 최적 가중치를 탐색한다."""
     K = rtn_df.shape[1]
     T = rtn_df.shape[0]
     if len(style_list) != K:
@@ -229,7 +199,7 @@ def simulate_constrained_weights(
 
     styles = np.asarray(style_list)
 
-    # 스타일 마스크 생성 (S × K) — 벡터화
+    # 스타일 마스크 생성 (S × K) -- 벡터화
     uniq_styles = np.unique(styles)
     S = len(uniq_styles)
     mask = (styles[None, :] == uniq_styles[:, None]).astype(np.float32)
@@ -354,3 +324,52 @@ def simulate_constrained_weights(
         logger.info("새 시뮬레이션 가중치 저장: %s (%d factors)", csv_path.name, len(save_cols))
 
     return best_stats, weights_tbl
+
+
+def simulate_constrained_weights(
+    rtn_df: pd.DataFrame,
+    style_list: List[str],
+    mode: str = "hardcoded",
+    num_sims: int = 1_000_000,
+    style_cap: float = 0.25,
+    tol: float = 1e-12,
+    test_mode: bool = False,
+    batch_size: int = 100_000,
+    random_seed: int | None = 42,
+    portfolio_rank_weights: tuple = (0.6, 0.4),
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """스타일 캡 하 최적 포트폴리오 가중치를 결정한다.
+
+    세 가지 모드를 지원한다:
+    - "hardcoded": 프로덕션용 고정 가중치 반환 (기본값)
+    - "equal_weight": 1/K 동일가중 + 스타일 캡 재분배 (권장)
+    - "simulation": 몬테카를로 시뮬레이션으로 최적 가중치 탐색
+
+    Args:
+        rtn_df: (날짜 x 팩터) 월간 수익률 행렬
+        style_list: 각 팩터의 스타일명 (rtn_df 컬럼 순서와 동일)
+        mode: "hardcoded" / "equal_weight" / "simulation"
+        num_sims: 시뮬레이션 횟수 (기본 1,000,000)
+        style_cap: 스타일별 최대 비중 (기본 0.25 = 25%)
+        tol: 제약 검사 허용 오차
+        test_mode: True이면 style_cap을 1.0으로 완화
+        batch_size: 메모리 효율을 위한 배치 크기
+        random_seed: 재현성을 위한 난수 시드
+        portfolio_rank_weights: CAGR/MDD 복합 랭크 가중치
+
+    Returns:
+        (best_stats, weights_tbl) 튜플
+        - best_stats: 1행 DataFrame (cagr, mdd, rank_cagr, rank_mdd, rank_total)
+        - weights_tbl: 팩터별 가중치 (factor, raw_weight, styleName, fitted_weight)
+    """
+    if mode == "hardcoded":
+        logger.info("Using hardcoded weights (production mode)")
+        return _get_hardcoded_weights()
+
+    if mode == "equal_weight":
+        return _equal_weight_allocation(rtn_df, style_list, style_cap, tol, test_mode)
+
+    return _mc_simulation(
+        rtn_df, style_list, num_sims, style_cap, tol,
+        test_mode, batch_size, random_seed, portfolio_rank_weights,
+    )

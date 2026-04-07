@@ -141,6 +141,8 @@
 - `mode="hardcoded"`: `data/hardcoded_weights.csv`에서 프로덕션 고정 비중 로드
 - `mode="simulation"`: 몬테카를로 시뮬레이션으로 탐색 (과적합 위험)
 
+> **주의:** Walk-Forward 백테스트(`python main.py backtest`)는 `equal_weight` 또는 `simulation` 모드만 사용한다. `hardcoded` 모드는 프로덕션 전용이며, 백테스트 결과와 일치하지 않는다.
+
 ### 절차 (equal_weight 모드)
 - 선정된 팩터에 1/K 동일가중 부여
 - 스타일별 비중 합계가 **스타일 캡(25%)**을 넘지 않도록 비례 재분배
@@ -242,7 +244,7 @@ service/
 │   ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
 │   ├── factor_analysis.py      # calculate_factor_stats, calculate_factor_stats_batch, filter_and_label_factors
 │   ├── correlation.py          # calculate_downside_correlation
-│   ├── optimization.py         # find_optimal_mix, simulate_constrained_weights (hardcoded/simulation)
+│   ├── optimization.py         # find_optimal_mix, simulate_constrained_weights (hardcoded/equal_weight/simulation)
 │   ├── weight_construction.py  # construct_long_short_df, calculate_vectorized_return
 │   ├── pipeline_utils.py       # prepend_start_zero
 │   └── benchmark_comparison.py # MP vs. 동일가중(1/N) 벤치마크 비교
