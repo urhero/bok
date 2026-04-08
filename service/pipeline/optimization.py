@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 def find_optimal_mix(
-    factor_rets: pd.DataFrame,
-    data_raw: pd.DataFrame,
-    data_neg: pd.DataFrame,
+    ret_df: pd.DataFrame,
+    main_factor_meta: pd.DataFrame,
+    neg_corr: pd.DataFrame,
     sub_factor_rank_weights: tuple = (0.7, 0.3),
     portfolio_rank_weights: tuple = (0.6, 0.4),
 ) -> pd.DataFrame:
@@ -29,16 +29,16 @@ def find_optimal_mix(
     0%~100% (1% 단위) 가중치 그리드로 혼합 수익률을 계산한다.
 
     Args:
-        factor_rets: (날짜 × top_50 팩터) 순수익률 행렬
-        data_raw: 메인 팩터 메타 (1행 DataFrame, factorAbbreviation 필수)
-        data_neg: (top_50 × top_50) 하락 상관관계 행렬
+        ret_df: (날짜 × top_50 팩터) 순수익률 행렬
+        main_factor_meta: 메인 팩터 메타 (1행 DataFrame, factorAbbreviation 필수)
+        neg_corr: (top_50 × top_50) 하락 상관관계 행렬
 
     Returns:
         df_mix: 그리드 결과 (101×3행, mix_cagr/mix_mdd/rank_total 등)
 
     예시 Input:
-        factor_rets: (72 × 50) 월간 수익률 행렬
-        data_raw:
+        ret_df: (72 × 50) 월간 수익률 행렬
+        main_factor_meta:
         | factorAbbreviation | styleName         | cagr  |
         |--------------------|-------------------|-------|
         | SalesAcc           | Historical Growth | 0.12  |
@@ -50,28 +50,28 @@ def find_optimal_mix(
         | 0.70     | 0.30    | 0.115    | -0.082   | SalesAcc    | PM6M       |
     """
     # 보조 팩터 후보 선정 (CAGR 70% + 상관관계 30% 복합 랭크)
-    negative_corr = data_neg.loc[data_raw["factorAbbreviation"], :].T.reset_index().reset_index()
-    negative_corr.iloc[:, 0] += 1
-    negative_corr.columns = ["rank_cagr", "factorAbbreviation", negative_corr.columns[-1]]
-    negative_corr["rank_ncorr"] = negative_corr[negative_corr.columns[-1]].rank()
-    negative_corr["rank_avg"] = negative_corr["rank_cagr"] * sub_factor_rank_weights[0] + negative_corr["rank_ncorr"] * sub_factor_rank_weights[1]
-    negative_corr = negative_corr.nsmallest(3, "rank_avg")
+    corr_ranked = neg_corr.loc[main_factor_meta["factorAbbreviation"], :].T.reset_index().reset_index()
+    corr_ranked.iloc[:, 0] += 1
+    corr_ranked.columns = ["rank_cagr", "factorAbbreviation", corr_ranked.columns[-1]]
+    corr_ranked["rank_ncorr"] = corr_ranked[corr_ranked.columns[-1]].rank()
+    corr_ranked["rank_avg"] = corr_ranked["rank_cagr"] * sub_factor_rank_weights[0] + corr_ranked["rank_ncorr"] * sub_factor_rank_weights[1]
+    corr_ranked = corr_ranked.nsmallest(3, "rank_avg")
 
     # 가중치 그리드 생성 (0% ~ 100%, 1% 단위)
     w_grid = np.linspace(0, 1, 101)
     w_inv = 1 - w_grid
-    ann = 12 / (factor_rets.shape[0] - 1)  # 첫 행은 기준점(0)이므로 제외
-    main = data_raw["factorAbbreviation"].iat[0]
+    ann = 12 / (ret_df.shape[0] - 1)  # 첫 행은 기준점(0)이므로 제외
+    main = main_factor_meta["factorAbbreviation"].iat[0]
 
     frames: list[pd.DataFrame] = []
 
     for sub in track(
-        negative_corr["factorAbbreviation"], description=f"Mixing {main} with sub-factors"
+        corr_ranked["factorAbbreviation"], description=f"Mixing {main} with sub-factors"
     ):
         if main == sub:
             logger.warning("Skipping mix of %s with itself", main)
             continue
-        port = factor_rets[[main, sub]]
+        port = ret_df[[main, sub]]
         mix_ret = port[main].to_numpy()[:, None] * w_grid + port[sub].to_numpy()[:, None] * w_inv
         mix_cum = np.cumprod(1 + mix_ret, axis=0)
 
@@ -124,15 +124,15 @@ def _get_hardcoded_weights() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def _equal_weight_allocation(
-    rtn_df: pd.DataFrame,
+    ret_df: pd.DataFrame,
     style_list: list[str],
     style_cap: float,
     tol: float,
     test_mode: bool,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Equal-weight 모드: 1/K 동일가중 + 스타일 캡 재분배."""
-    K = rtn_df.shape[1]
-    factors = rtn_df.columns.to_numpy()
+    K = ret_df.shape[1]
+    factors = ret_df.columns.to_numpy()
     styles_arr = np.asarray(style_list)
 
     w = np.ones(K, dtype=np.float32) / K
@@ -158,7 +158,7 @@ def _equal_weight_allocation(
     })
 
     # CAGR/MDD 계산 (기록용)
-    port_np = rtn_df.to_numpy(dtype=np.float32)
+    port_np = ret_df.to_numpy(dtype=np.float32)
     T = port_np.shape[0]
     sim = port_np @ w
     cum = np.cumprod(1 + sim)
@@ -176,7 +176,7 @@ def _equal_weight_allocation(
 
 
 def _mc_simulation(
-    rtn_df: pd.DataFrame,
+    ret_df: pd.DataFrame,
     style_list: list[str],
     num_sims: int,
     style_cap: float,
@@ -187,10 +187,10 @@ def _mc_simulation(
     portfolio_rank_weights: tuple,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """몬테카를로 시뮬레이션으로 스타일 캡 하 최적 가중치를 탐색한다."""
-    K = rtn_df.shape[1]
-    T = rtn_df.shape[0]
+    K = ret_df.shape[1]
+    T = ret_df.shape[0]
     if len(style_list) != K:
-        raise ValueError("length of style_list must equal number of columns in rtn_df")
+        raise ValueError("length of style_list must equal number of columns in ret_df")
 
     if test_mode:
         style_cap = 1.0
@@ -203,7 +203,7 @@ def _mc_simulation(
     S = len(uniq_styles)
     mask = (styles[None, :] == uniq_styles[:, None]).astype(np.float32)
 
-    port_np = rtn_df.to_numpy(dtype=np.float32)
+    port_np = ret_df.to_numpy(dtype=np.float32)
     ann_exp = 12 / (T - 1)  # 첫 행은 기준점(0)이므로 제외
 
     # 재현성을 위한 로컬 난수 생성기
@@ -290,7 +290,7 @@ def _mc_simulation(
         }
     )
 
-    factors = rtn_df.columns.to_numpy()
+    factors = ret_df.columns.to_numpy()
 
     # 이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!
     weights_tbl = pd.DataFrame(
@@ -326,7 +326,7 @@ def _mc_simulation(
 
 
 def simulate_constrained_weights(
-    rtn_df: pd.DataFrame,
+    ret_df: pd.DataFrame,
     style_list: list[str],
     mode: str = "hardcoded",
     num_sims: int = 1_000_000,
@@ -345,8 +345,8 @@ def simulate_constrained_weights(
     - "simulation": 몬테카를로 시뮬레이션으로 최적 가중치 탐색
 
     Args:
-        rtn_df: (날짜 x 팩터) 월간 수익률 행렬
-        style_list: 각 팩터의 스타일명 (rtn_df 컬럼 순서와 동일)
+        ret_df: (날짜 x 팩터) 월간 수익률 행렬
+        style_list: 각 팩터의 스타일명 (ret_df 컬럼 순서와 동일)
         mode: "hardcoded" / "equal_weight" / "simulation"
         num_sims: 시뮬레이션 횟수 (기본 1,000,000)
         style_cap: 스타일별 최대 비중 (기본 0.25 = 25%)
@@ -366,9 +366,9 @@ def simulate_constrained_weights(
         return _get_hardcoded_weights()
 
     if mode == "equal_weight":
-        return _equal_weight_allocation(rtn_df, style_list, style_cap, tol, test_mode)
+        return _equal_weight_allocation(ret_df, style_list, style_cap, tol, test_mode)
 
     return _mc_simulation(
-        rtn_df, style_list, num_sims, style_cap, tol,
+        ret_df, style_list, num_sims, style_cap, tol,
         test_mode, batch_size, random_seed, portfolio_rank_weights,
     )
