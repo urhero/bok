@@ -58,7 +58,7 @@ def _run_rule_learning(
     pp = pipeline.pp
 
     # [1] 메타데이터 병합 (IS 데이터에 대해)
-    factor_metadata, merged_data, factor_abbr_list, orders = pipeline._prepare_metadata(
+    factor_metadata, merged_data, factor_abbr_list, sort_orders = pipeline._prepare_metadata(
         is_raw, is_mret
     )
 
@@ -66,7 +66,7 @@ def _run_rule_learning(
     analyze_cols = ["gvkeyiid", "ticker", "isin", "ddt", "sec", "val", "M_RETURN", "factorAbbreviation", "factorOrder"]
     slim_data = merged_data[[c for c in analyze_cols if c in merged_data.columns]]
     factor_stats = calculate_factor_stats_batch(
-        slim_data, factor_abbr_list, orders,
+        slim_data, factor_abbr_list, sort_orders,
         test_mode=bool(test_file),
         min_sector_stocks=pp["min_sector_stocks"],
     )
@@ -81,7 +81,7 @@ def _run_rule_learning(
 
     # sort_order_map 구성 (팩터별 정렬 방향)
     sort_order_map = {}
-    for abbr, order in zip(factor_abbr_list, orders):
+    for abbr, order in zip(factor_abbr_list, sort_orders):
         sort_order_map[abbr] = order
 
     # label_rules 구성 (각 팩터의 분위별 라벨 매핑)
@@ -104,7 +104,7 @@ def _run_rule_learning(
         "filtered_data": filtered_data,
         "factor_metadata": factor_metadata,
         "factor_abbr_list": factor_abbr_list,
-        "orders": orders,
+        "sort_orders": sort_orders,
     }
 
     return rule_bundle
@@ -134,7 +134,7 @@ def _apply_rules_and_aggregate(
     pp = pipeline.pp
 
     # 전체 데이터에 대해 메타데이터 병합
-    factor_metadata, merged_data_full, factor_abbr_list, orders = pipeline._prepare_metadata(
+    factor_metadata, merged_data_full, factor_abbr_list, sort_orders = pipeline._prepare_metadata(
         raw_data, mreturn_df
     )
 
@@ -142,7 +142,7 @@ def _apply_rules_and_aggregate(
     analyze_cols = ["gvkeyiid", "ticker", "isin", "ddt", "sec", "val", "M_RETURN", "factorAbbreviation", "factorOrder"]
     slim_data = merged_data_full[[c for c in analyze_cols if c in merged_data_full.columns]]
     factor_stats_full = calculate_factor_stats_batch(
-        slim_data, factor_abbr_list, orders,
+        slim_data, factor_abbr_list, sort_orders,
         test_mode=bool(test_file),
         min_sector_stocks=pp["min_sector_stocks"],
     )
@@ -225,7 +225,7 @@ def _run_weight_optimization(
     """[5]~[6] 2-팩터 믹스 + MC 시뮬레이션으로 가중치를 산출한다.
 
     Returns:
-        (weights_dict, meta) — weights_dict: {factor_abbr: weight}
+        (weights_dict, meta) -- weights_dict: {factor_abbr: weight}
     """
     if style_caps_to_try is None:
         style_caps_to_try = [0.25, 0.40, 1.00]
@@ -263,7 +263,7 @@ def _run_weight_optimization(
         factor_list = cols_to_keep.tolist()
         style_list = [style_map[f] for f in factor_list]
 
-    # [6] 가중치 결정 — style_cap fallback
+    # [6] 가중치 결정 -- style_cap fallback
     base_seed = pp.get("random_seed", 42) or 42
     seed = base_seed + loop_index
 
@@ -283,7 +283,7 @@ def _run_weight_optimization(
         except (ValueError, RuntimeError) as e:
             if cap == style_caps_to_try[-1]:
                 raise
-            logger.warning("MC failed with style_cap=%.2f: %s — retrying with relaxed cap", cap, e)
+            logger.warning("MC failed with style_cap=%.2f: %s -- retrying with relaxed cap", cap, e)
 
     weights_dict = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
     return weights_dict, meta
@@ -346,7 +346,7 @@ class WalkForwardEngine:
         pp["num_sims"] = self.num_sims
         pp["top_factor_count"] = self.top_factors
 
-        # 1. 데이터 1회 로딩 — pipeline 인스턴스를 통해 [1] 실행
+        # 1. 데이터 1회 로딩 -- pipeline 인스턴스를 통해 [1] 실행
         from service.pipeline.model_portfolio import DATA_DIR
 
         pipeline = ModelPortfolioPipeline(
@@ -385,7 +385,7 @@ class WalkForwardEngine:
             is_rule_rebal = False
             is_weight_rebal = False
 
-            # ── Tier 1: 규칙 학습 + 팩터 수익률 사전 계산 ──
+            # -- Tier 1: 규칙 학습 + 팩터 수익률 사전 계산 --
             if cached_rule_bundle is None or i % self.factor_rebal_months == 0:
                 is_rule_rebal = True
                 is_raw, is_mret = slice_data_by_date(raw_data, market_return_df, is_end_date)
@@ -413,7 +413,7 @@ class WalkForwardEngine:
             if precomputed_ret_df is None or precomputed_ret_df.empty:
                 continue
 
-            # ── Tier 2: 팩터 선정 + 가중치 최적화 ──
+            # -- Tier 2: 팩터 선정 + 가중치 최적화 --
             if cached_weights is None or i % self.weight_rebal_months == 0:
                 is_weight_rebal = True
 
@@ -492,7 +492,7 @@ class WalkForwardEngine:
                                 ret_df_selected, meta_top, neg_corr, pp, loop_index=i,
                             )
                         except (ValueError, RuntimeError) as e:
-                            logger.warning("OOS %s: weight optimization failed: %s — 이전 가중치 유지", oos_date, e)
+                            logger.warning("OOS %s: weight optimization failed: %s -- 이전 가중치 유지", oos_date, e)
                             if cached_weights is None:
                                 continue
                             raw_new_weights = None
@@ -526,7 +526,7 @@ class WalkForwardEngine:
             if cached_weights is None or cached_selected_factors is None:
                 continue
 
-            # ── Tier 3: OOS 1개월 팩터 수익률 (조회만) ──
+            # -- Tier 3: OOS 1개월 팩터 수익률 (조회만) --
             if oos_date not in precomputed_ret_df.index:
                 logger.warning("OOS date %s not in precomputed_ret_df, skipping", oos_date)
                 continue
