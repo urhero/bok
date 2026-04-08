@@ -55,7 +55,7 @@ def _run_rule_learning(
         rule_bundle: kept_abbrs, factor_stats, sort_order_map,
                      dropped_sectors, label_rules, threshold_pct, kept_styles
     """
-    pp = pipeline.pp
+    pp = pipeline.pipeline_params
 
     # [1] 메타데이터 병합 (IS 데이터에 대해)
     factor_metadata, merged_data, factor_abbr_list, orders = pipeline._prepare_metadata(
@@ -131,7 +131,7 @@ def _apply_rules_and_aggregate(
     Returns:
         precomputed_ret_df: (전체 월 × 유효 팩터) 수익률 행렬
     """
-    pp = pipeline.pp
+    pp = pipeline.pipeline_params
 
     # 전체 데이터에 대해 메타데이터 병합
     factor_metadata, merged_data_full, factor_abbr_list, orders = pipeline._prepare_metadata(

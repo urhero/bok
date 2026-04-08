@@ -33,7 +33,7 @@ graph TD
 
     %% --- [2] Factor Assignment ---
     Func_Assign{{"[2] calculate_factor_stats_batch<br/>(하이브리드: batch lag + per-factor rank/quantile)"}}:::func
-    Var_DataList("factor_stats<br/>(List[Tuple])"):::data
+    Var_DataList("factor_stats<br/>(list[tuple])"):::data
 
     Var_Merged --> Func_Assign
     Func_Assign --> Var_DataList
@@ -110,7 +110,7 @@ graph TD
 | `[1]` | `market_return_df` | M_RETURN parquet에서 로드 (67K행, gvkeyiid × ddt) | `pd.DataFrame` | `_load_data` |
 | `[1]` | `factor_metadata` | factor_info.csv 메타 정보 | `pd.DataFrame` | `_prepare_metadata` |
 | `[1]` | `merged_data` | raw_data + M_RETURN 병합 결과 (pipeline-ready면 factor_info merge 생략) | `pd.DataFrame` | `_prepare_metadata` |
-| `[2]` | `factor_stats` | 팩터별 분석 결과 (sector_return, spread, merged_df) | `List[Tuple]` | `calculate_factor_stats_batch` |
+| `[2]` | `factor_stats` | 팩터별 분석 결과 (sector_return, spread, merged_df) | `list[tuple]` | `calculate_factor_stats_batch` |
 | `[3]` | `filtered_data` | 섹터 필터 + label 부여된 종목 데이터 | `List[pd.DataFrame]` | `filter_and_label_factors` |
 | `[3]` | `kept_abbrs/names/styles` | 유지된 팩터 메타 리스트 | `List[str]` | `filter_and_label_factors` |
 | `[4]` | `return_matrix` | 월간 net return 매트릭스 (top 50 팩터) | `pd.DataFrame` | `_evaluate_universe` |

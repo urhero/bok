@@ -247,7 +247,7 @@ meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
 meta = meta[:50]
 
 # 6. 하락 상관관계 행렬 계산
-negative_corr = calculate_downside_correlation(ret_df)
+downside_corr = calculate_downside_correlation(ret_df)
 ```
 
 **aggregate_factor_returns 내부 흐름**:
@@ -280,12 +280,12 @@ top_metrics = meta.groupby("styleName", as_index=False).first()
 # 복합 랭크: CAGR 순위 70% + 하락 상관관계 순위 30%
 rank_avg = rank_cagr * 0.7 + rank_ncorr * 0.3
 # 상위 3개 보조 팩터 선정
-negative_corr.nsmallest(3, "rank_avg")
+sub_factor_ranking.nsmallest(3, "rank_avg")
 ```
 
 **그리드 서치**: 메인:보조 가중치를 0:100 ~ 100:0 (1% 단위, 101포인트)로 탐색
 ```python
-mix_ret = port[main] * w_grid + port[sub] * (1 - w_grid)
+mix_ret = port[main] * w_grid + port[sub] * w_sub
 # → CAGR, MDD 계산
 # → rank_total = CAGR순위*0.6 + MDD순위*0.4
 ```

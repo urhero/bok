@@ -232,7 +232,7 @@ def calculate_factor_stats_batch(
     orders: list[int],
     test_mode: bool = False,
     min_sector_stocks: int = 10,
-) -> list[Tuple]:
+) -> list[tuple]:
     """모든 팩터의 5분위 분석을 하이브리드 방식으로 처리한다.
 
     lag는 전체 DataFrame에서 배치로 수행하고 (배치가 유리),
