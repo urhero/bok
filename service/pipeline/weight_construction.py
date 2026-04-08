@@ -34,30 +34,30 @@ def build_factor_weight_frames(
     Returns:
         결합된 가중치 DataFrame, 또는 매칭 팩터가 없으면 None
     """
-    factor_idx_map = {fac: idx for idx, fac in enumerate(kept_abbrs)}
+    factor_idx_map = {f: idx for idx, f in enumerate(kept_abbrs)}
     weight_frames = []
     for row in sim_factors:
-        fac, w, s = row["factor"], row["fitted_weight"], row["styleName"]
+        factor_abbr, weight, style_name = row["factor"], row["fitted_weight"], row["styleName"]
 
-        if fac not in factor_idx_map:
-            logger.warning("Factor %s not in filtered data, skipping", fac)
+        if factor_abbr not in factor_idx_map:
+            logger.warning("Factor %s not in filtered data, skipping", factor_abbr)
             continue
 
-        j = factor_idx_map[fac]
+        data_idx = factor_idx_map[factor_abbr]
         # end_date를 먼저 필터하여 이후 연산 대상 행 수를 최소화
-        df = filtered_data[j].loc[
-            filtered_data[j]["ddt"] == end_date_ts, ["ddt", "ticker", "isin", "gvkeyiid", "label"]
+        df = filtered_data[data_idx].loc[
+            filtered_data[data_idx]["ddt"] == end_date_ts, ["ddt", "ticker", "isin", "gvkeyiid", "label"]
         ].copy()
         if df.empty:
             continue
         count_per_group = df.groupby("label")["label"].transform("count")
 
-        df["mp_ls_weight"] = df["label"] * w / count_per_group
+        df["mp_ls_weight"] = df["label"] * weight / count_per_group
         df["ls_weight"] = df["label"] / count_per_group
-        df["factor_weight"] = w
-        df["style"] = s
-        df["name"] = f"MXCN1A_{s}"
-        df["factor"] = fac
+        df["factor_weight"] = weight
+        df["style"] = style_name
+        df["name"] = f"MXCN1A_{style_name}"
+        df["factor"] = factor_abbr
         df["count"] = count_per_group
         df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
 
@@ -150,7 +150,7 @@ def construct_long_short_df(
 
     예시 Output (long_df):
         | ddt        | gvkeyiid | ticker | M_RETURN | label | signal | num | return_weight | turnover_weight |
-        |------------|----------|--------|----------|-------|--------|-----|---------------|-----------------|
+        |------------|----------|--------|----------|-------|--------|-----|---------------|----------------|
         | 2024-01-31 | 001      | 600519 | 0.03     | 1     | L      | 1   | 1.0           | 1.0             |
     """
     # neutral(label=0)을 먼저 제거 — 이후 연산 대상 행 ~20% 절감
@@ -185,7 +185,7 @@ def calculate_vectorized_return(
     예시 Input:
         portfolio_data_df (long_df):
         | ddt        | gvkeyiid | M_RETURN | return_weight | turnover_weight |
-        |------------|----------|----------|---------------|-----------------|
+        |------------|----------|----------|---------------|----------------|
         | 2024-01-31 | 001      | 0.03     | 0.5           | 0.5             |
         | 2024-01-31 | 002      | 0.01     | 0.5           | 0.5             |
 
