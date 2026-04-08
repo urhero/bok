@@ -26,7 +26,6 @@ from config import PARAM, PIPELINE_PARAMS
 # 모듈 import
 from service.pipeline.correlation import calculate_downside_correlation
 from service.pipeline.factor_analysis import (
-    calculate_factor_stats,
     calculate_factor_stats_batch,
     filter_and_label_factors,
 )
@@ -71,14 +70,14 @@ def aggregate_factor_returns(
             f"factor_abbr_list ({len(factor_abbr_list)}) length mismatch"
         )
 
-    list_net = []
+    net_returns = []
     for data, abbr in zip(factor_data_list, factor_abbr_list):
         long_df, short_df = construct_long_short_df(data, backtest_start=backtest_start)
         _, net_l, _ = calculate_vectorized_return(long_df, abbr, cost_bps=cost_bps)
         _, net_s, _ = calculate_vectorized_return(short_df, abbr, cost_bps=cost_bps)
-        list_net.append(net_l + net_s)
+        net_returns.append(net_l + net_s)
 
-    combined = pd.concat(list_net, axis=1)
+    combined = pd.concat(net_returns, axis=1)
     net_return_df = combined.dropna(axis=1)
     dropped = set(combined.columns) - set(net_return_df.columns)
     if dropped:
@@ -124,11 +123,11 @@ class ModelPortfolioPipeline:
         self.raw_data = raw_data
 
         # [2] 메타데이터 병합 + 5분위 분석 — README [1], [2]
-        factor_metadata, merged_data, factor_abbr_list, orders = self._prepare_metadata(raw_data, market_return_df)
+        factor_metadata, merged_data, factor_abbr_list, sort_orders = self._prepare_metadata(raw_data, market_return_df)
         self.factor_metadata = factor_metadata
         analyze_cols = ["gvkeyiid", "ticker", "isin", "ddt", "sec", "val", "M_RETURN", "factorAbbreviation", "factorOrder"]
         slim_data = merged_data[[c for c in analyze_cols if c in merged_data.columns]]
-        self.factor_stats = self._analyze_factors(slim_data, factor_abbr_list, orders, test_file)
+        self.factor_stats = self._analyze_factors(slim_data, factor_abbr_list, sort_orders, test_file)
 
         if report:
             self._generate_report(factor_abbr_list, factor_metadata)
@@ -247,7 +246,7 @@ class ModelPortfolioPipeline:
         """팩터 메타데이터를 로드하고 원시 데이터와 병합한다."""
         factor_metadata = pd.read_csv(self.factor_info_path)
         factor_abbr_list = factor_metadata.factorAbbreviation.tolist()
-        orders = factor_metadata.factorOrder.tolist()
+        sort_orders = factor_metadata.factorOrder.tolist()
 
         # pipeline-ready parquet이면 factorOrder가 이미 존재 → factor_info merge 불필요
         already_merged = "factorOrder" in raw_data.columns
@@ -275,12 +274,12 @@ class ModelPortfolioPipeline:
         )
 
         logger.info("[Trace] Merged data shape: %s", merged.shape)
-        return factor_metadata, merged, factor_abbr_list, orders
+        return factor_metadata, merged, factor_abbr_list, sort_orders
 
-    def _analyze_factors(self, merged_data, factor_abbr_list, orders, test_file):
+    def _analyze_factors(self, merged_data, factor_abbr_list, sort_orders, test_file):
         """모든 팩터에 대해 5분위 분석을 실행한다 (일괄 처리)."""
         t1 = time.time()
-        result = calculate_factor_stats_batch(merged_data, factor_abbr_list, orders, test_mode=bool(test_file), min_sector_stocks=self.pp["min_sector_stocks"])
+        result = calculate_factor_stats_batch(merged_data, factor_abbr_list, sort_orders, test_mode=bool(test_file), min_sector_stocks=self.pp["min_sector_stocks"])
         logger.info("Factors assigned in %.2fs", time.time() - t1)
         return result
 
@@ -323,9 +322,19 @@ class ModelPortfolioPipeline:
 
         months = len(ret_df) - 1
         meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
-        meta["rank_style"] = meta.groupby("styleName")["cagr"].rank(ascending=False)
-        meta["rank_total"] = meta["cagr"].rank(ascending=False)
-        meta = meta.sort_values("cagr", ascending=False).reset_index(drop=True)
+
+        # 팩터 랭킹: t-stat(기본) 또는 CAGR
+        ranking_method = self.pp.get("factor_ranking_method", "cagr")
+        if ranking_method == "tstat":
+            monthly_rets = ret_df.iloc[1:]  # 기준점 0 제외
+            t_stats = monthly_rets.mean() / (monthly_rets.std() / np.sqrt(len(monthly_rets)))
+            meta["rank_score"] = t_stats.values
+        else:
+            meta["rank_score"] = meta["cagr"]
+
+        meta["rank_style"] = meta.groupby("styleName")["rank_score"].rank(ascending=False)
+        meta["rank_total"] = meta["rank_score"].rank(ascending=False)
+        meta = meta.sort_values("rank_score", ascending=False).reset_index(drop=True)
 
         # 메타 저장
         if test_file:
