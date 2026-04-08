@@ -27,8 +27,7 @@ main.py (CLI)
        ├→ factor_analysis.py       [5분위 분석]
        ├→ correlation.py           [하락 상관관계]
        ├→ optimization.py          [2-팩터 믹스 + MC 시뮬레이션]
-       ├→ weight_construction.py   [롱/숏 수익률]
-       └→ pipeline_utils.py        [시계열 유틸리티 (prepend_start_zero만)]
+       └→ weight_construction.py   [롱/숏 수익률 + MP 비중 구성]
 ```
 
 ### 1.3 기술 스택
@@ -361,7 +360,7 @@ SQL Server -> `_build_pipeline_ready()` (M_RETURN 분리, factor_info merge, cat
 - **전체 모드** (기본): 기존 parquet을 `data_backup/`에 이동 후 전체 재다운로드
 - **증분 모드** (`--incremental`): `end_date` 월만 다운로드, 해당 연도 파일만 갱신 (~20MB I/O)
 
-**저장 후 검증** (`validate_parquet_coverage`): 빈 월, 팩터/종목 수 급감, M_RETURN 정합성 등 5가지
+**저장 후 검증** (`download_validation.validate_parquet_coverage`): 빈 월, 팩터/종목 수 급감, M_RETURN 정합성 등 5가지
 
 ---
 
@@ -376,16 +375,15 @@ main.py
   │    ├→ config.py (PARAM)
   │    ├→ db/factor_query.py
   │    │    └→ config.py (PARAM)
-  │    └→ service/download/parquet_io.py (save/load/validate)
+  │    ├→ service/download/parquet_io.py (save/load/validate)
+  │    └→ service/download/download_validation.py (validate_parquet_coverage, print_coverage_report)
   ├→ service/pipeline/model_portfolio.py
   │    ├→ config.py (PARAM)
   │    ├→ service/download/parquet_io.py (load_factor_parquet)
-  │    ├→ service/pipeline/factor_analysis.py
-  │    │    └→ service/pipeline/pipeline_utils.py (prepend_start_zero)
+  │    ├→ service/pipeline/factor_analysis.py (prepend_start_zero 포함)
   │    ├→ service/pipeline/correlation.py
   │    ├→ service/pipeline/optimization.py
-  │    ├→ service/pipeline/pipeline_utils.py (prepend_start_zero만)
-  │    ├→ service/pipeline/weight_construction.py
+  │    ├→ service/pipeline/weight_construction.py (build_factor_weight_frames, aggregate_mp_weights, calculate_style_weights 포함)
   │    └→ service/pipeline/benchmark_comparison.py (--benchmark 옵션)
   └→ service/backtest/ (backtest 커맨드)
        ├→ walk_forward_engine.py (WalkForwardEngine)
@@ -478,7 +476,7 @@ main.py
 `pd.cut(bins=[0, 20, 40, 60, 80, 105])` — 상한이 100이 아닌 105인 이유: 백분위 100%인 종목(섹터-날짜 그룹에서 rank=count)도 Q5에 포함시키기 위함. `right=True`이므로 100은 (80, 105] 구간에 해당.
 
 #### 4.2.4 `ret_df.loc[ret_df.index[0]] = 0.0`
-`_evaluate_universe`에서 수익률 행렬의 첫 행을 0으로 설정한다. 이는 `prepend_start_zero()`와는 별개의 처리이며, aggregate 이후 첫 날짜의 수익률을 기준점 0으로 강제한다. CAGR 계산의 시작점 역할.
+`_evaluate_universe`에서 수익률 행렬의 첫 행을 0으로 설정한다. 이는 `factor_analysis.prepend_start_zero()`와는 별개의 처리이며, aggregate 이후 첫 날짜의 수익률을 기준점 0으로 강제한다. CAGR 계산의 시작점 역할.
 
 #### 4.2.5 categorical 변환 타이밍
 다운로드 시 `object -> categorical` (zstd 최적화), 파이프라인 로드 시 `categorical -> object` (groupby OOM 방지). 상세는 §2.2 [1] 참조. categorical + `observed=False`는 OOM을 유발한다.
@@ -513,7 +511,7 @@ weight_raw["factor_weight"] = weight_raw["factor_weight"] * (weight_raw["mp_ls_w
 `_construct_and_export`에서 `fac not in factor_idx_map`이면 해당 팩터를 건너뜀 (warning 로그). hardcoded 가중치의 팩터가 실제 데이터에 존재하지 않으면 해당 가중치는 무시됨.
 
 #### 4.3.6 증분 다운로드 후 팩터 구성 변화
-증분 모드로 새 월을 추가할 때, 기존 월에 없던 새 팩터가 등장하거나 기존 팩터가 누락될 수 있음. `validate_parquet_coverage`의 `FACTOR_MISSING_LATEST` 경고로 감지하지만 자동 수정은 없음.
+증분 모드로 새 월을 추가할 때, 기존 월에 없던 새 팩터가 등장하거나 기존 팩터가 누락될 수 있음. `download_validation.validate_parquet_coverage`의 `FACTOR_MISSING_LATEST` 경고로 감지하지만 자동 수정은 없음.
 
 #### 4.3.6a 연도 경계 증분 다운로드
 `end_date=2027-01-31` 증분 다운로드 시 `affected_year=2027`이므로 `MXCN1A_factor_2027.parquet` 파일이 자동 생성된다. 기존 2026 파일은 변경되지 않음.
@@ -553,7 +551,7 @@ for i in range(n_cols):
 
 | 모듈 | 테스트 수 | 커버되는 핵심 로직 | 미커버 영역 |
 |------|-----------|-------------------|------------|
-| `pipeline_utils.prepend_start_zero` | 16 | 기본, NaN, Inf, 월말 처리 | - |
+| `factor_analysis.prepend_start_zero` | 16 | 기본, NaN, Inf, 월말 처리 | - |
 | `factor_analysis.calculate_factor_stats` | 17 | 분위, 래그, sort_order, test_mode | batch 모드 직접 테스트 없음 |
 | `correlation.calculate_downside_correlation` | 18 | 기본, min_obs, 엣지케이스 | - |
 | `optimization.simulate_constrained_weights` | 16 | 기본, style_cap, 재현성 (random_seed 지원) | hardcoded 모드 미테스트 |

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -64,7 +63,7 @@ def find_optimal_mix(
     ann = 12 / (factor_rets.shape[0] - 1)  # 첫 행은 기준점(0)이므로 제외
     main = data_raw["factorAbbreviation"].iat[0]
 
-    frames: List[pd.DataFrame] = []
+    frames: list[pd.DataFrame] = []
 
     for sub in track(
         negative_corr["factorAbbreviation"], description=f"Mixing {main} with sub-factors"
@@ -105,7 +104,7 @@ def find_optimal_mix(
     return df_mix
 
 
-def _get_hardcoded_weights() -> Tuple[pd.DataFrame, pd.DataFrame]:
+def _get_hardcoded_weights() -> tuple[pd.DataFrame, pd.DataFrame]:
     """프로덕션용 고정 가중치를 반환한다.
 
     ~2026-01 포트폴리오까지 적용. Valuation 강제로 4%로 내림.
@@ -126,11 +125,11 @@ def _get_hardcoded_weights() -> Tuple[pd.DataFrame, pd.DataFrame]:
 
 def _equal_weight_allocation(
     rtn_df: pd.DataFrame,
-    style_list: List[str],
+    style_list: list[str],
     style_cap: float,
     tol: float,
     test_mode: bool,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Equal-weight 모드: 1/K 동일가중 + 스타일 캡 재분배."""
     K = rtn_df.shape[1]
     factors = rtn_df.columns.to_numpy()
@@ -178,7 +177,7 @@ def _equal_weight_allocation(
 
 def _mc_simulation(
     rtn_df: pd.DataFrame,
-    style_list: List[str],
+    style_list: list[str],
     num_sims: int,
     style_cap: float,
     tol: float,
@@ -186,7 +185,7 @@ def _mc_simulation(
     batch_size: int,
     random_seed: int | None,
     portfolio_rank_weights: tuple,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """몬테카를로 시뮬레이션으로 스타일 캡 하 최적 가중치를 탐색한다."""
     K = rtn_df.shape[1]
     T = rtn_df.shape[0]
@@ -328,7 +327,7 @@ def _mc_simulation(
 
 def simulate_constrained_weights(
     rtn_df: pd.DataFrame,
-    style_list: List[str],
+    style_list: list[str],
     mode: str = "hardcoded",
     num_sims: int = 1_000_000,
     style_cap: float = 0.25,
@@ -337,7 +336,7 @@ def simulate_constrained_weights(
     batch_size: int = 100_000,
     random_seed: int | None = 42,
     portfolio_rank_weights: tuple = (0.6, 0.4),
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """스타일 캡 하 최적 포트폴리오 가중치를 결정한다.
 
     세 가지 모드를 지원한다:

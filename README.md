@@ -237,16 +237,16 @@
 ```
 service/
 ├── download/
-│   ├── download_factors.py    # SQL → 연도별 parquet 다운로드 + 검증
-│   └── parquet_io.py          # 연도별 분할 저장/로드/검증 유틸리티
+│   ├── download_factors.py      # SQL → 연도별 parquet 다운로드
+│   ├── download_validation.py   # 다운로드 후 parquet 커버리지 검증 (validate_parquet_coverage, print_coverage_report)
+│   └── parquet_io.py            # 연도별 분할 저장/로드/검증 유틸리티
 │
 ├── pipeline/
 │   ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
 │   ├── factor_analysis.py      # calculate_factor_stats, calculate_factor_stats_batch, filter_and_label_factors
 │   ├── correlation.py          # calculate_downside_correlation
 │   ├── optimization.py         # find_optimal_mix, simulate_constrained_weights (hardcoded/equal_weight/simulation)
-│   ├── weight_construction.py  # construct_long_short_df, calculate_vectorized_return
-│   ├── pipeline_utils.py       # prepend_start_zero
+│   ├── weight_construction.py  # build_factor_weight_frames, aggregate_mp_weights, calculate_style_weights, construct_long_short_df, calculate_vectorized_return
 │   └── benchmark_comparison.py # MP vs. 동일가중(1/N) 벤치마크 비교
 │
 └── backtest/

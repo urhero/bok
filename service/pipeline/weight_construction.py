@@ -7,7 +7,6 @@ filter_and_label_factors()에서 L/N/S 라벨이 부여된 종목 데이터를 �
 from __future__ import annotations
 
 import logging
-from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -15,10 +14,122 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+def build_factor_weight_frames(
+    sim_factors: list[dict],
+    kept_abbrs: list[str],
+    filtered_data: list[pd.DataFrame],
+    end_date_ts: pd.Timestamp,
+) -> pd.DataFrame | None:
+    """팩터별 종목 가중치 프레임을 생성하고 결합한다.
+
+    각 팩터의 라벨링된 종목 데이터에서 end_date 기준 가중치를 계산하고,
+    neutral 종목의 factor_weight를 0으로 처리한 후 결합한다.
+
+    Args:
+        sim_factors: 시뮬레이션 결과 팩터 목록 (factor, fitted_weight, styleName)
+        kept_abbrs: 유지된 팩터 약어 목록
+        filtered_data: 팩터별 필터링된 DataFrame 목록
+        end_date_ts: 기준 날짜 Timestamp
+
+    Returns:
+        결합된 가중치 DataFrame, 또는 매칭 팩터가 없으면 None
+    """
+    factor_idx_map = {fac: idx for idx, fac in enumerate(kept_abbrs)}
+    weight_frames = []
+    for row in sim_factors:
+        fac, w, s = row["factor"], row["fitted_weight"], row["styleName"]
+
+        if fac not in factor_idx_map:
+            logger.warning("Factor %s not in filtered data, skipping", fac)
+            continue
+
+        j = factor_idx_map[fac]
+        # end_date를 먼저 필터하여 이후 연산 대상 행 수를 최소화
+        df = filtered_data[j].loc[
+            filtered_data[j]["ddt"] == end_date_ts, ["ddt", "ticker", "isin", "gvkeyiid", "label"]
+        ].copy()
+        if df.empty:
+            continue
+        count_per_group = df.groupby("label")["label"].transform("count")
+
+        df["mp_ls_weight"] = df["label"] * w / count_per_group
+        df["ls_weight"] = df["label"] / count_per_group
+        df["factor_weight"] = w
+        df["style"] = s
+        df["name"] = f"MXCN1A_{s}"
+        df["factor"] = fac
+        df["count"] = count_per_group
+        df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
+
+        weight_frames.append(df[["ddt", "ticker", "isin", "gvkeyiid", "mp_ls_weight", "ls_weight", "factor_weight", "factor", "style", "name", "count"]].reset_index(drop=True))
+
+    if not weight_frames:
+        logger.warning("No matching factors found in filtered data - skipping CSV export")
+        return None
+
+    weight_raw = pd.concat(weight_frames, ignore_index=True)
+    # neutral 종목(mp_ls_weight=0)의 factor_weight를 0으로 처리
+    weight_raw["factor_weight"] = weight_raw["factor_weight"] * (weight_raw["mp_ls_weight"] != 0).astype(int)
+    return weight_raw
+
+
+def aggregate_mp_weights(
+    weight_raw: pd.DataFrame,
+    end_date_ts: pd.Timestamp,
+) -> pd.DataFrame:
+    """MP(전체 팩터 합산) 가중치를 생성한다.
+
+    Args:
+        weight_raw: build_factor_weight_frames() 결과
+        end_date_ts: 기준 날짜 Timestamp
+
+    Returns:
+        MP 집계 가중치 DataFrame
+    """
+    agg_w = weight_raw.groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)[["mp_ls_weight", "factor_weight"]].sum()
+    agg_w["style"] = "MP"
+    agg_w["name"] = "MXCN1A_MP"
+    agg_w = agg_w[agg_w["ddt"] == end_date_ts].reset_index(drop=True)
+    agg_w["count"] = agg_w.groupby(["ddt", agg_w["mp_ls_weight"] > 0])["mp_ls_weight"].transform("size")
+    agg_w["factor"] = "AGG"
+    agg_w["ls_weight"] = agg_w["mp_ls_weight"]
+    agg_w = agg_w[["ddt", "ticker", "isin", "gvkeyiid", "mp_ls_weight", "ls_weight", "factor_weight", "factor", "style", "name", "count"]]
+    return agg_w
+
+
+def calculate_style_weights(
+    weight_raw: pd.DataFrame,
+) -> pd.DataFrame:
+    """스타일별 ls_weight를 계산한다.
+
+    non-zero factor_weight를 가진 종목에 대해 스타일별 합산 비중으로
+    정규화된 style_ls_weight를 계산한다.
+
+    Args:
+        weight_raw: build_factor_weight_frames() 결과
+
+    Returns:
+        style_ls_weight 컬럼이 추가된 DataFrame
+    """
+    non_zero_fw = weight_raw[weight_raw["factor_weight"] > 0]
+    unique_factor_fw = non_zero_fw.groupby(["ddt", "style", "factor"])["factor_weight"].first().reset_index()
+    style_totals = unique_factor_fw.groupby(["ddt", "style"], as_index=False)["factor_weight"].sum()
+    style_totals = style_totals.rename(columns={"factor_weight": "_style_fw_sum"})
+    weight_raw = weight_raw.merge(style_totals, on=["ddt", "style"], how="left")
+    weight_raw["_style_fw_sum"] = weight_raw["_style_fw_sum"].fillna(0)
+    weight_raw["style_ls_weight"] = np.where(
+        weight_raw["_style_fw_sum"] != 0,
+        weight_raw["ls_weight"] * weight_raw["factor_weight"] / weight_raw["_style_fw_sum"],
+        0,
+    )
+    weight_raw = weight_raw.drop(columns=["_style_fw_sum"])
+    return weight_raw
+
+
 def construct_long_short_df(
     labeled_data_df: pd.DataFrame,
     backtest_start: str = "2017-12-31",
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """라벨링된 종목 데이터를 롱(L)/숏(S) 포트폴리오로 분리한다.
 
     label=1(롱), label=-1(숏) 종목을 분리하고,
@@ -57,7 +168,7 @@ def calculate_vectorized_return(
     portfolio_data_df: pd.DataFrame,
     factor_abbr: str,
     cost_bps: float = 30.0,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """포트폴리오의 총수익률·순수익률·거래비용을 벡터 연산으로 계산한다.
 
     리밸런싱 시점의 턴오버를 추적하여 거래비용(bps 기반)을 차감한다.

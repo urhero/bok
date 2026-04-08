@@ -7,30 +7,18 @@ name = "pypi"
 pandas = "*"
 numpy = "*"
 matplotlib = "*"
-jupyter = "*"
 pyodbc = "*"
 sqlalchemy = "*"
-configure = "*"
-tqdm = "*"
-seaborn = "*"
-tabulate = "*"
 pyarrow = "*"
-reportlab = "*"
-plotly = "*"
-dask = {extras = ["complete"], version = "*"}
-numba = "*"
-polars = "*"
 scipy = "*"
-scikit-learn = "*"
 rich = "*"
-qpsolvers = {extras = ["osqp"], version = "*"}
-osqp = "*"
 python-dotenv = "*"
 
 [dev-packages]
 pytest = "*"
 pytest-cov = "*"
 pytest-xdist = "*"
+jupyter = "*"
 
 [requires]
 python_version = "3.10"
