@@ -8,15 +8,14 @@
 - factor_analysis.py: 5분위 분석 + 섹터 필터링
 - correlation.py: 하락 상관관계
 - optimization.py: 2-팩터 믹스 + 가중치 시뮬레이션
-- weight_construction.py: 롱/숏 포트폴리오 수익률
-- pipeline_utils.py: 시계열 유틸리티
+- weight_construction.py: 롱/숏 포트폴리오 수익률 + MP 가중치 구성
 """
 from __future__ import annotations
 
 import logging
 import time
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -35,13 +34,15 @@ from service.pipeline.optimization import (
     find_optimal_mix,
     simulate_constrained_weights,
 )
-from service.pipeline.pipeline_utils import prepend_start_zero
 from service.pipeline.weight_construction import (
+    aggregate_mp_weights,
+    build_factor_weight_frames,
+    calculate_style_weights,
     calculate_vectorized_return,
     construct_long_short_df,
 )
 from service.download.parquet_io import load_factor_parquet
-from utils.validation import validate_return_matrix, validate_output_weights, validate_weights_sum_to_one
+from utils.validation import validate_return_matrix, validate_output_weights
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +55,8 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def aggregate_factor_returns(
-    factor_data_list: List,
-    factor_abbr_list: List[str],
+    factor_data_list: list,
+    factor_abbr_list: list[str],
     backtest_start: str = "2017-12-31",
     cost_bps: float = 30.0,
 ) -> pd.DataFrame:
@@ -107,8 +108,8 @@ class ModelPortfolioPipeline:
         # 중간 결과물
         self.raw_data: pd.DataFrame | None = None
         self.factor_metadata: pd.DataFrame | None = None
-        self.factor_stats: List[Any] = []
-        self.filtered_data: List[pd.DataFrame] = []
+        self.factor_stats: list[Any] = []
+        self.filtered_data: list[pd.DataFrame] = []
         self.return_matrix: pd.DataFrame | None = None
         self.correlation_matrix: pd.DataFrame | None = None
         self.meta: pd.DataFrame | None = None
@@ -376,69 +377,15 @@ class ModelPortfolioPipeline:
 
     def _construct_and_export(self, sim_result, kept_abbrs, filtered_data, end_date, test_file):
         """종목별 가중치를 산출하고 CSV로 출력한다."""
-        end_date_ts = pd.Timestamp(end_date)  # 비교용 Timestamp (파일명에는 원본 사용)
-        factor_idx_map = {fac: idx for idx, fac in enumerate(kept_abbrs)}
+        end_date_ts = pd.Timestamp(end_date)
         sim_factors = sim_result[1][["factor", "fitted_weight", "styleName"]].to_dict("records")
 
-        weight_frames = []
-        for row in sim_factors:
-            fac, w, s = row["factor"], row["fitted_weight"], row["styleName"]
-
-            if fac not in factor_idx_map:
-                logger.warning("Factor %s not in filtered data, skipping", fac)
-                continue
-
-            j = factor_idx_map[fac]
-            # end_date를 먼저 필터하여 이후 연산 대상 행 수를 최소화
-            df = filtered_data[j].loc[
-                filtered_data[j]["ddt"] == end_date_ts, ["ddt", "ticker", "isin", "gvkeyiid", "label"]
-            ].copy()
-            if df.empty:
-                continue
-            count_per_group = df.groupby("label")["label"].transform("count")
-
-            df["mp_ls_weight"] = df["label"] * w / count_per_group
-            df["ls_weight"] = df["label"] / count_per_group
-            df["factor_weight"] = w
-            df["style"] = s
-            df["name"] = f"MXCN1A_{s}"
-            df["factor"] = fac
-            df["count"] = count_per_group
-            df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
-
-            weight_frames.append(df[["ddt", "ticker", "isin", "gvkeyiid", "mp_ls_weight", "ls_weight", "factor_weight", "factor", "style", "name", "count"]].reset_index(drop=True))
-
-        if not weight_frames:
-            logger.warning("No matching factors found in filtered data - skipping CSV export")
+        weight_raw = build_factor_weight_frames(sim_factors, kept_abbrs, filtered_data, end_date_ts)
+        if weight_raw is None:
             return
 
-        weight_raw = pd.concat(weight_frames, ignore_index=True)
-        # neutral 종목(mp_ls_weight=0)의 factor_weight를 0으로 처리
-        weight_raw["factor_weight"] = weight_raw["factor_weight"] * (weight_raw["mp_ls_weight"] != 0).astype(int)
-
-        # MP 집계 (한번의 groupby로 mp_ls_weight + factor_weight 동시 합산)
-        agg_w = weight_raw.groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)[["mp_ls_weight", "factor_weight"]].sum()
-        agg_w["style"] = "MP"
-        agg_w["name"] = "MXCN1A_MP"
-        agg_w = agg_w[agg_w["ddt"] == end_date_ts].reset_index(drop=True)
-        agg_w["count"] = agg_w.groupby(["ddt", agg_w["mp_ls_weight"] > 0])["mp_ls_weight"].transform("size")
-        agg_w["factor"] = "AGG"
-        agg_w["ls_weight"] = agg_w["mp_ls_weight"]
-        agg_w = agg_w[["ddt", "ticker", "isin", "gvkeyiid", "mp_ls_weight", "ls_weight", "factor_weight", "factor", "style", "name", "count"]]
-
-        # style_ls_weight 계산 — merge로 단순화
-        non_zero_fw = weight_raw[weight_raw["factor_weight"] > 0]
-        unique_factor_fw = non_zero_fw.groupby(["ddt", "style", "factor"])["factor_weight"].first().reset_index()
-        style_totals = unique_factor_fw.groupby(["ddt", "style"], as_index=False)["factor_weight"].sum()
-        style_totals = style_totals.rename(columns={"factor_weight": "_style_fw_sum"})
-        weight_raw = weight_raw.merge(style_totals, on=["ddt", "style"], how="left")
-        weight_raw["_style_fw_sum"] = weight_raw["_style_fw_sum"].fillna(0)
-        weight_raw["style_ls_weight"] = np.where(
-            weight_raw["_style_fw_sum"] != 0,
-            weight_raw["ls_weight"] * weight_raw["factor_weight"] / weight_raw["_style_fw_sum"],
-            0,
-        )
-        weight_raw = weight_raw.drop(columns=["_style_fw_sum"])
+        agg_w = aggregate_mp_weights(weight_raw, end_date_ts)
+        weight_raw = calculate_style_weights(weight_raw)
         agg_w["style_ls_weight"] = agg_w["mp_ls_weight"]
 
         # 결합 및 출력
@@ -453,7 +400,6 @@ class ModelPortfolioPipeline:
 
         # 피벗 테이블 생성: MP의 factor_weight 설정
         mp_mask = final_weights["style"] == "MP"
-        # 데이터에 실제 존재하는 팩터만 매칭하여 fitted_weight 합산
         factors_in_data = final_weights.loc[~mp_mask, "factor"].unique()
         matched_weights = sim_result[1][sim_result[1]["factor"].isin(factors_in_data)]
         final_weights.loc[mp_mask, "factor_weight"] = matched_weights["fitted_weight"].sum()

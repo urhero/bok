@@ -1,6 +1,6 @@
 # BOK 심층 분석 보고서
 
-> 분석 일시: 2026-03-27
+> 최종 갱신: 2026-04-07
 > 분석 범위: 프로젝트 전체 (13개 프로덕션 모듈, 6개 테스트 모듈, 설정/데이터 파일)
 
 ---
@@ -11,24 +11,9 @@
 
 BOK은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 모델 포트폴리오(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다.
 
-### 핵심 Funnel 구조 (2단계 축소)
+### 핵심 Funnel 구조
 
-```
-200+ 유효 팩터 ──[4]──→ Top-50 후보군 ──[5][6]──→ 최종 weight>0 팩터 (5~14개)
-  (데이터 로딩           (CAGR 기준         (2-팩터 믹스 + MC 시뮬레이션
-   + 5분위 분석           상위 선별)          + 스타일 캡 25% 제약)
-   + 섹터 필터)
-```
-
-- **Top-50은 최적화기에 투입할 후보 풀(Candidate Pool)**일 뿐이다
-- 진짜 의사결정의 결정체는 MC 시뮬레이션을 거쳐 **비중>0으로 살아남은 최종 팩터**(스타일 수에 따라 5~14개 가변)
-- 과적합 진단의 3단계 테스트(Funnel Value-Add, OOS Percentile, Strict Jaccard)는 이 2단계 축소 각각이 진짜 가치를 창출했는지를 검증한다
-
-핵심 비즈니스 가치:
-- PIT(Point-in-Time) 데이터로 미래 정보 편향(look-ahead bias) 방지
-- 5분위 포트폴리오 기법으로 팩터 유효성 검증
-- 스타일 캡(25%)으로 집중 위험 통제
-- 프로덕션 모드(고정 비중)와 연구 모드(시뮬레이션) 분리
+> Funnel 다이어그램 및 단계별 요약은 [`README.md`](README.md) 참조. 이 문서는 코드 수준 구현 상세만 다룬다.
 
 ### 1.2 아키텍처 패턴
 
@@ -42,8 +27,7 @@ main.py (CLI)
        ├→ factor_analysis.py       [5분위 분석]
        ├→ correlation.py           [하락 상관관계]
        ├→ optimization.py          [2-팩터 믹스 + MC 시뮬레이션]
-       ├→ weight_construction.py   [롱/숏 수익률]
-       └→ pipeline_utils.py        [시계열 유틸리티 (prepend_start_zero만)]
+       └→ weight_construction.py   [롱/숏 수익률 + MP 비중 구성]
 ```
 
 ### 1.3 기술 스택
@@ -370,53 +354,13 @@ agg_w["style"] = "MP"
 
 ### 2.3 다운로드 파이프라인 (download 커맨드)
 
-```
-SQL Server (clarifi_mxcn1a_afl 테이블)
-    │
-    ├─ GenerateQueryStructure.fetch_snp()
-    │    ├─ ROW_NUMBER() OVER (PARTITION BY gvkeyiid, ddt, fld ORDER BY updated_at DESC)
-    │    │   → 중복 제거 (같은 종목-날짜-팩터에 여러 행 → 최신 1건만)
-    │    └─ CASE문으로 fld에서 factorAbbreviation 추출
-    │
-    ▼
- _build_pipeline_ready(raw_df, factor_info_path)
-    │
-    ├─ M_RETURN 분리 (val → M_RETURN rename, 별도 DataFrame)
-    ├─ factor_info merge (factorOrder만)
-    ├─ sec != "Undefined" 제거
-    ├─ categorical 변환 (gvkeyiid, ticker, isin, factorAbbreviation, sec)
-    │
-    ▼
- 연도별 분할 parquet (zstd 압축) via parquet_io.py
-    ├─ {benchmark}_factor_2018.parquet (~22MB)
-    ├─ ...
-    ├─ {benchmark}_factor_2026.parquet (~3MB)
-    └─ {benchmark}_mreturn.parquet (~0.76MB, 단일)
-```
+SQL Server -> `_build_pipeline_ready()` (M_RETURN 분리, factor_info merge, categorical 변환) -> 연도별 분할 parquet (zstd). 상세 CLI 사용법은 [`README.md`](README.md) 참조.
 
-> **핵심 모듈**: `service/download/parquet_io.py`
-> - `save_factor_parquet_by_year()` — ddt 연도 기준 분할 저장 (years 파라미터로 선택적 저장)
-> - `load_factor_parquet()` — 분할 파일 자동 탐색 → 병합 (단일 파일 fallback)
-> - `validate_loaded_factor_data()` — 로드 후 9가지 무결성 검증
->   - [5a] 100% NaN 팩터 분리 → WARN (`FULL_NAN_FACTORS`) — 중국 시장 미제공 팩터 등 (예: ShortIntRatio, IO_NAT, stdRR36M)
->   - [5b] 나머지 유효 데이터만 val NaN 비율 검사 (기본 `max_null_pct=0.10`)
+**두 가지 모드:**
+- **전체 모드** (기본): 기존 parquet을 `data_backup/`에 이동 후 전체 재다운로드
+- **증분 모드** (`--incremental`): `end_date` 월만 다운로드, 해당 연도 파일만 갱신 (~20MB I/O)
 
-**증분 모드** (`--incremental`):
-1. 기존 연도별 parquet을 `data_backup/`에 **복사** (원본 유지)
-2. `end_date` 월만 SQL에서 다운로드
-3. **해당 연도 파일만** 로드 → 중복 월 제거 → append (~20MB I/O, 기존 168MB 대비 85% 감소)
-4. `save_factor_parquet_by_year(years={affected_year})` — 해당 연도만 재저장
-
-**전체 모드** (기본):
-1. 기존 연도별 parquet을 `data_backup/`에 **이동** (원본 삭제)
-2. 전체 기간 SQL 다운로드 → `save_factor_parquet_by_year()` 연도별 분할 저장
-
-**검증** (`validate_parquet_coverage`): 5가지 체크
-1. 빈 월 감지 (연속 날짜 간격 > 35일)
-2. 팩터 수 급감 (전월 대비 >10% 감소)
-3. 종목 수 급감 (전월 대비 >20% 감소)
-4. M_RETURN 월 누락
-5. 최근 3개월 팩터 누락
+**저장 후 검증** (`download_validation.validate_parquet_coverage`): 빈 월, 팩터/종목 수 급감, M_RETURN 정합성 등 5가지
 
 ---
 
@@ -431,16 +375,15 @@ main.py
   │    ├→ config.py (PARAM)
   │    ├→ db/factor_query.py
   │    │    └→ config.py (PARAM)
-  │    └→ service/download/parquet_io.py (save/load/validate)
+  │    ├→ service/download/parquet_io.py (save/load/validate)
+  │    └→ service/download/download_validation.py (validate_parquet_coverage, print_coverage_report)
   ├→ service/pipeline/model_portfolio.py
   │    ├→ config.py (PARAM)
   │    ├→ service/download/parquet_io.py (load_factor_parquet)
-  │    ├→ service/pipeline/factor_analysis.py
-  │    │    └→ service/pipeline/pipeline_utils.py (prepend_start_zero)
+  │    ├→ service/pipeline/factor_analysis.py (prepend_start_zero 포함)
   │    ├→ service/pipeline/correlation.py
   │    ├→ service/pipeline/optimization.py
-  │    ├→ service/pipeline/pipeline_utils.py (prepend_start_zero만)
-  │    ├→ service/pipeline/weight_construction.py
+  │    ├→ service/pipeline/weight_construction.py (build_factor_weight_frames, aggregate_mp_weights, calculate_style_weights 포함)
   │    └→ service/pipeline/benchmark_comparison.py (--benchmark 옵션)
   └→ service/backtest/ (backtest 커맨드)
        ├→ walk_forward_engine.py (WalkForwardEngine)
@@ -450,24 +393,7 @@ main.py
        └→ overfit_diagnostics.py
 ```
 
-### 3.2 모듈별 상세 의존성
-
-| 모듈 | imports | 호출하는 함수 | 호출되는 곳 |
-|------|---------|--------------|------------|
-| `model_portfolio.py` | factor_analysis, correlation, optimization, pipeline_utils, weight_construction, **parquet_io**, **utils.validation** | 모든 하위 모듈 함수 + `load_factor_parquet()` + `validate_return_matrix()` + `validate_output_weights()` | `main.py`, `run_model_portfolio_pipeline()` |
-| `parquet_io.py` | (없음) | - | `download_factors.py`, `model_portfolio.py` |
-| `factor_analysis.py` | pipeline_utils | `prepend_start_zero()` | `model_portfolio._analyze_factors()`, `filter_and_label_factors()` |
-| `correlation.py` | (없음) | - | `model_portfolio._evaluate_universe()` |
-| `optimization.py` | (없음) | - | `model_portfolio._optimize_mixes()`, `model_portfolio.run()` [simulate_constrained_weights] |
-| `weight_construction.py` | (없음) | - | `model_portfolio.aggregate_factor_returns()` |
-| `pipeline_utils.py` | (없음) | - | `factor_analysis.calculate_factor_stats()` |
-| `benchmark_comparison.py` | scipy.stats | `ttest_1samp()` | `main.py` (`--benchmark` 옵션) |
-| `walk_forward_engine.py` | factor_analysis, correlation, optimization, model_portfolio, data_slicer, result_stitcher | 기존 pipeline 순수 함수 | `main.py` (`backtest` 커맨드) |
-| `data_slicer.py` | (없음) | - | `walk_forward_engine.py` |
-| `result_stitcher.py` | (없음) | - | `walk_forward_engine.py` |
-| `overfit_diagnostics.py` | scipy.stats | `spearmanr()` | `main.py` (`backtest` 커맨드) |
-
-### 3.3 외부 의존성
+### 3.2 외부 의존성
 
 | 의존성 | 용도 | 장애 시 영향 |
 |--------|------|-------------|
@@ -517,12 +443,11 @@ main.py
 ### 4.1 건드리면 안 되는 로직
 
 #### 4.1.1 1개월 래그 (`shift(1)`)
-- **위치**: `factor_analysis.py:228` (batch), `factor_analysis.py:67` (단건)
-- **이유**: look-ahead bias 방지. 전월 팩터값으로 당월 투자 결정을 시뮬레이션. 이를 제거하면 모든 백테스트 결과가 비현실적으로 좋아지며, 프로덕션에서 재현 불가능한 수익률을 보여주게 됨
-- **주의**: lag는 `gvkeyiid` 단위로 적용되어야 함. 전체 DataFrame에 단순 shift하면 종목 간 데이터가 섞임
+- **위치**: `factor_analysis.py` (batch/단건 모두)
+- look-ahead bias 방지의 핵심. 상세 메커니즘은 §2.2 [2] 참조. `gvkeyiid` 단위 적용 필수
 
 #### 4.1.2 hardcoded 가중치 모드
-- **위치**: `optimization.py:106-122`
+- **위치**: `optimization.py:_get_hardcoded_weights()`
 - **주석**: `"이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!"` (2곳)
 - **이유**: 프로덕션 MP의 실제 투자 가중치. `_get_hardcoded_weights()`의 CSV 경로와 반환 구조를 변경하면 프로덕션 포트폴리오가 깨짐
 - **특이사항**: `Valuation` 스타일(CashEV)은 시뮬레이션 결과와 무관하게 강제로 4%로 설정 (투자 위원회 결정)
@@ -542,12 +467,7 @@ main.py
 ### 4.2 숨겨진 규칙 / 암묵적 계약
 
 #### 4.2.1 파이프라인 실행 순서 불변
-`run()` 내 [1]~[7] 단계는 반드시 순서대로 실행되어야 한다:
-- [3]은 [2]의 `factor_stats` 사용
-- [4]는 [3]의 `filtered_data` 사용
-- [5]는 [4]의 수익률 행렬 사용
-- [6]은 [5]의 상관관계 행렬 사용
-- [7]은 [6]의 가중치 사용
+`run()` 내 [1]~[7]은 순차 의존성이 있다. 순서 변경 불가.
 
 #### 4.2.2 M_RETURN merge 키 정합성
 `_prepare_metadata`에서 M_RETURN은 `merge_keys = ["gvkeyiid", "ddt"]` + 가용한 추가 키로 inner join된다. Pipeline-ready parquet은 `(gvkeyiid, ddt)` 2키만으로 충분하지만, test CSV는 추가 키(`ticker, isin, sec, country`)가 포함되어 있어 자동으로 사용된다. **merge 키가 달라지면 행 수가 달라질 수 있음**.
@@ -556,16 +476,10 @@ main.py
 `pd.cut(bins=[0, 20, 40, 60, 80, 105])` — 상한이 100이 아닌 105인 이유: 백분위 100%인 종목(섹터-날짜 그룹에서 rank=count)도 Q5에 포함시키기 위함. `right=True`이므로 100은 (80, 105] 구간에 해당.
 
 #### 4.2.4 `ret_df.loc[ret_df.index[0]] = 0.0`
-`_evaluate_universe`에서 수익률 행렬의 첫 행을 0으로 설정한다. 이는 `prepend_start_zero()`와는 별개의 처리이며, aggregate 이후 첫 날짜의 수익률을 기준점 0으로 강제한다. CAGR 계산의 시작점 역할.
+`_evaluate_universe`에서 수익률 행렬의 첫 행을 0으로 설정한다. 이는 `factor_analysis.prepend_start_zero()`와는 별개의 처리이며, aggregate 이후 첫 날짜의 수익률을 기준점 0으로 강제한다. CAGR 계산의 시작점 역할.
 
 #### 4.2.5 categorical 변환 타이밍
-- 다운로드 시: object → categorical → 연도별 parquet 분할 저장 (zstd 압축 최적화)
-- 파이프라인 로드 시: `load_factor_parquet()` → 연도별 파일 병합 → categorical → object (groupby OOM 방지)
-- 테스트 CSV 로드 시: object → categorical (메모리 절약)
-
-이 변환 규칙이 깨지면:
-- categorical + `observed=False` → 모든 카테고리 조합의 Cartesian product → OOM
-- object + 대규모 merge → 메모리 비효율
+다운로드 시 `object -> categorical` (zstd 최적화), 파이프라인 로드 시 `categorical -> object` (groupby OOM 방지). 상세는 §2.2 [1] 참조. categorical + `observed=False`는 OOM을 유발한다.
 
 #### 4.2.6 `report` 모드의 early return
 `_generate_report()`는 보고서 생성 후 반환하고, `run()`에서 `return`으로 이후 단계를 스킵한다. (이전에는 `sys.exit(0)`이었으나 테스트 가능성을 위해 제거됨)
@@ -597,7 +511,7 @@ weight_raw["factor_weight"] = weight_raw["factor_weight"] * (weight_raw["mp_ls_w
 `_construct_and_export`에서 `fac not in factor_idx_map`이면 해당 팩터를 건너뜀 (warning 로그). hardcoded 가중치의 팩터가 실제 데이터에 존재하지 않으면 해당 가중치는 무시됨.
 
 #### 4.3.6 증분 다운로드 후 팩터 구성 변화
-증분 모드로 새 월을 추가할 때, 기존 월에 없던 새 팩터가 등장하거나 기존 팩터가 누락될 수 있음. `validate_parquet_coverage`의 `FACTOR_MISSING_LATEST` 경고로 감지하지만 자동 수정은 없음.
+증분 모드로 새 월을 추가할 때, 기존 월에 없던 새 팩터가 등장하거나 기존 팩터가 누락될 수 있음. `download_validation.validate_parquet_coverage`의 `FACTOR_MISSING_LATEST` 경고로 감지하지만 자동 수정은 없음.
 
 #### 4.3.6a 연도 경계 증분 다운로드
 `end_date=2027-01-31` 증분 다운로드 시 `affected_year=2027`이므로 `MXCN1A_factor_2027.parquet` 파일이 자동 생성된다. 기존 2026 파일은 변경되지 않음.
@@ -627,35 +541,17 @@ for i in range(n_cols):
 ```
 `correlation.py:50-65` — 컬럼별 for 루프. 50개 팩터에서는 문제없으나, 팩터 수가 크게 증가하면 병목. NumPy 벡터화로 개선 가능하지만 팩터별 mask가 다르므로 단순하지 않음. 공분산 계산은 `nanmean * N/(N-1)` Bessel's correction을 적용하여 `nanstd(ddof=1)`과 일관된 unbiased 추정량을 사용한다.
 
-#### 4.4.3 find_optimal_mix의 rich.progress.track
-`optimization.py:67-68` — 보조 팩터 3개에 대해 progress bar 표시. 메인 팩터가 보조 팩터와 같으면 skip (67% 정도만 실행).
+#### 4.4.3 float32 정밀도 + 재현성 (시뮬레이션)
+`optimization.py:_mc_simulation()` — float32 사용 (메모리 효율). `random_seed` 파라미터(기본값 42)로 재현성 보장.
 
-#### 4.4.4 report 모드의 early return
-`model_portfolio.py` — `_generate_report()` 완료 후 `run()`에서 `return`으로 이후 단계 스킵. 이전의 `sys.exit(0)`은 테스트 가능성과 라이브러리 사용성을 위해 제거됨.
-
-#### 4.4.5 float32 정밀도 + 재현성 (시뮬레이션)
-`optimization.py` — MC 시뮬레이션에서 float32 사용 (메모리 효율 의도적 선택). `random_seed` 파라미터(기본값 42)로 `np.random.default_rng`를 통해 재현성 보장. `random_seed=None`이면 랜덤 모드.
-
-#### 4.4.6 SQL injection 위험 (완화됨)
-```python
-f"FROM [dbo].[{universe}]"
-```
-`factor_query.py:74` — universe 테이블명이 f-string으로 직접 삽입. DDL 식별자는 SQL parameterization 불가. `ALLOWED_UNIVERSES` allowlist로 검증하여 허용된 테이블명만 통과. `.env` 변조 시에도 방어됨.
-
-#### 4.4.7 PIPELINE_PARAMS 중앙 관리
-`config.py:PIPELINE_PARAMS` — 11개 비즈니스 파라미터 (style_cap, 거래비용, 팩터 수, 임계값, 랭킹 가중치, min_downside_obs, num_sims 등)를 중앙 집중화. Pipeline 클래스 생성자에서 주입되며, 각 모듈 함수는 파라미터로 받아 순수 함수 유지. 기존 매직넘버가 기본값으로 유지되어 backward compatible.
-
-#### 4.4.8 pre-commit hook + detect-secrets
-`.pre-commit-config.yaml` — 커밋 시 자동 검사. `detect-secrets`로 비밀번호/토큰 커밋 차단, `check-added-large-files`로 100MB 초과 파일 차단, `check-merge-conflict`로 머지 충돌 표시 감지.
-
-#### 4.4.9 pipeline_utils 순환 참조 해소
-`aggregate_factor_returns()`가 `model_portfolio.py`로 이동하면서 `pipeline_utils.py`는 더 이상 `weight_construction.py`를 import하지 않음. 순환 참조 가능성이 제거됨. `pipeline_utils.py`는 순수 유틸리티(`prepend_start_zero`)만 포함.
+#### 4.4.4 SQL injection 완화
+`factor_query.py` — universe 테이블명이 f-string 삽입. `ALLOWED_UNIVERSES` allowlist로 방어.
 
 ### 4.5 테스트 커버리지 현황
 
 | 모듈 | 테스트 수 | 커버되는 핵심 로직 | 미커버 영역 |
 |------|-----------|-------------------|------------|
-| `pipeline_utils.prepend_start_zero` | 16 | 기본, NaN, Inf, 월말 처리 | - |
+| `factor_analysis.prepend_start_zero` | 16 | 기본, NaN, Inf, 월말 처리 | - |
 | `factor_analysis.calculate_factor_stats` | 17 | 분위, 래그, sort_order, test_mode | batch 모드 직접 테스트 없음 |
 | `correlation.calculate_downside_correlation` | 18 | 기본, min_obs, 엣지케이스 | - |
 | `optimization.simulate_constrained_weights` | 16 | 기본, style_cap, 재현성 (random_seed 지원) | hardcoded 모드 미테스트 |

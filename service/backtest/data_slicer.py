@@ -6,7 +6,6 @@ Walk-Forward 엔진에서 IS/OOS 데이터를 분할하는 데 사용한다.
 from __future__ import annotations
 
 import logging
-from typing import List
 
 import pandas as pd
 
@@ -38,7 +37,7 @@ def slice_data_by_date(
     return sliced_raw, sliced_mret
 
 
-def get_oos_dates(all_dates: List[pd.Timestamp], min_is_months: int) -> List[pd.Timestamp]:
+def get_oos_dates(all_dates: list[pd.Timestamp], min_is_months: int) -> list[pd.Timestamp]:
     """OOS 시작점 이후의 모든 월말 날짜를 반환한다.
 
     Args:

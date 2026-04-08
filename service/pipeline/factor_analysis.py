@@ -7,15 +7,28 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
 from rich.progress import track
 
-from service.pipeline.pipeline_utils import prepend_start_zero
-
 logger = logging.getLogger(__name__)
+
+
+def prepend_start_zero(series: pd.DataFrame) -> pd.DataFrame:
+    """시계열 데이터 맨 앞에 0을 추가한다 (누적 수익률 계산의 기준선).
+
+    첫 번째 날짜로부터 1개월 전 날짜에 0값을 삽입하여,
+    누적 수익률 계산 시 시작점이 0%가 되도록 한다.
+
+    Args:
+        series: 날짜가 인덱스인 시계열 DataFrame
+
+    Returns:
+        맨 앞에 0이 추가되고 날짜순으로 정렬된 DataFrame
+    """
+    series.loc[series.index[0] - pd.DateOffset(months=1)] = 0
+    return series.sort_index()
 
 
 def calculate_factor_stats(
@@ -24,7 +37,7 @@ def calculate_factor_stats(
     factor_data_df: pd.DataFrame,
     test_mode: bool = False,
     min_sector_stocks: int = 10,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | Tuple[None, None, None, None]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | tuple[None, None, None, None]:
     """팩터 데이터를 5분위 포트폴리오로 나누고 팩터 스프레드를 계산한다.
 
     각 섹터-날짜 그룹 내에서 팩터값 기준으로 종목을 Q1(상위20%)~Q5(하위20%)로 분류하고,
@@ -122,12 +135,12 @@ def calculate_factor_stats(
 
 
 def filter_and_label_factors(
-    factor_abbr_list: List[str],
-    factor_name_list: List[str],
-    style_name_list: List[str],
-    factor_data_list: List[Tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]],
+    factor_abbr_list: list[str],
+    factor_name_list: list[str],
+    style_name_list: list[str],
+    factor_data_list: list[tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]],
     spread_threshold_pct: float = 0.10,
-) -> Tuple[List[str], List[str], List[str], List[int], List[List[str]], List[pd.DataFrame]]:
+) -> tuple[list[str], list[str], list[str], list[int], list[list[str]], list[pd.DataFrame]]:
     """음의 팩터 스프레드를 가진 섹터를 제거하고 L/N/S 라벨을 재계산한다.
 
     각 팩터-섹터 조합에서 팩터 스프레드(Q1-Q5)가 음수이면 해당 섹터를 제거하고,
@@ -154,8 +167,8 @@ def filter_and_label_factors(
         | 2024-01-31 | 003      | 601318 | Consumer | Q3       | 0     |
     """
     kept_factor_abbrs, kept_names, kept_styles, kept_idx = [], [], [], []
-    dropped_sec: List[List[str]] = []
-    filtered_raw_data_list: List[pd.DataFrame] = []
+    dropped_sec: list[list[str]] = []
+    filtered_raw_data_list: list[pd.DataFrame] = []
 
     for idx, (sector_return_df, _, _, raw_df) in track(
         enumerate(factor_data_list), description="Filtering sectors", total=len(factor_data_list)
@@ -215,11 +228,11 @@ def filter_and_label_factors(
 
 def calculate_factor_stats_batch(
     merged_data: pd.DataFrame,
-    factor_abbr_list: List[str],
-    orders: List[int],
+    factor_abbr_list: list[str],
+    orders: list[int],
     test_mode: bool = False,
     min_sector_stocks: int = 10,
-) -> List[Tuple]:
+) -> list[Tuple]:
     """모든 팩터의 5분위 분석을 하이브리드 방식으로 처리한다.
 
     lag는 전체 DataFrame에서 배치로 수행하고 (배치가 유리),

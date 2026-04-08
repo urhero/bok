@@ -19,6 +19,6 @@ jobs:
       - name: Install system deps
         run: sudo apt-get install -y unixodbc-dev
       - name: Install Python deps
-        run: pip install pandas numpy scipy scikit-learn pyarrow python-dotenv rich tabulate qpsolvers osqp pyodbc sqlalchemy pytest pytest-cov pytest-xdist
+        run: pip install pandas numpy scipy pyarrow python-dotenv rich pyodbc sqlalchemy pytest pytest-cov pytest-xdist
       - name: Run unit tests
         run: pytest tests/test_unit/ -v --tb=short --cov=service --cov-report=term-missing
