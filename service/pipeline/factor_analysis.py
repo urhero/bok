@@ -168,7 +168,7 @@ def filter_and_label_factors(
     """
     kept_factor_abbrs, kept_names, kept_styles, kept_idx = [], [], [], []
     dropped_sec: list[list[str]] = []
-    filtered_raw_data_list: list[pd.DataFrame] = []
+    filtered_data_list: list[pd.DataFrame] = []
 
     for idx, (sector_return_df, _, _, raw_df) in track(
         enumerate(factor_data_list), description="Filtering sectors", total=len(factor_data_list)
@@ -220,10 +220,10 @@ def filter_and_label_factors(
         kept_styles.append(style_name_list[idx])
         kept_idx.append(idx)
         dropped_sec.append(to_drop)
-        filtered_raw_data_list.append(merged)
+        filtered_data_list.append(merged)
 
     logger.info("Sector filter retained %d / %d factors", len(kept_idx), len(factor_abbr_list))
-    return kept_factor_abbrs, kept_names, kept_styles, kept_idx, dropped_sec, filtered_raw_data_list
+    return kept_factor_abbrs, kept_names, kept_styles, kept_idx, dropped_sec, filtered_data_list
 
 
 def calculate_factor_stats_batch(
@@ -232,7 +232,7 @@ def calculate_factor_stats_batch(
     orders: list[int],
     test_mode: bool = False,
     min_sector_stocks: int = 10,
-) -> list[Tuple]:
+) -> list[tuple]:
     """모든 팩터의 5분위 분석을 하이브리드 방식으로 처리한다.
 
     lag는 전체 DataFrame에서 배치로 수행하고 (배치가 유리),
