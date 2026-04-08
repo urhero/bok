@@ -30,7 +30,7 @@ class TestSimulateConstrainedWeightsBasic:
         rtn_df, style_list = sample_style_returns
 
         best_stats, weights_tbl = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,  # 테스트용으로 적은 시뮬레이션
@@ -47,7 +47,7 @@ class TestSimulateConstrainedWeightsBasic:
         rtn_df, style_list = sample_style_returns
 
         best_stats, _ = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
@@ -64,7 +64,7 @@ class TestSimulateConstrainedWeightsBasic:
         rtn_df, style_list = sample_style_returns
 
         _, weights_tbl = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
@@ -83,7 +83,7 @@ class TestSimulateConstrainedWeightsValidation:
         np.random.seed(42)
         dates = pd.date_range("2020-01-31", periods=36, freq="ME")
 
-        rtn_df = pd.DataFrame({
+        ret_df = pd.DataFrame({
             "A": np.random.randn(36) * 0.03,
             "B": np.random.randn(36) * 0.03,
             "C": np.random.randn(36) * 0.03,
@@ -94,7 +94,7 @@ class TestSimulateConstrainedWeightsValidation:
 
         with pytest.raises(ValueError, match="length of style_list"):
             simulate_constrained_weights(
-                rtn_df=rtn_df,
+                ret_df=ret_df,
                 style_list=style_list,
                 mode="simulation",
                 num_sims=100,
@@ -118,7 +118,7 @@ class TestSimulateConstrainedWeightsStyleCap:
         # style_cap을 0.4로 완화 (5개 팩터, 3개 스타일에서 실행 가능)
         try:
             _, weights_tbl = simulate_constrained_weights(
-                rtn_df=rtn_df,
+                ret_df=rtn_df,
                 style_list=style_list,
                 mode="simulation",
                 num_sims=10000,
@@ -144,7 +144,7 @@ class TestSimulateConstrainedWeightsStyleCap:
 
         # test_mode=True
         _, weights_tbl_test = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
@@ -169,7 +169,7 @@ class TestSimulateConstrainedWeightsNumSims:
         # 적은 시뮬레이션
         np.random.seed(42)
         best_stats_low, _ = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=100,
@@ -179,7 +179,7 @@ class TestSimulateConstrainedWeightsNumSims:
         # 많은 시뮬레이션
         np.random.seed(42)
         best_stats_high, _ = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=10000,
@@ -204,7 +204,7 @@ class TestSimulateConstrainedWeightsBatchProcessing:
         # 작은 배치
         np.random.seed(42)
         best_stats_small, weights_small = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
@@ -215,7 +215,7 @@ class TestSimulateConstrainedWeightsBatchProcessing:
         # 큰 배치
         np.random.seed(42)
         best_stats_large, weights_large = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
@@ -237,13 +237,13 @@ class TestSimulateConstrainedWeightsEdgeCases:
         np.random.seed(42)
         dates = pd.date_range("2020-01-31", periods=36, freq="ME")
 
-        rtn_df = pd.DataFrame({
+        ret_df = pd.DataFrame({
             "single_factor": np.random.randn(36) * 0.03,
         }, index=dates)
         style_list = ["Valuation"]
 
         best_stats, weights_tbl = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=ret_df,
             style_list=style_list,
             mode="simulation",
             num_sims=100,
@@ -258,7 +258,7 @@ class TestSimulateConstrainedWeightsEdgeCases:
         np.random.seed(42)
         dates = pd.date_range("2020-01-31", periods=36, freq="ME")
 
-        rtn_df = pd.DataFrame({
+        ret_df = pd.DataFrame({
             "val_1": np.random.randn(36) * 0.03,
             "val_2": np.random.randn(36) * 0.03,
             "val_3": np.random.randn(36) * 0.03,
@@ -266,7 +266,7 @@ class TestSimulateConstrainedWeightsEdgeCases:
         style_list = ["Valuation", "Valuation", "Valuation"]
 
         best_stats, weights_tbl = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=ret_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
@@ -280,14 +280,14 @@ class TestSimulateConstrainedWeightsEdgeCases:
         np.random.seed(42)
         dates = pd.date_range("2020-01-31", periods=36, freq="ME")
 
-        rtn_df = pd.DataFrame({
+        ret_df = pd.DataFrame({
             "A": -np.abs(np.random.randn(36) * 0.03),
             "B": -np.abs(np.random.randn(36) * 0.03),
         }, index=dates)
         style_list = ["Style1", "Style2"]
 
         best_stats, weights_tbl = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=ret_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
@@ -305,14 +305,14 @@ class TestSimulateConstrainedWeightsEdgeCases:
         returns = np.random.randn(36) * 0.03
         returns[0:5] = 0  # 처음 5개월 0 수익률
 
-        rtn_df = pd.DataFrame({
+        ret_df = pd.DataFrame({
             "A": returns,
             "B": np.random.randn(36) * 0.03,
         }, index=dates)
         style_list = ["Style1", "Style2"]
 
         best_stats, weights_tbl = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=ret_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
@@ -332,7 +332,7 @@ class TestSimulateConstrainedWeightsOutputValidation:
         rtn_df, style_list = sample_style_returns
 
         _, weights_tbl = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
@@ -354,7 +354,7 @@ class TestSimulateConstrainedWeightsOutputValidation:
         rtn_df, style_list = sample_style_returns
 
         _, weights_tbl = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
@@ -374,7 +374,7 @@ class TestSimulateConstrainedWeightsOutputValidation:
         rtn_df, style_list = sample_style_returns
 
         best_stats, _ = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
@@ -399,7 +399,7 @@ class TestSimulateConstrainedWeightsReproducibility:
 
         np.random.seed(42)
         best_stats_1, weights_1 = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
@@ -408,7 +408,7 @@ class TestSimulateConstrainedWeightsReproducibility:
 
         np.random.seed(42)
         best_stats_2, weights_2 = simulate_constrained_weights(
-            rtn_df=rtn_df,
+            ret_df=rtn_df,
             style_list=style_list,
             mode="simulation",
             num_sims=1000,
