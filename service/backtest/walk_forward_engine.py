@@ -34,7 +34,7 @@ from service.pipeline.model_portfolio import (
 )
 from service.pipeline.optimization import (
     find_optimal_mix,
-    simulate_constrained_weights,
+    optimize_constrained_weights,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ def _run_rule_learning(
         rule_bundle: kept_abbrs, factor_stats, sort_order_map,
                      dropped_sectors, label_rules, threshold_pct, kept_styles
     """
-    pp = pipeline.pp
+    pp = pipeline.pipeline_params
 
     # [1] 메타데이터 병합 (IS 데이터에 대해)
     factor_metadata, merged_data, factor_abbr_list, orders = pipeline._prepare_metadata(
@@ -131,7 +131,7 @@ def _apply_rules_and_aggregate(
     Returns:
         precomputed_ret_df: (전체 월 × 유효 팩터) 수익률 행렬
     """
-    pp = pipeline.pp
+    pp = pipeline.pipeline_params
 
     # 전체 데이터에 대해 메타데이터 병합
     factor_metadata, merged_data_full, factor_abbr_list, orders = pipeline._prepare_metadata(
@@ -269,9 +269,9 @@ def _run_weight_optimization(
 
     for cap in style_caps_to_try:
         try:
-            best_stats, weights_tbl = simulate_constrained_weights(
+            best_stats, weights_tbl = optimize_constrained_weights(
                 ret_subset, style_list,
-                mode="simulation",
+                mode="monte_carlo",
                 style_cap=cap,
                 num_sims=pp["num_sims"],
                 random_seed=seed,
@@ -339,10 +339,10 @@ class WalkForwardEngine:
         t0 = time.time()
         logger.info("Walk-Forward backtest starting: %s ~ %s", start_date, end_date)
 
-        # pipeline_params 커스텀 (config의 simulation_mode 유지)
+        # pipeline_params 커스텀 (config의 optimization_mode 유지)
         pp = dict(PIPELINE_PARAMS)
-        if pp["simulation_mode"] == "hardcoded":
-            pp["simulation_mode"] = "simulation"  # hardcoded는 backtest에서 사용 불가
+        if pp["optimization_mode"] == "hardcoded":
+            pp["optimization_mode"] = "monte_carlo"  # hardcoded는 backtest에서 사용 불가
         pp["num_sims"] = self.num_sims
         pp["top_factor_count"] = self.top_factors
 

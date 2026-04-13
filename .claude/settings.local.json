@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CODE_EXPIRIMELTAL_AGENT_TEAMS": "true"
+  },
   "permissions": {
     "allow": [
       "Bash(python -c:*)",
@@ -16,11 +19,14 @@
       "Read(//c/Users/IKM/AppData/Local/Programs/Python/**)",
       "Bash(C:/Users/IKM/.virtualenvs/bok-ZkEKkwfv/Scripts/python.exe main.py download 2017-12-01 2026-02-28)",
       "Bash(python -m pytest tests/test_unit/ -v)",
-      "Bash(python -m pytest tests/test_unit/test_simulate_constrained_weights.py -v)",
+      "Bash(python -m pytest tests/test_unit/test_optimize_constrained_weights.py -v)",
       "Bash(git checkout:*)",
       "Bash(python main.py mp 2017-12-31 2026-02-28)",
       "Bash(ls -la output/*.csv)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(find /c/Users/IKM/bok -type f -name \"*.py\" -exec grep -l \"\\\\.sql\\\\|execute\\\\|query\" {} \\\\;)",
+      "Bash(ls -lh /c/Users/IKM/bok/data/*.parquet)",
+      "Bash(C:/Users/IKM/.virtualenvs/bok-ZkEKkwfv/Scripts/python.exe main.py download 2009-12-01 2026-03-31)"
     ]
   }
 }
