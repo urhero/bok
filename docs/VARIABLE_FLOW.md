@@ -70,7 +70,7 @@ graph TD
     Var_BestSub & Var_FacRet --> Var_RetSubset
 
     %% --- [6] Weight Determination ---
-    Func_Sim{{"[6] simulate_constrained_weights<br/>(듀얼 모드: hardcoded/simulation)"}}:::func
+    Func_Sim{{"[6] optimize_constrained_weights<br/>(듀얼 모드: hardcoded/monte_carlo)"}}:::func
     Var_Res("sim_result<br/>(best_stats, weights_tbl)"):::data
 
     Var_RetSubset --> Func_Sim
@@ -118,7 +118,7 @@ graph TD
 | `[4]` | `meta` | 팩터 성과/랭크 테이블 (CAGR, rank_style, rank_total) | `pd.DataFrame` | `_evaluate_universe` |
 | `[5]` | `best_sub` | 최적 메인+서브 팩터 조합 | `pd.DataFrame` | `_optimize_mixes` |
 | `[5]` | `ret_subset` | 선정된 팩터들의 수익률 행렬 subset | `pd.DataFrame` | `_optimize_mixes` |
-| `[6]` | `sim_result` | (best_stats, weights_tbl) — 최적 비중 결과 | `Tuple` | `simulate_constrained_weights` |
+| `[6]` | `sim_result` | (best_stats, weights_tbl) — 최적 비중 결과 | `Tuple` | `optimize_constrained_weights` |
 | `[7]` | `weight_raw` | 팩터별 종목 가중치 | `pd.DataFrame` | `_construct_and_export` |
 | `[7]` | `agg_w` | MP (팩터 통합) 가중치 | `pd.DataFrame` | `_construct_and_export` |
 | `[7]` | `final_weights` | weight_raw + agg_w 결합 | `pd.DataFrame` | `_construct_and_export` |

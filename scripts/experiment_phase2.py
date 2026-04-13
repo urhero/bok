@@ -58,7 +58,7 @@ def main():
     patched_ew = _make_patched_weight_optimization(original_weight_opt, "equal_weight")
 
     base_overrides = {
-        "simulation_mode": "equal_weight",
+        "optimization_mode": "equal_weight",
         "skip_factor_mix": True,
     }
 

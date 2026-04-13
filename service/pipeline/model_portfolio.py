@@ -32,7 +32,7 @@ from service.pipeline.factor_analysis import (
 )
 from service.pipeline.optimization import (
     find_optimal_mix,
-    simulate_constrained_weights,
+    optimize_constrained_weights,
 )
 from service.pipeline.weight_construction import (
     aggregate_mp_weights,
@@ -153,9 +153,9 @@ class ModelPortfolioPipeline:
         )
 
         # [6] 스타일 캡 하 비중 결정 — README [6]
-        sim_result = simulate_constrained_weights(
+        sim_result = optimize_constrained_weights(
             ret_subset, style_list, test_mode=bool(test_file),
-            mode=self.pipeline_params["simulation_mode"],
+            mode=self.pipeline_params["optimization_mode"],
             style_cap=self.pipeline_params["style_cap"],
             num_sims=self.pipeline_params["num_sims"],
             portfolio_rank_weights=self.pipeline_params["portfolio_rank_weights"],

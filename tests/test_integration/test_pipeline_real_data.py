@@ -294,7 +294,7 @@ class TestRealDataCorrelationMatrix:
 
 @pytest.mark.real_data
 class TestRealDataWeightQuality:
-    """simulate_constrained_weights 결과 검증"""
+    """optimize_constrained_weights 결과 검증"""
 
     @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
     def test_weights_have_required_columns(self, pipeline_result) -> None:

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""2-팩터 믹스 최적화 및 스타일 캡 하 가중치 시뮬레이션 모듈.
+"""2-팩터 믹스 최적화 및 스타일 캡 하 가중치 최적화 모듈.
 
 메인 팩터와 보조 팩터의 최적 배합 비율을 그리드 탐색하고,
-몬테카를로 시뮬레이션으로 스타일 캡(기본 25%) 하 최적 가중치를 찾는다.
+몬테카를로 최적화로 스타일 캡(기본 25%) 하 최적 가중치를 찾는다.
 """
 from __future__ import annotations
 
@@ -175,7 +175,7 @@ def _equal_weight_allocation(
     return best_stats, weights_tbl
 
 
-def _mc_simulation(
+def _monte_carlo_optimization(
     rtn_df: pd.DataFrame,
     style_list: list[str],
     num_sims: int,
@@ -186,7 +186,7 @@ def _mc_simulation(
     random_seed: int | None,
     portfolio_rank_weights: tuple,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """몬테카를로 시뮬레이션으로 스타일 캡 하 최적 가중치를 탐색한다."""
+    """몬테카를로 최적화로 스타일 캡 하 최적 가중치를 탐색한다."""
     n_factors = rtn_df.shape[1]
     n_months = rtn_df.shape[0]
     if len(style_list) != n_factors:
@@ -306,7 +306,7 @@ def _mc_simulation(
 
     logger.info("[Trace] Simulation completed. Best stats: %s", best_stats.to_dict('records'))
 
-    # simulation 결과를 hardcoded_weights.csv에 저장 (test_mode에서는 스킵)
+    # monte_carlo 결과를 hardcoded_weights.csv에 저장 (test_mode에서는 스킵)
     if not test_mode:
         import shutil
         from datetime import datetime
@@ -320,12 +320,12 @@ def _mc_simulation(
             logger.info("기존 가중치 백업: %s", backup)
         save_cols = weights_tbl[["factor", "raw_weight", "styleName"]]
         save_cols.to_csv(csv_path, index=False)
-        logger.info("새 시뮬레이션 가중치 저장: %s (%d factors)", csv_path.name, len(save_cols))
+        logger.info("새 MC 최적화 가중치 저장: %s (%d factors)", csv_path.name, len(save_cols))
 
     return best_stats, weights_tbl
 
 
-def simulate_constrained_weights(
+def optimize_constrained_weights(
     rtn_df: pd.DataFrame,
     style_list: list[str],
     mode: str = "hardcoded",
@@ -342,12 +342,12 @@ def simulate_constrained_weights(
     세 가지 모드를 지원한다:
     - "hardcoded": 프로덕션용 고정 가중치 반환 (기본값)
     - "equal_weight": 1/K 동일가중 + 스타일 캡 재분배 (권장)
-    - "simulation": 몬테카를로 시뮬레이션으로 최적 가중치 탐색
+    - "monte_carlo": 몬테카를로 최적화로 최적 가중치 탐색
 
     Args:
         rtn_df: (날짜 x 팩터) 월간 수익률 행렬
         style_list: 각 팩터의 스타일명 (rtn_df 컬럼 순서와 동일)
-        mode: "hardcoded" / "equal_weight" / "simulation"
+        mode: "hardcoded" / "equal_weight" / "monte_carlo"
         num_sims: 시뮬레이션 횟수 (기본 1,000,000)
         style_cap: 스타일별 최대 비중 (기본 0.25 = 25%)
         tol: 제약 검사 허용 오차
@@ -368,7 +368,7 @@ def simulate_constrained_weights(
     if mode == "equal_weight":
         return _equal_weight_allocation(rtn_df, style_list, style_cap, tol, test_mode)
 
-    return _mc_simulation(
+    return _monte_carlo_optimization(
         rtn_df, style_list, num_sims, style_cap, tol,
         test_mode, batch_size, random_seed, portfolio_rank_weights,
     )

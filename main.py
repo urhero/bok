@@ -142,7 +142,7 @@ def _run_benchmark_comparison(start_date, end_date, test_file):
     from service.pipeline.model_portfolio import DATA_DIR, ModelPortfolioPipeline, OUTPUT_DIR
 
     pp = dict(PIPELINE_PARAMS)
-    pp["simulation_mode"] = "simulation"
+    pp["optimization_mode"] = "monte_carlo"
 
     pipeline = ModelPortfolioPipeline(
         config=PARAM,

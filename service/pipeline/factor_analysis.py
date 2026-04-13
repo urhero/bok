@@ -316,6 +316,11 @@ def calculate_factor_stats_batch(
 
         # Q1-Q5 스프레드 (Q2~Q4는 불필요 — unstack 없이 Q1, Q5만 추출)
         q_mean = fdf.groupby(["ddt", "quantile"], observed=False)["M_RETURN"].mean()
+        quantile_levels = q_mean.index.get_level_values("quantile").unique()
+        if "Q1" not in quantile_levels or "Q5" not in quantile_levels:
+            logger.warning("Skipping %s - insufficient quintile coverage", factor_abbr)
+            results.append((None, None, None, None))
+            continue
         q1 = q_mean.xs("Q1", level="quantile")
         q5 = q_mean.xs("Q5", level="quantile")
         spread_series = pd.DataFrame({factor_abbr: q1 - q5})

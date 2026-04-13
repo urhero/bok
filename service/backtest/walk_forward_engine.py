@@ -34,7 +34,7 @@ from service.pipeline.model_portfolio import (
 )
 from service.pipeline.optimization import (
     find_optimal_mix,
-    simulate_constrained_weights,
+    optimize_constrained_weights,
 )
 
 logger = logging.getLogger(__name__)
@@ -269,9 +269,9 @@ def _run_weight_optimization(
 
     for cap in style_caps_to_try:
         try:
-            best_stats, weights_tbl = simulate_constrained_weights(
+            best_stats, weights_tbl = optimize_constrained_weights(
                 ret_subset, style_list,
-                mode="simulation",
+                mode="monte_carlo",
                 style_cap=cap,
                 num_sims=pp["num_sims"],
                 random_seed=seed,
@@ -339,10 +339,10 @@ class WalkForwardEngine:
         t0 = time.time()
         logger.info("Walk-Forward backtest starting: %s ~ %s", start_date, end_date)
 
-        # pipeline_params 커스텀 (config의 simulation_mode 유지)
+        # pipeline_params 커스텀 (config의 optimization_mode 유지)
         pp = dict(PIPELINE_PARAMS)
-        if pp["simulation_mode"] == "hardcoded":
-            pp["simulation_mode"] = "simulation"  # hardcoded는 backtest에서 사용 불가
+        if pp["optimization_mode"] == "hardcoded":
+            pp["optimization_mode"] = "monte_carlo"  # hardcoded는 backtest에서 사용 불가
         pp["num_sims"] = self.num_sims
         pp["top_factor_count"] = self.top_factors
 

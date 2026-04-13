@@ -128,10 +128,10 @@ main.py (CLI)
      │         └─ find_optimal_mix() × 스타일 수           │
      │              └─ 3개 보조 팩터 × 101 비중 그리드     │
      │         │                                         │
-     │    [6] simulate_constrained_weights()              │
+     │    [6] optimize_constrained_weights()               │
      │         │                                         │
      │         ├─ mode="hardcoded": CSV 고정 비중          │
-     │         └─ mode="simulation": MC 100만 시뮬레이션    │
+     │         └─ mode="monte_carlo": MC 100만 최적화       │
      │              ├─ 랜덤 비중 생성 (합=1)               │
      │              ├─ 스타일 캡 25% 적용 (초과분 재분배)   │
      │              └─ CAGR 60% + MDD 40% 복합 랭크       │
@@ -292,14 +292,14 @@ mix_ret = port[main] * w_grid + port[sub] * w_sub
 
 **최종 선택**: `rank_total`이 가장 낮은 (main_factor, sub_factor) 조합
 
-#### [6] simulate_constrained_weights: 비중 결정
+#### [6] optimize_constrained_weights: 비중 결정
 
-**가중치 결정 모드 (hardcoded/simulation)**:
+**가중치 결정 모드 (hardcoded/monte_carlo)**:
 
 | 모드 | 용도 | 동작 |
 |------|------|------|
 | `hardcoded` (기본) | 프로덕션 | `data/hardcoded_weights.csv`에서 10개 팩터의 고정 가중치 로드 |
-| `simulation` | 연구/테스트 | MC 100만 시뮬레이션 |
+| `monte_carlo` | 연구/테스트 | MC 100만 최적화 |
 
 **시뮬레이션 모드 핵심 알고리즘**:
 
@@ -411,7 +411,7 @@ main.py
 |-----------|----------|
 | `factor_analysis.py` 분위 로직 | 모든 downstream (라벨링, 수익률, 가중치, 최종 CSV) |
 | `weight_construction.py` 수익률 계산 | `aggregate_factor_returns` → 팩터 순위 → 최적화 → 가중치 |
-| `optimization.py` 시뮬레이션 | 최종 가중치만 (mode=simulation인 경우) |
+| `optimization.py` MC 최적화 | 최종 가중치만 (mode=monte_carlo인 경우) |
 | `optimization.py` hardcoded 가중치 | **프로덕션 MP 직접 영향** — 가장 위험 |
 | `config.py` PARAM | 전 모듈 (DB 연결, 벤치마크명, 파일 경로) |
 | `config.py` PIPELINE_PARAMS | 파이프라인 비즈니스 파라미터 11개 (style_cap, 거래비용, 팩터 수, 임계값, min_downside_obs, num_sims 등). 이전 코드 내 산재하던 매직넘버를 중앙 집중화 |
@@ -542,7 +542,7 @@ for i in range(n_cols):
 `correlation.py:50-65` — 컬럼별 for 루프. 50개 팩터에서는 문제없으나, 팩터 수가 크게 증가하면 병목. NumPy 벡터화로 개선 가능하지만 팩터별 mask가 다르므로 단순하지 않음. 공분산 계산은 `nanmean * N/(N-1)` Bessel's correction을 적용하여 `nanstd(ddof=1)`과 일관된 unbiased 추정량을 사용한다.
 
 #### 4.4.3 float32 정밀도 + 재현성 (시뮬레이션)
-`optimization.py:_mc_simulation()` — float32 사용 (메모리 효율). `random_seed` 파라미터(기본값 42)로 재현성 보장.
+`optimization.py:_monte_carlo_optimization()` — float32 사용 (메모리 효율). `random_seed` 파라미터(기본값 42)로 재현성 보장.
 
 #### 4.4.4 SQL injection 완화
 `factor_query.py` — universe 테이블명이 f-string 삽입. `ALLOWED_UNIVERSES` allowlist로 방어.
@@ -554,7 +554,7 @@ for i in range(n_cols):
 | `factor_analysis.prepend_start_zero` | 16 | 기본, NaN, Inf, 월말 처리 | - |
 | `factor_analysis.calculate_factor_stats` | 17 | 분위, 래그, sort_order, test_mode | batch 모드 직접 테스트 없음 |
 | `correlation.calculate_downside_correlation` | 18 | 기본, min_obs, 엣지케이스 | - |
-| `optimization.simulate_constrained_weights` | 16 | 기본, style_cap, 재현성 (random_seed 지원) | hardcoded 모드 미테스트 |
+| `optimization.optimize_constrained_weights` | 16 | 기본, style_cap, 재현성 (random_seed 지원) | hardcoded 모드 미테스트 |
 | `factor_analysis.filter_and_label_factors` | ~8 | 섹터 제거, L/N/S 라벨, 엣지케이스 | - |
 | `optimization.find_optimal_mix` | ~5 | 그리드 서치, 랭킹, 컬럼 구조 | - |
 | `weight_construction` | ~10 | L/S 분리, 동일가중, 수익률 계산 | - |
@@ -585,7 +585,7 @@ for i in range(n_cols):
 ```
 CAGR = (cumulative_return)^(12/months) - 1
 # months = len(ret_df) - 1  (첫 행은 기준점 0이므로 제외)
-# _evaluate_universe, find_optimal_mix, simulate_constrained_weights 모두 동일 기준 적용
+# _evaluate_universe, find_optimal_mix, optimize_constrained_weights 모두 동일 기준 적용
 ```
 
 ### MDD (최대 낙폭)
@@ -628,7 +628,7 @@ fitted = shrunk + redistributed
 
 - **Factor-Level Backtest**: 종목(stock-level) MP까지 내려가지 않고, 팩터 수익률(net-of-cost) × 팩터 가중치로 포트폴리오 수익률을 산출
 - **거래비용 이중 적용 금지**: 기존 `calculate_vectorized_return()`이 팩터 내부 종목 리밸런싱에서 30bp를 이미 차감. 팩터 가중치 변경에 대한 별도 거래비용은 적용하지 않음
-- **simulation 모드 통일**: 백테스트 전체에서 simulation 모드만 사용. hardcoded 모드는 프로덕션 전용
+- **monte_carlo 모드 통일**: 백테스트 전체에서 monte_carlo 모드만 사용. hardcoded 모드는 프로덕션 전용
 
 ### 6.2 계층적 리밸런싱 (Tiered Rebalancing)
 
@@ -724,7 +724,7 @@ python main.py backtest <start> <end> [옵션]
   --turnover-alpha       EMA 블렌딩 비율 (기본: 1.0)
 
 python main.py mp <start> <end> --benchmark
-  → simulation 모드 MP vs. 동일가중(1/N) 비교 리포트
+  → monte_carlo 모드 MP vs. 동일가중(1/N) 비교 리포트
 ```
 
 ### 6.7 실제 실행 결과 (2026-04-03 기준)
@@ -779,7 +779,7 @@ Deflation:     0.139               0.013
 ```
 
 **현재 기본 설정 (config.py):**
-- `simulation_mode = "equal_weight"` (MC 1M 시행 대신 동일가중)
+- `optimization_mode = "equal_weight"` (MC 1M 시행 대신 동일가중)
 - `skip_factor_mix = True` ([5] 2-팩터 믹스 스킵)
 - `factor_ranking_method = "tstat"` (CAGR 대신 t-통계량 랭킹)
 
@@ -787,4 +787,4 @@ Deflation:     0.139               0.013
 - `output/walk_forward_results.csv` — OOS 64개월 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
 - `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
 
-**주의:** backtest는 내부적으로 simulation 모드를 사용하여 `data/hardcoded_weights.csv`를 덮어쓴다. 실행 후 `git checkout -- data/hardcoded_weights.csv`로 프로덕션 가중치를 반드시 복원할 것.
+**주의:** backtest는 내부적으로 monte_carlo 모드를 사용하여 `data/hardcoded_weights.csv`를 덮어쓴다. 실행 후 `git checkout -- data/hardcoded_weights.csv`로 프로덕션 가중치를 반드시 복원할 것.
