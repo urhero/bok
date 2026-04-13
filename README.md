@@ -134,14 +134,14 @@
 ## [6] 스타일 캡 하 비중 결정
 
 ### 핵심 함수
-`optimization.simulate_constrained_weights()`
+`optimization.optimize_constrained_weights()`
 
 ### 가중치 결정 모드 (3가지)
 - `mode="equal_weight"` **(기본값, 권장)**: 1/K 동일가중 + 스타일 캡 25% 재분배
 - `mode="hardcoded"`: `data/hardcoded_weights.csv`에서 프로덕션 고정 비중 로드
-- `mode="simulation"`: 몬테카를로 시뮬레이션으로 탐색 (과적합 위험)
+- `mode="monte_carlo"`: 몬테카를로 최적화로 탐색 (과적합 위험)
 
-> **주의:** Walk-Forward 백테스트(`python main.py backtest`)는 `equal_weight` 또는 `simulation` 모드만 사용한다. `hardcoded` 모드는 프로덕션 전용이며, 백테스트 결과와 일치하지 않는다.
+> **주의:** Walk-Forward 백테스트(`python main.py backtest`)는 `equal_weight` 또는 `monte_carlo` 모드만 사용한다. `hardcoded` 모드는 프로덕션 전용이며, 백테스트 결과와 일치하지 않는다.
 
 ### 절차 (equal_weight 모드)
 - 선정된 팩터에 1/K 동일가중 부여
@@ -201,7 +201,7 @@
 | 5순위(보조) | Deflation Ratio | OOS CAGR / IS CAGR | >0.6 양호, 0.3~0.6 주의, <0.3 심각 |
 
 ### 벤치마크 비교 (Step 0)
-`--benchmark` 옵션으로 simulation 모드 MP vs. 동일가중(1/N) 비교를 수행한다. IS 전체 기간의 Sanity Check 용도.
+`--benchmark` 옵션으로 monte_carlo 모드 MP vs. 동일가중(1/N) 비교를 수행한다. IS 전체 기간의 Sanity Check 용도.
 
 ### 핵심 모듈
 - `service/backtest/walk_forward_engine.py`: WalkForwardEngine 클래스 (오케스트레이터)
@@ -221,7 +221,7 @@
 | `[3]` 섹터 필터 + 라벨링 | 비효과 섹터 제거, L/N/S 분류 | `filter_and_label_factors` |
 | `[4]` 팩터 유니버스 선정 | 롱-숏 수익률 + CAGR 랭킹 | `_evaluate_universe` |
 | `[5]` 팩터 믹스 | 스타일 대표성 + 하락 상관관계 고려 | `find_optimal_mix` |
-| `[6]` 비중 결정 | 스타일 캡 하 최적화 | `simulate_constrained_weights` |
+| `[6]` 비중 결정 | 스타일 캡 하 최적화 | `optimize_constrained_weights` |
 | `[7]` MP 구성 + 출력 | 종목별 최종 비중, CSV 저장 | `_construct_and_export` |
 | `[8]` Walk-Forward 백테스트 | OOS 과적합 진단 | `WalkForwardEngine.run` |
 
@@ -245,7 +245,7 @@ service/
 │   ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
 │   ├── factor_analysis.py      # calculate_factor_stats, calculate_factor_stats_batch, filter_and_label_factors
 │   ├── correlation.py          # calculate_downside_correlation
-│   ├── optimization.py         # find_optimal_mix, simulate_constrained_weights (hardcoded/equal_weight/simulation)
+│   ├── optimization.py         # find_optimal_mix, optimize_constrained_weights (hardcoded/equal_weight/monte_carlo)
 │   ├── weight_construction.py  # build_factor_weight_frames, aggregate_mp_weights, calculate_style_weights, construct_long_short_df, calculate_vectorized_return
 │   └── benchmark_comparison.py # MP vs. 동일가중(1/N) 벤치마크 비교
 │
@@ -353,7 +353,7 @@ Phase 2 EW+t-stat:   CAGR=+0.95%, Sharpe=0.243, Deflation=0.139 (현재)
 # 백테스트 전후 mp test 실행 → 동일 결과 확인
 python main.py mp test test_data.csv
 
-# simulation 모드가 덮어쓴 hardcoded_weights.csv 복원
+# monte_carlo 모드가 덮어쓴 hardcoded_weights.csv 복원
 git checkout -- data/hardcoded_weights.csv
 ```
 

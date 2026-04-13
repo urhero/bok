@@ -7,7 +7,7 @@
 ## 외부 맥락 (코드에 없는 것)
 
 - **Bloomberg 연동:** 최종 output CSV는 Bloomberg Optimizer에 직접 입력하여 실행
-- **simulation_mode 주의:** `config.py`의 `simulation_mode`를 `"simulation"`으로 변경하면 기존 `data/hardcoded_weights.csv`가 `data/hardcoded_weights_backup/`에 자동 백업되고 새 비중으로 덮어쓰여짐. 프로덕션 비중에 직접 영향
+- **optimization_mode 주의:** `config.py`의 `optimization_mode`를 `"monte_carlo"`로 변경하면 기존 `data/hardcoded_weights.csv`가 `data/hardcoded_weights_backup/`에 자동 백업되고 새 비중으로 덮어쓰여짐. 프로덕션 비중에 직접 영향
 
 ## 컨벤션
 

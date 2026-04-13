@@ -139,7 +139,7 @@ def plot_factor_returns(
         plt.tight_layout()
     return fig
 
-def generate_report(abbrs, names, styles, raw):
+def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
     logger.info("Starting generate_report...")
 
     (
@@ -149,7 +149,7 @@ def generate_report(abbrs, names, styles, raw):
         kept_idx,
         dropped_sec,
         cleaned_raw,
-    ) = filter_and_label_factors(abbrs, names, styles, raw)
+    ) = filter_and_label_factors(factor_abbrs, factor_names, style_names, factor_stats)
     factor_rets = aggregate_factor_returns(cleaned_raw, kept_abbr)
     # _evaluate_universe와 동일한 전처리: 첫 행 0 기준점 + 불충분 팩터 제거
     factor_rets.loc[factor_rets.index[0]] = 0.0
@@ -160,13 +160,13 @@ def generate_report(abbrs, names, styles, raw):
     # Calculate sector_rets for all kept factors
     list_sector = []
     for dec, idx in zip(dropped_sec, kept_idx):
-        sec_df = raw[idx][0]
+        sec_df = factor_stats[idx][0]
         list_sector.append(sec_df)
 
     factor2drop = {}
     for dec, idx in zip(dropped_sec, kept_idx):
         dec_norm = [RENAME_SECTORS.get(s, s) for s in dec]
-        factor2drop[abbrs[idx]] = set(dec_norm)
+        factor2drop[factor_abbrs[idx]] = set(dec_norm)
 
     meta_df = (
         pd.read_csv(OUTPUT_DIR / "meta_data.csv", index_col=0)

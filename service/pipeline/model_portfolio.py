@@ -32,7 +32,7 @@ from service.pipeline.factor_analysis import (
 )
 from service.pipeline.optimization import (
     find_optimal_mix,
-    simulate_constrained_weights,
+    optimize_constrained_weights,
 )
 from service.pipeline.weight_construction import (
     aggregate_mp_weights,
@@ -71,14 +71,14 @@ def aggregate_factor_returns(
             f"factor_abbr_list ({len(factor_abbr_list)}) length mismatch"
         )
 
-    list_net = []
+    net_return_series = []
     for data, abbr in zip(factor_data_list, factor_abbr_list):
         long_df, short_df = construct_long_short_df(data, backtest_start=backtest_start)
-        _, net_l, _ = calculate_vectorized_return(long_df, abbr, cost_bps=cost_bps)
-        _, net_s, _ = calculate_vectorized_return(short_df, abbr, cost_bps=cost_bps)
-        list_net.append(net_l + net_s)
+        _, net_long, _ = calculate_vectorized_return(long_df, abbr, cost_bps=cost_bps)
+        _, net_short, _ = calculate_vectorized_return(short_df, abbr, cost_bps=cost_bps)
+        net_return_series.append(net_long + net_short)
 
-    combined = pd.concat(list_net, axis=1)
+    combined = pd.concat(net_return_series, axis=1)
     net_return_df = combined.dropna(axis=1)
     dropped = set(combined.columns) - set(net_return_df.columns)
     if dropped:
@@ -103,7 +103,7 @@ class ModelPortfolioPipeline:
         self.config = config
         self.factor_info_path = factor_info_path
         self.is_test = is_test
-        self.pp = pipeline_params or PIPELINE_PARAMS
+        self.pipeline_params = pipeline_params or PIPELINE_PARAMS
 
         # 중간 결과물
         self.raw_data: pd.DataFrame | None = None
@@ -139,7 +139,7 @@ class ModelPortfolioPipeline:
         style_name_list = factor_metadata.styleName.tolist()
         kept_abbrs, kept_names, kept_styles, _, _, self.filtered_data = filter_and_label_factors(
             factor_abbr_list, factor_name_list, style_name_list, self.factor_stats,
-            spread_threshold_pct=self.pp["spread_threshold_pct"],
+            spread_threshold_pct=self.pipeline_params["spread_threshold_pct"],
         )
 
         # [4] 롱-숏 수익률 + 팩터 유니버스 선정 — README [4]
@@ -153,12 +153,12 @@ class ModelPortfolioPipeline:
         )
 
         # [6] 스타일 캡 하 비중 결정 — README [6]
-        sim_result = simulate_constrained_weights(
+        sim_result = optimize_constrained_weights(
             ret_subset, style_list, test_mode=bool(test_file),
-            mode=self.pp["simulation_mode"],
-            style_cap=self.pp["style_cap"],
-            num_sims=self.pp["num_sims"],
-            portfolio_rank_weights=self.pp["portfolio_rank_weights"],
+            mode=self.pipeline_params["optimization_mode"],
+            style_cap=self.pipeline_params["style_cap"],
+            num_sims=self.pipeline_params["num_sims"],
+            portfolio_rank_weights=self.pipeline_params["portfolio_rank_weights"],
         )
         self.weights = sim_result[1]
 
@@ -280,7 +280,7 @@ class ModelPortfolioPipeline:
     def _analyze_factors(self, merged_data, factor_abbr_list, orders, test_file):
         """모든 팩터에 대해 5분위 분석을 실행한다 (일괄 처리)."""
         t1 = time.time()
-        result = calculate_factor_stats_batch(merged_data, factor_abbr_list, orders, test_mode=bool(test_file), min_sector_stocks=self.pp["min_sector_stocks"])
+        result = calculate_factor_stats_batch(merged_data, factor_abbr_list, orders, test_mode=bool(test_file), min_sector_stocks=self.pipeline_params["min_sector_stocks"])
         logger.info("Factors assigned in %.2fs", time.time() - t1)
         return result
 
@@ -299,8 +299,8 @@ class ModelPortfolioPipeline:
         logger.info("Building monthly return matrix")
         ret_df = aggregate_factor_returns(
             filtered_data, kept_abbrs,
-            backtest_start=self.pp["backtest_start"],
-            cost_bps=self.pp["transaction_cost_bps"],
+            backtest_start=self.pipeline_params["backtest_start"],
+            cost_bps=self.pipeline_params["transaction_cost_bps"],
         )
         if ret_df.empty:
             raise ValueError(
@@ -315,7 +315,7 @@ class ModelPortfolioPipeline:
             logger.warning("Duplicate factor columns detected, removing duplicates")
             ret_df = ret_df.loc[:, ~ret_df.columns.duplicated(keep="first")]
 
-        valid = ret_df.columns[(ret_df == 0).sum() <= self.pp["max_zero_return_months"]]
+        valid = ret_df.columns[(ret_df == 0).sum() <= self.pipeline_params["max_zero_return_months"]]
         ret_df = ret_df[valid]
 
         meta_all = pd.DataFrame({"factorAbbreviation": kept_abbrs, "factorName": kept_names, "styleName": kept_styles})
@@ -334,10 +334,10 @@ class ModelPortfolioPipeline:
         else:
             meta.to_csv(OUTPUT_DIR / "meta_data.csv", index=False)
 
-        meta = meta[:self.pp["top_factor_count"]]
+        meta = meta[:self.pipeline_params["top_factor_count"]]
         order = meta["factorAbbreviation"].tolist()
         ret_df = ret_df[order]
-        negative_corr = calculate_downside_correlation(ret_df, min_obs=self.pp["min_downside_obs"]).loc[order, order]
+        negative_corr = calculate_downside_correlation(ret_df, min_obs=self.pipeline_params["min_downside_obs"]).loc[order, order]
 
         logger.info("Return matrix built (%d factors)", len(order))
         return ret_df, negative_corr, meta
@@ -349,8 +349,8 @@ class ModelPortfolioPipeline:
         for _, row in top_metrics.iterrows():
             grid = find_optimal_mix(
                 return_matrix, row.to_frame().T.reset_index(drop=True), correlation_matrix,
-                sub_factor_rank_weights=self.pp["sub_factor_rank_weights"],
-                portfolio_rank_weights=self.pp["portfolio_rank_weights"],
+                sub_factor_rank_weights=self.pipeline_params["sub_factor_rank_weights"],
+                portfolio_rank_weights=self.pipeline_params["portfolio_rank_weights"],
             )
             grid["styleName"] = row["styleName"]
             grids.append(grid)

@@ -172,7 +172,7 @@ def all_positive_returns() -> pd.DataFrame:
 
 @pytest.fixture
 def sample_style_returns() -> tuple[pd.DataFrame, list[str]]:
-    """simulate_constrained_weights 테스트용 스타일 수익률"""
+    """optimize_constrained_weights 테스트용 스타일 수익률"""
     np.random.seed(42)
     dates = pd.date_range("2020-01-31", periods=36, freq="ME")  # 3년
 

@@ -39,7 +39,7 @@ from scripts.experiment_base import (
 
 
 # ============================================================================
-# _run_weight_optimization 패치: simulation_mode를 override
+# _run_weight_optimization 패치: optimization_mode를 override
 # ============================================================================
 
 def _make_patched_weight_optimization(original_fn, override_mode: str):
@@ -47,7 +47,7 @@ def _make_patched_weight_optimization(original_fn, override_mode: str):
     def patched(ret_df_is, meta, neg_corr, pp, loop_index=0, style_caps_to_try=None):
         from service.pipeline.optimization import (
             find_optimal_mix,
-            simulate_constrained_weights,
+            optimize_constrained_weights,
         )
 
         if style_caps_to_try is None:
@@ -89,7 +89,7 @@ def _make_patched_weight_optimization(original_fn, override_mode: str):
 
         for cap in style_caps_to_try:
             try:
-                best_stats, weights_tbl = simulate_constrained_weights(
+                best_stats, weights_tbl = optimize_constrained_weights(
                     ret_subset, style_list,
                     mode=override_mode,
                     style_cap=cap,
@@ -134,7 +134,7 @@ def main():
     all_results.append(run_variant(
         variant_name="CURRENT",
         start_date=start_date, end_date=end_date,
-        pp_overrides={"simulation_mode": "simulation", "skip_factor_mix": False},
+        pp_overrides={"optimization_mode": "monte_carlo", "skip_factor_mix": False},
         num_sims=num_sims,
     ))
 
@@ -142,7 +142,7 @@ def main():
     all_results.append(run_variant(
         variant_name="EW_SKIP_MIX",
         start_date=start_date, end_date=end_date,
-        pp_overrides={"simulation_mode": "equal_weight", "skip_factor_mix": True},
+        pp_overrides={"optimization_mode": "equal_weight", "skip_factor_mix": True},
         monkey_patches={
             "_run_weight_optimization": (
                 wf_module,
@@ -156,7 +156,7 @@ def main():
     all_results.append(run_variant(
         variant_name="EW_KEEP_MIX",
         start_date=start_date, end_date=end_date,
-        pp_overrides={"simulation_mode": "equal_weight", "skip_factor_mix": False},
+        pp_overrides={"optimization_mode": "equal_weight", "skip_factor_mix": False},
         monkey_patches={
             "_run_weight_optimization": (
                 wf_module,

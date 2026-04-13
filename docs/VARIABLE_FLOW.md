@@ -33,7 +33,7 @@ graph TD
 
     %% --- [2] Factor Assignment ---
     Func_Assign{{"[2] calculate_factor_stats_batch<br/>(하이브리드: batch lag + per-factor rank/quantile)"}}:::func
-    Var_DataList("factor_stats<br/>(List[Tuple])"):::data
+    Var_DataList("factor_stats<br/>(list[tuple])"):::data
 
     Var_Merged --> Func_Assign
     Func_Assign --> Var_DataList
@@ -70,7 +70,7 @@ graph TD
     Var_BestSub & Var_FacRet --> Var_RetSubset
 
     %% --- [6] Weight Determination ---
-    Func_Sim{{"[6] simulate_constrained_weights<br/>(듀얼 모드: hardcoded/simulation)"}}:::func
+    Func_Sim{{"[6] optimize_constrained_weights<br/>(듀얼 모드: hardcoded/monte_carlo)"}}:::func
     Var_Res("sim_result<br/>(best_stats, weights_tbl)"):::data
 
     Var_RetSubset --> Func_Sim
@@ -110,7 +110,7 @@ graph TD
 | `[1]` | `market_return_df` | M_RETURN parquet에서 로드 (67K행, gvkeyiid × ddt) | `pd.DataFrame` | `_load_data` |
 | `[1]` | `factor_metadata` | factor_info.csv 메타 정보 | `pd.DataFrame` | `_prepare_metadata` |
 | `[1]` | `merged_data` | raw_data + M_RETURN 병합 결과 (pipeline-ready면 factor_info merge 생략) | `pd.DataFrame` | `_prepare_metadata` |
-| `[2]` | `factor_stats` | 팩터별 분석 결과 (sector_return, spread, merged_df) | `List[Tuple]` | `calculate_factor_stats_batch` |
+| `[2]` | `factor_stats` | 팩터별 분석 결과 (sector_return, spread, merged_df) | `list[tuple]` | `calculate_factor_stats_batch` |
 | `[3]` | `filtered_data` | 섹터 필터 + label 부여된 종목 데이터 | `List[pd.DataFrame]` | `filter_and_label_factors` |
 | `[3]` | `kept_abbrs/names/styles` | 유지된 팩터 메타 리스트 | `List[str]` | `filter_and_label_factors` |
 | `[4]` | `return_matrix` | 월간 net return 매트릭스 (top 50 팩터) | `pd.DataFrame` | `_evaluate_universe` |
@@ -118,7 +118,7 @@ graph TD
 | `[4]` | `meta` | 팩터 성과/랭크 테이블 (CAGR, rank_style, rank_total) | `pd.DataFrame` | `_evaluate_universe` |
 | `[5]` | `best_sub` | 최적 메인+서브 팩터 조합 | `pd.DataFrame` | `_optimize_mixes` |
 | `[5]` | `ret_subset` | 선정된 팩터들의 수익률 행렬 subset | `pd.DataFrame` | `_optimize_mixes` |
-| `[6]` | `sim_result` | (best_stats, weights_tbl) — 최적 비중 결과 | `Tuple` | `simulate_constrained_weights` |
+| `[6]` | `sim_result` | (best_stats, weights_tbl) — 최적 비중 결과 | `Tuple` | `optimize_constrained_weights` |
 | `[7]` | `weight_raw` | 팩터별 종목 가중치 | `pd.DataFrame` | `_construct_and_export` |
 | `[7]` | `agg_w` | MP (팩터 통합) 가중치 | `pd.DataFrame` | `_construct_and_export` |
 | `[7]` | `final_weights` | weight_raw + agg_w 결합 | `pd.DataFrame` | `_construct_and_export` |
