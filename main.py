@@ -57,8 +57,6 @@ def main(argv: list[str] | None = None) -> int:
                                   help="Tier 2 rebalancing frequency (default: 3)")
     parser_backtest.add_argument("--top-factors", type=int, default=50,
                                   help="Number of top factors to select (default: 50)")
-    parser_backtest.add_argument("--num-sims", type=int, default=1_000_000,
-                                  help="MC simulation count (default: 1,000,000)")
     parser_backtest.add_argument("--turnover-alpha", type=float, default=1.0,
                                   help="EMA weight blending ratio (default: 1.0 = no smoothing)")
 
@@ -142,7 +140,7 @@ def _run_benchmark_comparison(start_date, end_date, test_file):
     from service.pipeline.model_portfolio import DATA_DIR, ModelPortfolioPipeline, OUTPUT_DIR
 
     pp = dict(PIPELINE_PARAMS)
-    pp["optimization_mode"] = "monte_carlo"
+    pp["optimization_mode"] = "equal_weight"
 
     pipeline = ModelPortfolioPipeline(
         config=PARAM,
@@ -179,7 +177,6 @@ def _run_backtest(args):
         weight_rebal_months=args.weight_rebal_months,
         turnover_smoothing_alpha=args.turnover_alpha,
         top_factors=args.top_factors,
-        num_sims=args.num_sims,
     )
 
     result = engine.run(args.start_date, args.end_date, test_file=getattr(args, "test_file", None))
@@ -208,7 +205,7 @@ def _run_backtest(args):
         ("1순위 - Funnel Value-Add", "패턴", oos_report["funnel_pattern"], oos_report["funnel_interpretation"]),
         ("1순위 - Funnel Value-Add", "EW_All CAGR", _pct(oos_report["funnel_ew_all_cagr"]), "전체 유효 팩터 동일가중"),
         ("1순위 - Funnel Value-Add", "EW_Top50 CAGR", _pct(oos_report["funnel_ew_top50_cagr"]), "Top-50 후보군 동일가중"),
-        ("1순위 - Funnel Value-Add", "MP_Final CAGR", _pct(oos_report["funnel_mp_cagr"]), "MC 최적화 가중 포트폴리오"),
+        ("1순위 - Funnel Value-Add", "MP_Final CAGR", _pct(oos_report["funnel_mp_cagr"]), "최종 가중 포트폴리오"),
         ("1순위 - Funnel Value-Add", "EW_All MDD", _pct(oos_report["funnel_ew_all_mdd"]), ""),
         ("1순위 - Funnel Value-Add", "EW_Top50 MDD", _pct(oos_report["funnel_ew_top50_mdd"]), ""),
         ("1순위 - Funnel Value-Add", "MP_Final MDD", _pct(oos_report["funnel_mp_mdd"]), ""),

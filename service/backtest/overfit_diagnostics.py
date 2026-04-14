@@ -34,11 +34,11 @@ def calc_funnel_value_add(walk_forward_result: WalkForwardResult) -> dict[str, A
 
     A. EW_All:    전체 유효 팩터 동일가중 (시장/팩터 베타)
     B. EW_Top50:  1차 필터링 후 동일가중 (필터링 실력)
-    C. MP_Final:  MC 최적화 가중 포트폴리오 (최종 실력)
+    C. MP_Final:  최종 가중 포트폴리오 (최종 실력)
 
     판별 기준 (CAGR 기준):
       C > B > A -> 정상 (필터링+최적화 모두 가치 창출)
-      B > C > A -> MC 과적합 (최적화가 오히려 수익 깎음)
+      B > C > A -> 최적화 과적합 (최적화가 오히려 수익 깎음)
       A > B     -> 1차 필터 과적합 (CAGR 기준 필터링 자체가 과거 우연)
     """
     # OOS 데이터가 없으면 판별 불가
@@ -72,17 +72,17 @@ def calc_funnel_value_add(walk_forward_result: WalkForwardResult) -> dict[str, A
             f"하위 150개 팩터 평균보다도 못함"
         )
     elif cagr_b > cagr_c:
-        pattern = "MC_OVERFIT"
+        pattern = "OPTIMIZATION_OVERFIT"
         interpretation = (
             f"B(EW_Top50)={cagr_b:.4%} > C(MP)={cagr_c:.4%} > A(EW_All)={cagr_a:.4%} "
-            f"-> MC 과적합: Top-50 필터링은 유효하나, MC 최적화가 IS를 외워서 OOS 수익을 깎음. "
+            f"-> 최적화 과적합: Top-50 필터링은 유효하나, 가중치 최적화가 IS를 외워서 OOS 수익을 깎음. "
             f"Top-50 동일가중이 더 나은 결과"
         )
     else:
         pattern = "NORMAL"
         interpretation = (
             f"C(MP)={cagr_c:.4%} > B(EW_Top50)={cagr_b:.4%} > A(EW_All)={cagr_a:.4%} "
-            f"-> 정상: 필터링과 MC 최적화 모두 가치 창출"
+            f"-> 정상: 필터링과 가중치 최적화 모두 가치 창출"
         )
 
     return {
@@ -213,7 +213,7 @@ def calc_oos_percentile_tracking(walk_forward_result: WalkForwardResult) -> dict
 def calc_strict_jaccard(active_factors_history: list[set[str]]) -> dict[str, Any]:
     """비중>0 팩터에 대한 엄격한 Jaccard 안정성 검사.
 
-    Top-50이 아닌, MC 최적화를 거쳐 실제로 비중이 할당된
+    Top-50이 아닌, 가중치 최적화를 거쳐 실제로 비중이 할당된
     최종 팩터 집합(스타일 수에 따라 5~14개)에만 적용한다.
 
     해석:
@@ -518,13 +518,13 @@ def print_overfit_report(report: dict[str, Any]) -> None:
     funnel_table.add_row(
         "C. MP_Final", f"{report['funnel_mp_cagr']:.4%}",
         f"{report['funnel_mp_mdd']:.4%}",
-        "MC 최적화 가중 포트폴리오",
+        "최종 가중 포트폴리오",
     )
 
     console.print(funnel_table)
 
     pattern = report["funnel_pattern"]
-    pattern_style = {"NORMAL": "green", "MC_OVERFIT": "red", "FILTER_OVERFIT": "red"}.get(pattern, "yellow")
+    pattern_style = {"NORMAL": "green", "OPTIMIZATION_OVERFIT": "red", "FILTER_OVERFIT": "red"}.get(pattern, "yellow")
     console.print(Panel(report["funnel_interpretation"], title=f"판별: {pattern}", style=pattern_style))
 
     # ── 진단 지표 테이블 ──

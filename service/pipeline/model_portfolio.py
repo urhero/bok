@@ -7,7 +7,7 @@
 모듈 구조:
 - factor_analysis.py: 5분위 분석 + 섹터 필터링
 - correlation.py: 하락 상관관계
-- optimization.py: 2-팩터 믹스 + 가중치 시뮬레이션
+- optimization.py: 가중치 계산
 - weight_construction.py: 롱/숏 포트폴리오 수익률 + MP 가중치 구성
 """
 from __future__ import annotations
@@ -30,10 +30,7 @@ from service.pipeline.factor_analysis import (
     calculate_factor_stats_batch,
     filter_and_label_factors,
 )
-from service.pipeline.optimization import (
-    find_optimal_mix,
-    optimize_constrained_weights,
-)
+from service.pipeline.optimization import optimize_constrained_weights
 from service.pipeline.weight_construction import (
     aggregate_mp_weights,
     build_factor_weight_frames,
@@ -147,18 +144,16 @@ class ModelPortfolioPipeline:
             kept_abbrs, kept_names, kept_styles, self.filtered_data, test_file
         )
 
-        # [5] 2-팩터 믹스 최적화 — README [5]
-        best_sub, ret_subset, factor_list, style_list = self._optimize_mixes(
-            self.return_matrix, self.meta, self.correlation_matrix
-        )
-
         # [6] 스타일 캡 하 비중 결정 — README [6]
+        style_map = self.meta.set_index("factorAbbreviation")["styleName"]
+        factor_list = self.meta["factorAbbreviation"].tolist()
+        style_list = [style_map[f] for f in factor_list]
+        ret_subset = self.return_matrix[factor_list]
+
         sim_result = optimize_constrained_weights(
             ret_subset, style_list, test_mode=bool(test_file),
             mode=self.pipeline_params["optimization_mode"],
             style_cap=self.pipeline_params["style_cap"],
-            num_sims=self.pipeline_params["num_sims"],
-            portfolio_rank_weights=self.pipeline_params["portfolio_rank_weights"],
         )
         self.weights = sim_result[1]
 
@@ -341,39 +336,6 @@ class ModelPortfolioPipeline:
 
         logger.info("Return matrix built (%d factors)", len(order))
         return ret_df, negative_corr, meta
-
-    def _optimize_mixes(self, return_matrix, meta, correlation_matrix):
-        """스타일별 2-팩터 믹스를 최적화한다."""
-        top_metrics = meta.groupby("styleName", as_index=False).first()
-        grids = []
-        for _, row in top_metrics.iterrows():
-            grid = find_optimal_mix(
-                return_matrix, row.to_frame().T.reset_index(drop=True), correlation_matrix,
-                sub_factor_rank_weights=self.pipeline_params["sub_factor_rank_weights"],
-                portfolio_rank_weights=self.pipeline_params["portfolio_rank_weights"],
-            )
-            grid["styleName"] = row["styleName"]
-            grids.append(grid)
-        mix_grid = pd.concat(grids, ignore_index=True)
-
-        best_sub = (
-            mix_grid.sort_values("rank_total")
-            .groupby("main_factor", as_index=False)
-            .first()[["main_factor", "sub_factor"]]
-        )
-
-        style_map = meta.set_index("factorAbbreviation")["styleName"]
-        best_sub["main_style"] = best_sub["main_factor"].map(style_map)
-        best_sub["sub_style"] = best_sub["sub_factor"].map(style_map)
-        best_sub = best_sub[["main_factor", "main_style", "sub_factor", "sub_style"]]
-
-        cols_to_keep = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel())
-        ret_subset = return_matrix[cols_to_keep]
-
-        factor_list = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel()).tolist()
-        style_list = [style_map[f] for f in factor_list]
-
-        return best_sub, ret_subset, factor_list, style_list
 
     def _construct_and_export(self, sim_result, kept_abbrs, filtered_data, end_date, test_file):
         """종목별 가중치를 산출하고 CSV로 출력한다."""

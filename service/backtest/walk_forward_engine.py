@@ -32,10 +32,7 @@ from service.pipeline.model_portfolio import (
     ModelPortfolioPipeline,
     aggregate_factor_returns,
 )
-from service.pipeline.optimization import (
-    find_optimal_mix,
-    optimize_constrained_weights,
-)
+from service.pipeline.optimization import optimize_constrained_weights
 
 logger = logging.getLogger(__name__)
 
@@ -217,73 +214,24 @@ def _apply_rules_and_aggregate(
 def _run_weight_optimization(
     ret_df_is: pd.DataFrame,
     meta: pd.DataFrame,
-    neg_corr: pd.DataFrame,
     pp: dict,
     loop_index: int = 0,
-    style_caps_to_try: list[float] | None = None,
 ) -> tuple[dict[str, float], pd.DataFrame]:
-    """[5]~[6] 2-팩터 믹스 + MC 시뮬레이션으로 가중치를 산출한다.
+    """[6] 가중치 계산.
 
     Returns:
-        (weights_dict, meta) — weights_dict: {factor_abbr: weight}
+        (weights_dict, meta) -- weights_dict: {factor_abbr: weight}
     """
-    if style_caps_to_try is None:
-        style_caps_to_try = [0.25, 0.40, 1.00]
-
-    skip_mix = pp.get("skip_factor_mix", False)
     style_map = meta.set_index("factorAbbreviation")["styleName"]
+    factor_list = meta["factorAbbreviation"].tolist()
+    style_list = [style_map[f] for f in factor_list]
+    ret_subset = ret_df_is[factor_list]
 
-    if skip_mix:
-        # [5] 스킵: meta의 전체 팩터를 바로 [6]에 전달
-        factor_list = meta["factorAbbreviation"].tolist()
-        style_list = [style_map[f] for f in factor_list]
-        ret_subset = ret_df_is[factor_list]
-    else:
-        # [5] 스타일별 2-팩터 믹스
-        top_metrics = meta.groupby("styleName", as_index=False).first()
-        grids = []
-        for _, row in top_metrics.iterrows():
-            grid = find_optimal_mix(
-                ret_df_is, row.to_frame().T.reset_index(drop=True), neg_corr,
-                sub_factor_rank_weights=pp["sub_factor_rank_weights"],
-                portfolio_rank_weights=pp["portfolio_rank_weights"],
-            )
-            grid["styleName"] = row["styleName"]
-            grids.append(grid)
-        mix_grid = pd.concat(grids, ignore_index=True)
-
-        best_sub = (
-            mix_grid.sort_values("rank_total")
-            .groupby("main_factor", as_index=False)
-            .first()[["main_factor", "sub_factor"]]
-        )
-
-        cols_to_keep = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel())
-        ret_subset = ret_df_is[cols_to_keep]
-        factor_list = cols_to_keep.tolist()
-        style_list = [style_map[f] for f in factor_list]
-
-    # [6] 가중치 결정 — style_cap fallback
-    base_seed = pp.get("random_seed", 42) or 42
-    seed = base_seed + loop_index
-
-    for cap in style_caps_to_try:
-        try:
-            best_stats, weights_tbl = optimize_constrained_weights(
-                ret_subset, style_list,
-                mode="monte_carlo",
-                style_cap=cap,
-                num_sims=pp["num_sims"],
-                random_seed=seed,
-                portfolio_rank_weights=pp["portfolio_rank_weights"],
-            )
-            if cap != style_caps_to_try[0]:
-                logger.warning("Style cap relaxed to %.2f (default %.2f)", cap, style_caps_to_try[0])
-            break
-        except (ValueError, RuntimeError) as e:
-            if cap == style_caps_to_try[-1]:
-                raise
-            logger.warning("MC failed with style_cap=%.2f: %s — retrying with relaxed cap", cap, e)
+    best_stats, weights_tbl = optimize_constrained_weights(
+        ret_subset, style_list,
+        mode=pp["optimization_mode"],
+        style_cap=pp["style_cap"],
+    )
 
     weights_dict = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
     return weights_dict, meta
@@ -301,7 +249,6 @@ class WalkForwardEngine:
         weight_rebal_months: Tier 2 리밸런싱 주기 (기본 3).
         turnover_smoothing_alpha: EMA 가중치 블렌딩 비율 (기본 1.0 = 스무딩 없음).
         top_factors: 상위 팩터 수 (기본 50).
-        num_sims: MC 시뮬레이션 횟수 (기본 1_000_000).
     """
 
     def __init__(
@@ -311,14 +258,12 @@ class WalkForwardEngine:
         weight_rebal_months: int = 3,
         turnover_smoothing_alpha: float = 1.0,
         top_factors: int = 50,
-        num_sims: int = 1_000_000,
     ):
         self.min_is_months = min_is_months
         self.factor_rebal_months = factor_rebal_months
         self.weight_rebal_months = weight_rebal_months
         self.turnover_smoothing_alpha = turnover_smoothing_alpha
         self.top_factors = top_factors
-        self.num_sims = num_sims
 
     def run(
         self,
@@ -342,8 +287,7 @@ class WalkForwardEngine:
         # pipeline_params 커스텀 (config의 optimization_mode 유지)
         pp = dict(PIPELINE_PARAMS)
         if pp["optimization_mode"] == "hardcoded":
-            pp["optimization_mode"] = "monte_carlo"  # hardcoded는 backtest에서 사용 불가
-        pp["num_sims"] = self.num_sims
+            pp["optimization_mode"] = "equal_weight"  # hardcoded는 backtest에서 사용 불가
         pp["top_factor_count"] = self.top_factors
 
         # 1. 데이터 1회 로딩 — pipeline 인스턴스를 통해 [1] 실행
@@ -489,7 +433,7 @@ class WalkForwardEngine:
 
                         try:
                             raw_new_weights, cached_meta = _run_weight_optimization(
-                                ret_df_selected, meta_top, neg_corr, pp, loop_index=i,
+                                ret_df_selected, meta_top, pp, loop_index=i,
                             )
                         except (ValueError, RuntimeError) as e:
                             logger.warning("OOS %s: weight optimization failed: %s — 이전 가중치 유지", oos_date, e)

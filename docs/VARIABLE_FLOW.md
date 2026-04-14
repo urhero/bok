@@ -60,20 +60,11 @@ graph TD
     Func_GenMeta --> Var_DownCorr
     Func_GenMeta --> Var_Meta
 
-    %% --- [5] Optimize Mixes ---
-    Func_GetWgt{{"[5] _optimize_mixes → find_optimal_mix<br/>(스타일별 메인-서브 그리드 탐색)"}}:::func
-    Var_BestSub("best_sub<br/>(pd.DataFrame)"):::data
-    Var_RetSubset("ret_subset<br/>(pd.DataFrame)"):::data
-
-    Var_FacRet & Var_DownCorr & Var_Meta --> Func_GetWgt
-    Func_GetWgt --> Var_BestSub
-    Var_BestSub & Var_FacRet --> Var_RetSubset
-
     %% --- [6] Weight Determination ---
-    Func_Sim{{"[6] optimize_constrained_weights<br/>(듀얼 모드: hardcoded/monte_carlo)"}}:::func
+    Func_Sim{{"[6] optimize_constrained_weights<br/>(듀얼 모드: hardcoded/equal_weight)"}}:::func
     Var_Res("sim_result<br/>(best_stats, weights_tbl)"):::data
 
-    Var_RetSubset --> Func_Sim
+    Var_FacRet & Var_Meta --> Func_Sim
     Func_Sim --> Var_Res
 
     %% --- [7] Construct & Export ---
@@ -116,9 +107,7 @@ graph TD
 | `[4]` | `return_matrix` | 월간 net return 매트릭스 (top 50 팩터) | `pd.DataFrame` | `_evaluate_universe` |
 | `[4]` | `correlation_matrix` | 하락 상관관계 행렬 | `pd.DataFrame` | `_evaluate_universe` |
 | `[4]` | `meta` | 팩터 성과/랭크 테이블 (CAGR, rank_style, rank_total) | `pd.DataFrame` | `_evaluate_universe` |
-| `[5]` | `best_sub` | 최적 메인+서브 팩터 조합 | `pd.DataFrame` | `_optimize_mixes` |
-| `[5]` | `ret_subset` | 선정된 팩터들의 수익률 행렬 subset | `pd.DataFrame` | `_optimize_mixes` |
-| `[6]` | `sim_result` | (best_stats, weights_tbl) — 최적 비중 결과 | `Tuple` | `optimize_constrained_weights` |
+| `[6]` | `sim_result` | (best_stats, weights_tbl) -- 최적 비중 결과 | `Tuple` | `optimize_constrained_weights` |
 | `[7]` | `weight_raw` | 팩터별 종목 가중치 | `pd.DataFrame` | `_construct_and_export` |
 | `[7]` | `agg_w` | MP (팩터 통합) 가중치 | `pd.DataFrame` | `_construct_and_export` |
 | `[7]` | `final_weights` | weight_raw + agg_w 결합 | `pd.DataFrame` | `_construct_and_export` |
