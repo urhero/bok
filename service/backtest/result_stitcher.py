@@ -19,11 +19,11 @@ class WalkForwardResult:
     """Walk-Forward 결과를 담는 컨테이너.
 
     Attributes:
-        oos_returns: OOS 월간 MP 수익률 Series.
+        oos_returns: OOS 월간 Constrained EW (CEW) 수익률 Series.
         oos_ew_returns: OOS 월간 동일가중 수익률 Series (선정 팩터).
         oos_ew_all_returns: OOS 월간 전체 유효 팩터 동일가중 수익률.
         oos_ew_top50_returns: OOS 월간 Top-50 후보군 동일가중 수익률.
-        oos_cumulative: OOS MP 누적 수익률.
+        oos_cumulative: OOS CEW 누적 수익률.
         oos_ew_cumulative: OOS EW 누적 수익률.
         weight_history: 팩터 가중치 이력 DataFrame.
         is_meta_history: Tier 2 리밸런싱 시점별 IS meta 리스트.
@@ -54,10 +54,10 @@ class WalkForwardResult:
             return
 
         dates = [r["date"] for r in results]
-        mp_rets = [r["oos_return"] for r in results]
+        cew_rets = [r["oos_return"] for r in results]
         ew_rets = [r["oos_ew_return"] for r in results]
 
-        self.oos_returns = pd.Series(mp_rets, index=dates, name="oos_return")
+        self.oos_returns = pd.Series(cew_rets, index=dates, name="oos_return")
         self.oos_ew_returns = pd.Series(ew_rets, index=dates, name="oos_ew_return")
         self.oos_cumulative = (1 + self.oos_returns).cumprod()
         self.oos_ew_cumulative = (1 + self.oos_ew_returns).cumprod()
@@ -109,8 +109,8 @@ class WalkForwardResult:
         # 전체 팩터 수익률 이력 (Percentile Tracking용)
         self.oos_all_factor_returns_history = [r.get("oos_all_factor_returns", {}) for r in results]
 
-        # IS 전체 기간 MP CAGR (Deflation Ratio용 - 마지막 Tier 2 시점 기준)
-        is_cagrs = [r.get("is_mp_cagr", 0.0) for r in results if r.get("is_weight_rebal") and r.get("is_mp_cagr") is not None]
+        # IS 전체 기간 CEW CAGR (Deflation Ratio용 - 마지막 Tier 2 시점 기준)
+        is_cagrs = [r.get("is_cew_cagr", 0.0) for r in results if r.get("is_weight_rebal") and r.get("is_cew_cagr") is not None]
         self.is_full_period_cagr = is_cagrs[-1] if is_cagrs else 0.0
 
         # 리밸런싱 로그
@@ -122,7 +122,7 @@ class WalkForwardResult:
         self.rebalance_log = pd.DataFrame(log_rows).set_index("date")
 
     def calc_performance(self) -> dict[str, float]:
-        """OOS MP 성과 지표를 계산한다."""
+        """OOS Constrained EW 성과 지표를 계산한다."""
         return self._calc_perf(self.oos_returns, self.oos_cumulative)
 
     def calc_ew_performance(self) -> dict[str, float]:
@@ -137,19 +137,19 @@ class WalkForwardResult:
         """OOS EW_Top50 성과: Top-50 후보군 동일가중."""
         return self._calc_perf(self.oos_ew_top50_returns, self.oos_ew_top50_cumulative)
 
-    def compare_mp_vs_ew_oos(self) -> dict[str, Any]:
-        """OOS 구간에서 MP vs. EW를 비교한다."""
-        mp_perf = self.calc_performance()
+    def compare_cew_vs_ew_oos(self) -> dict[str, Any]:
+        """OOS 구간에서 Constrained EW vs. 선정 팩터 EW를 비교한다."""
+        cew_perf = self.calc_performance()
         ew_perf = self.calc_ew_performance()
         excess = self.oos_returns - self.oos_ew_returns
 
         result = {
-            "mp_cagr": mp_perf["cagr"],
+            "cew_cagr": cew_perf["cagr"],
             "ew_cagr": ew_perf["cagr"],
-            "excess_cagr": mp_perf["cagr"] - ew_perf["cagr"],
-            "mp_mdd": mp_perf["mdd"],
+            "excess_cagr": cew_perf["cagr"] - ew_perf["cagr"],
+            "cew_mdd": cew_perf["mdd"],
             "ew_mdd": ew_perf["mdd"],
-            "mp_sharpe": mp_perf["sharpe"],
+            "cew_sharpe": cew_perf["sharpe"],
             "ew_sharpe": ew_perf["sharpe"],
             "win_rate": (excess > 0).mean() if len(excess) > 0 else 0.0,
         }
@@ -159,11 +159,11 @@ class WalkForwardResult:
         """결과를 CSV로 저장한다."""
         df = pd.DataFrame({
             "date": self.oos_returns.index,
-            "mp_return": self.oos_returns.values,
+            "cew_return": self.oos_returns.values,
             "ew_return": self.oos_ew_returns.values,
             "ew_all_return": self.oos_ew_all_returns.values,
             "ew_top50_return": self.oos_ew_top50_returns.values,
-            "mp_cumulative": self.oos_cumulative.values,
+            "cew_cumulative": self.oos_cumulative.values,
             "ew_cumulative": self.oos_ew_cumulative.values,
             "ew_all_cumulative": self.oos_ew_all_cumulative.values,
             "ew_top50_cumulative": self.oos_ew_top50_cumulative.values,

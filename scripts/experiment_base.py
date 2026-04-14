@@ -35,7 +35,6 @@ def run_variant(
     end_date: str,
     pp_overrides: dict[str, Any] | None = None,
     monkey_patches: dict[str, tuple[Any, Any]] | None = None,
-    num_sims: int = 100_000,
     min_is_months: int = 36,
     top_factors: int = 50,
 ) -> dict[str, Any]:
@@ -48,7 +47,6 @@ def run_variant(
         pp_overrides: PIPELINE_PARAMS에 적용할 오버라이드 dict
         monkey_patches: {attr_name: (module, replacement_fn)} 형태.
             모듈의 attr_name을 replacement_fn으로 교체하고, 실행 후 원본 복원.
-        num_sims: MC 시뮬레이션 횟수
         min_is_months: 최소 IS 기간 (월)
         top_factors: 상위 팩터 수
 
@@ -76,7 +74,7 @@ def run_variant(
         t0 = time.time()
         print(f"\n{'='*70}")
         print(f"  Running variant: {variant_name}")
-        print(f"  {start_date} ~ {end_date}, min_is={min_is_months}, num_sims={num_sims}")
+        print(f"  {start_date} ~ {end_date}, min_is={min_is_months}")
         if pp_overrides:
             overrides_str = ", ".join(f"{k}={v}" for k, v in pp_overrides.items())
             print(f"  Overrides: {overrides_str}")
@@ -86,7 +84,6 @@ def run_variant(
 
         engine = WalkForwardEngine(
             min_is_months=min_is_months,
-            num_sims=num_sims,
             top_factors=top_factors,
         )
         result = engine.run(start_date, end_date)
@@ -226,15 +223,14 @@ def setup_logging() -> None:
     logging.getLogger("service.download").setLevel(logging.WARNING)
 
 
-def parse_experiment_args() -> tuple[str, str, int]:
-    """공통 실험 인수 파싱: (start_date, end_date, num_sims)."""
+def parse_experiment_args() -> tuple[str, str]:
+    """공통 실험 인수 파싱: (start_date, end_date)."""
     if len(sys.argv) < 3:
         script_name = Path(sys.argv[0]).name
-        print(f"Usage: python scripts/{script_name} <start_date> <end_date> [num_sims]")
-        print(f"Example: python scripts/{script_name} 2017-12-31 2026-03-31 100000")
+        print(f"Usage: python scripts/{script_name} <start_date> <end_date>")
+        print(f"Example: python scripts/{script_name} 2017-12-31 2026-03-31")
         sys.exit(1)
 
     start_date = sys.argv[1]
     end_date = sys.argv[2]
-    num_sims = int(sys.argv[3]) if len(sys.argv) > 3 else 100_000
-    return start_date, end_date, num_sims
+    return start_date, end_date

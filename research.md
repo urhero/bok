@@ -9,7 +9,7 @@
 
 ### 1.1 목적
 
-BOK은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 모델 포트폴리오(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다.
+BOK은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 Constrained EW 포트폴리오 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 Top-N 팩터 동일가중에 `style_cap`(기본 25%) 제약을 부가한 형태로 최종 종목별 투자 비중을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다. 공분산/리스크 모델 기반 최적화는 커밋 `8dfb64e`에서 제거됨.
 
 ### 핵심 Funnel 구조
 
@@ -26,8 +26,8 @@ main.py (CLI)
   └→ ModelPortfolioPipeline.run()  [오케스트레이터]
        ├→ factor_analysis.py       [5분위 분석]
        ├→ correlation.py           [하락 상관관계]
-       ├→ optimization.py          [2-팩터 믹스 + MC 시뮬레이션]
-       └→ weight_construction.py   [롱/숏 수익률 + MP 비중 구성]
+       ├→ optimization.py          [가중치 계산]
+       └→ weight_construction.py   [롱/숏 수익률 + Constrained EW 비중 구성]
 ```
 
 ### 1.3 기술 스택
@@ -37,7 +37,7 @@ main.py (CLI)
 | 런타임 | Python 3.10.11, pipenv |
 | 데이터 | pandas (주력), numpy, polars/dask (보조) |
 | DB | MS SQL Server via SQLAlchemy + pyodbc (ODBC Driver 17) |
-| 최적화 | NumPy 벡터연산 (MC 시뮬레이션), qpsolvers/OSQP (미래 확장용) |
+| 최적화 | NumPy 벡터연산, qpsolvers/OSQP (미래 확장용) |
 | I/O | pyarrow (parquet, zstd 압축, 연도별 분할), CSV |
 | CLI/UX | argparse, Rich (로깅, 프로그레스바, 테이블) |
 | 보고서 | matplotlib, reportlab (PDF) |
@@ -51,11 +51,11 @@ main.py (CLI)
 | 커맨드 | 용도 | 호출 경로 |
 |--------|------|-----------|
 | `python main.py download <start> <end>` | SQL → parquet 다운로드 | `run_download_pipeline()` |
-| `python main.py mp <start> <end>` | parquet → MP CSV 생성 | `run_model_portfolio_pipeline()` → `ModelPortfolioPipeline.run()` |
+| `python main.py mp <start> <end>` | parquet → Constrained EW CSV 생성 | `run_model_portfolio_pipeline()` → `ModelPortfolioPipeline.run()` |
 | `python main.py mp test <file>` | 소량 데이터 테스트 모드 | 동일 경로, `test_file` 인자 활성 |
 | `python main.py mp --report` | PDF 보고서만 생성 후 종료 | `_generate_report()` → `return` (early return) |
 | `python main.py backtest <start> <end>` | Walk-Forward OOS 백테스트 + 과적합 진단 | `WalkForwardEngine.run()` → `generate_overfit_report()` |
-| `python main.py mp <start> <end> --benchmark` | MP vs. 동일가중 벤치마크 비교 | `compare_vs_benchmark()` |
+| `python main.py mp <start> <end> --benchmark` | Constrained EW vs. 동일가중 벤치마크 비교 | `compare_vs_benchmark()` |
 
 ---
 
@@ -122,19 +122,10 @@ main.py (CLI)
      │         ├─ calculate_downside_correlation()        │
      │         └─ meta_data.csv 저장                      │
      │         │                                         │
-     │    [5] _optimize_mixes()                          │
-     │         │                                         │
-     │         ├─ 스타일별 top-1 팩터 선정                 │
-     │         └─ find_optimal_mix() × 스타일 수           │
-     │              └─ 3개 보조 팩터 × 101 비중 그리드     │
-     │         │                                         │
      │    [6] optimize_constrained_weights()               │
      │         │                                         │
      │         ├─ mode="hardcoded": CSV 고정 비중          │
-     │         └─ mode="monte_carlo": MC 100만 최적화       │
-     │              ├─ 랜덤 비중 생성 (합=1)               │
-     │              ├─ 스타일 캡 25% 적용 (초과분 재분배)   │
-     │              └─ CAGR 60% + MDD 40% 복합 랭크       │
+     │         └─ mode="equal_weight": 1/N + 스타일 캡 재분배 │
      │         │                                         │
      │    [7] _construct_and_export()                     │
      │         │                                         ▼
@@ -267,55 +258,26 @@ per-factor:
 - 턴오버 = abs(새 비중 - 이전 비중의 drift)
 - 거래비용 = 30bp × 턴오버
 
-#### [5] _optimize_mixes: 2-팩터 믹스 최적화
-
-**스타일별 top-1 메인 팩터 선정**:
-```python
-top_metrics = meta.groupby("styleName", as_index=False).first()
-# → 각 스타일에서 CAGR 1위 팩터를 메인으로 선정
-```
-
-**보조 팩터 후보 선정 (find_optimal_mix 내부)**:
-```python
-# 복합 랭크: CAGR 순위 70% + 하락 상관관계 순위 30%
-rank_avg = rank_cagr * 0.7 + rank_ncorr * 0.3
-# 상위 3개 보조 팩터 선정
-sub_factor_ranking.nsmallest(3, "rank_avg")
-```
-
-**그리드 서치**: 메인:보조 가중치를 0:100 ~ 100:0 (1% 단위, 101포인트)로 탐색
-```python
-mix_ret = port[main] * w_grid + port[sub] * w_sub
-# → CAGR, MDD 계산
-# → rank_total = CAGR순위*0.6 + MDD순위*0.4
-```
-
-**최종 선택**: `rank_total`이 가장 낮은 (main_factor, sub_factor) 조합
-
 #### [6] optimize_constrained_weights: 비중 결정
 
-**가중치 결정 모드 (hardcoded/monte_carlo)**:
+**가중치 결정 모드 (hardcoded/equal_weight)**:
 
 | 모드 | 용도 | 동작 |
 |------|------|------|
-| `hardcoded` (기본) | 프로덕션 | `data/hardcoded_weights.csv`에서 10개 팩터의 고정 가중치 로드 |
-| `monte_carlo` | 연구/테스트 | MC 100만 최적화 |
+| `equal_weight` (기본) | 연구/백테스트 | 1/N 동일가중 + 스타일 캡 재분배 |
+| `hardcoded` | 프로덕션 | `data/hardcoded_weights.csv`에서 고정 가중치 로드 |
 
-**시뮬레이션 모드 핵심 알고리즘**:
+**equal_weight 모드 알고리즘**:
 
 ```
-1. K개 팩터에 대해 랜덤 가중치 생성 (Dirichlet-like: rand → normalize)
+1. K개 팩터에 1/N 동일가중 부여
 2. 스타일 캡 적용:
-   a. style_mask (S×K 이진 행렬) @ weights → 스타일별 비중
-   b. 25% 초과 스타일: scale = cap / share (비례 축소)
-   c. 초과분(excess)을 여유 스타일에 재분배
-   d. 정규화 (합=1)
-3. 유효성 검사: 모든 스타일 비중 ≤ cap + tol
-4. 수익률 시뮬레이션: port_np @ fitted_weights → cumulative
-5. CAGR(60%) + MDD(40%) 복합 랭크로 최적 포트폴리오 선택
+   a. 스타일별 비중 합계 계산
+   b. 25% 초과 스타일: 비례 축소 (cap / share)
+   c. 정규화 (합=1)
+   d. 수렴까지 반복 (최대 10회)
+3. CAGR/MDD 계산 (기록용)
 ```
-
-**배치 처리**: `batch_size=100_000`으로 메모리 효율 확보. float32 사용.
 
 **test_mode**: `style_cap = 1.0`으로 완화 (소량 데이터에서 제약 충족 불가 방지)
 
@@ -340,7 +302,7 @@ style_ls_weight = ls_weight * factor_weight / style_fw_sum
 ```python
 # 전체 팩터의 mp_ls_weight 합산 → MP 행
 agg_w = weight_raw.groupby(["ddt", "ticker", "isin", "gvkeyiid"])[["mp_ls_weight", "factor_weight"]].sum()
-agg_w["style"] = "MP"
+agg_w["style"] = "CEW"
 ```
 
 **출력 파일 4종**:
@@ -411,10 +373,10 @@ main.py
 |-----------|----------|
 | `factor_analysis.py` 분위 로직 | 모든 downstream (라벨링, 수익률, 가중치, 최종 CSV) |
 | `weight_construction.py` 수익률 계산 | `aggregate_factor_returns` → 팩터 순위 → 최적화 → 가중치 |
-| `optimization.py` MC 최적화 | 최종 가중치만 (mode=monte_carlo인 경우) |
+| `optimization.py` 가중치 계산 | 최종 가중치 (equal_weight 또는 hardcoded) |
 | `optimization.py` hardcoded 가중치 | **프로덕션 MP 직접 영향** — 가장 위험 |
 | `config.py` PARAM | 전 모듈 (DB 연결, 벤치마크명, 파일 경로) |
-| `config.py` PIPELINE_PARAMS | 파이프라인 비즈니스 파라미터 11개 (style_cap, 거래비용, 팩터 수, 임계값, min_downside_obs, num_sims 등). 이전 코드 내 산재하던 매직넘버를 중앙 집중화 |
+| `config.py` PIPELINE_PARAMS | 파이프라인 비즈니스 파라미터 (style_cap, 거래비용, 팩터 수, 임계값, min_downside_obs 등). 이전 코드 내 산재하던 매직넘버를 중앙 집중화 |
 | `factor_info.csv` 팩터 목록 | 분석 대상 팩터 전체 변경 |
 | `hardcoded_weights.csv` | 프로덕션 MP 가중치 직접 변경 |
 | `_construct_and_export` 출력 로직 | CSV 포맷 변경 → Bloomberg Optimizer 연동 영향 가능 |
@@ -448,7 +410,7 @@ main.py
 
 #### 4.1.2 hardcoded 가중치 모드
 - **위치**: `optimization.py:_get_hardcoded_weights()`
-- **주석**: `"이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!"` (2곳)
+- **주석**: `"이 주석 지우지 말것! DO NOT DELETE THIS COMMENT!"`
 - **이유**: 프로덕션 MP의 실제 투자 가중치. `_get_hardcoded_weights()`의 CSV 경로와 반환 구조를 변경하면 프로덕션 포트폴리오가 깨짐
 - **특이사항**: `Valuation` 스타일(CashEV)은 시뮬레이션 결과와 무관하게 강제로 4%로 설정 (투자 위원회 결정)
 
@@ -504,10 +466,7 @@ weight_raw["factor_weight"] = weight_raw["factor_weight"] * (weight_raw["mp_ls_w
 #### 4.3.3 히스토리 3개월 미만 팩터
 `ddt.unique() <= 2`이면 건너뜀 (batch 모드: `date_counts > 2`). 정확히 3개월이면 lag 적용 후 2개월 데이터로 분석 진행.
 
-#### 4.3.4 MC 시뮬레이션 feasibility 실패
-100만 포트폴리오 중 style_cap 제약을 만족하는 것이 없으면 `ValueError("No feasible portfolios found")`. 이는 팩터 수가 매우 적고 특정 스타일에 집중된 경우 발생 가능. test_mode에서 style_cap=1.0으로 완화하여 방지.
-
-#### 4.3.5 hardcoded_weights.csv에 없는 팩터
+#### 4.3.4 hardcoded_weights.csv에 없는 팩터
 `_construct_and_export`에서 `fac not in factor_idx_map`이면 해당 팩터를 건너뜀 (warning 로그). hardcoded 가중치의 팩터가 실제 데이터에 존재하지 않으면 해당 가중치는 무시됨.
 
 #### 4.3.6 증분 다운로드 후 팩터 구성 변화
@@ -541,10 +500,7 @@ for i in range(n_cols):
 ```
 `correlation.py:50-65` — 컬럼별 for 루프. 50개 팩터에서는 문제없으나, 팩터 수가 크게 증가하면 병목. NumPy 벡터화로 개선 가능하지만 팩터별 mask가 다르므로 단순하지 않음. 공분산 계산은 `nanmean * N/(N-1)` Bessel's correction을 적용하여 `nanstd(ddof=1)`과 일관된 unbiased 추정량을 사용한다.
 
-#### 4.4.3 float32 정밀도 + 재현성 (시뮬레이션)
-`optimization.py:_monte_carlo_optimization()` — float32 사용 (메모리 효율). `random_seed` 파라미터(기본값 42)로 재현성 보장.
-
-#### 4.4.4 SQL injection 완화
+#### 4.4.3 SQL injection 완화
 `factor_query.py` — universe 테이블명이 f-string 삽입. `ALLOWED_UNIVERSES` allowlist로 방어.
 
 ### 4.5 테스트 커버리지 현황
@@ -554,9 +510,8 @@ for i in range(n_cols):
 | `factor_analysis.prepend_start_zero` | 16 | 기본, NaN, Inf, 월말 처리 | - |
 | `factor_analysis.calculate_factor_stats` | 17 | 분위, 래그, sort_order, test_mode | batch 모드 직접 테스트 없음 |
 | `correlation.calculate_downside_correlation` | 18 | 기본, min_obs, 엣지케이스 | - |
-| `optimization.optimize_constrained_weights` | 16 | 기본, style_cap, 재현성 (random_seed 지원) | hardcoded 모드 미테스트 |
+| `optimization.optimize_constrained_weights` | ~10 | 기본, style_cap, 엣지케이스 | hardcoded 모드 미테스트 |
 | `factor_analysis.filter_and_label_factors` | ~8 | 섹터 제거, L/N/S 라벨, 엣지케이스 | - |
-| `optimization.find_optimal_mix` | ~5 | 그리드 서치, 랭킹, 컬럼 구조 | - |
 | `weight_construction` | ~10 | L/S 분리, 동일가중, 수익률 계산 | - |
 | `model_portfolio` | E2E 16 | 전체 파이프라인 | 개별 private 메서드 단위 테스트 없음 |
 | `parquet_io` | 25 | save/load roundtrip, 연도별 분할, fallback, 9가지 검증 | - |
@@ -571,8 +526,7 @@ for i in range(n_cols):
 | 5분위 분석 (batch) | O(F × N/F × log(N/F)) | ~10-30초 |
 | 섹터 필터링 | O(F × N/F) | ~5초 |
 | 수익률 집계 | O(F × T × S) | ~30-60초 (가장 느림) |
-| 2-팩터 믹스 | O(styles × 3 × 101) | ~5초 |
-| MC 시뮬레이션 | O(num_sims × K × T) | ~10-20초 (float32) |
+| 가중치 계산 (EW) | O(K × styles) | <1초 |
 | 가중치 산출 + CSV | O(factors × rows) | ~2초 |
 
 총 실행 시간: ~1-3분 (200+ 팩터, 70개월 데이터 기준)
@@ -585,7 +539,7 @@ for i in range(n_cols):
 ```
 CAGR = (cumulative_return)^(12/months) - 1
 # months = len(ret_df) - 1  (첫 행은 기준점 0이므로 제외)
-# _evaluate_universe, find_optimal_mix, optimize_constrained_weights 모두 동일 기준 적용
+# _evaluate_universe, optimize_constrained_weights 모두 동일 기준 적용
 ```
 
 ### MDD (최대 낙폭)
@@ -628,7 +582,7 @@ fitted = shrunk + redistributed
 
 - **Factor-Level Backtest**: 종목(stock-level) MP까지 내려가지 않고, 팩터 수익률(net-of-cost) × 팩터 가중치로 포트폴리오 수익률을 산출
 - **거래비용 이중 적용 금지**: 기존 `calculate_vectorized_return()`이 팩터 내부 종목 리밸런싱에서 30bp를 이미 차감. 팩터 가중치 변경에 대한 별도 거래비용은 적용하지 않음
-- **monte_carlo 모드 통일**: 백테스트 전체에서 monte_carlo 모드만 사용. hardcoded 모드는 프로덕션 전용
+- **equal_weight 모드**: 백테스트 전체에서 equal_weight 모드 사용. hardcoded 모드는 프로덕션 전용
 
 ### 6.2 계층적 리밸런싱 (Tiered Rebalancing)
 
@@ -640,9 +594,9 @@ Tier 1 (6개월마다): 규칙 학습 + IS 규칙을 전체 데이터에 적용
   - aggregate_factor_returns 1회 실행
   - 산출물: precomputed_ret_df (전기간 x 유효 팩터 수익률 행렬)
 
-Tier 2 (3개월마다): 팩터 선정 + 가중치 최적화
+Tier 2 (3개월마다): 팩터 선정 + style_cap 기반 가중치 재분배
   - precomputed_ret_df에서 IS 구간만 슬라이스 (aggregate 재실행 불필요)
-  - CAGR -> 상위 팩터 선정 -> [5]~[6] 실행
+  - CAGR -> 상위 팩터 선정 -> [6] 실행
   - 산출물: cached_weights, cached_meta
 
 Tier 3 (매월): OOS 수익률 조회
@@ -665,8 +619,7 @@ Tier 3 (매월): OOS 수익률 조회
 | 단계 | 과적합 위험 | 이유 |
 |------|------------|------|
 | [4] 상위 50 팩터 선정 | **높음** | IS CAGR 순위로 선정. 평균 회귀 위험 |
-| [5] 2-팩터 믹스 그리드 서치 | **높음** | IS 수익률로 101포인트 탐색 |
-| [6] MC 시뮬레이션 | 중간 | 스타일 캡 25% + Dirichlet 제약으로 자유도 낮음. 실측: MC_OVERFIT 판정 |
+| [6] 가중치 계산 (EW) | **낮음** | 1/N 동일가중 - 자유도 없음 |
 | [3] 섹터 제거 + L/N/S 라벨 | **낮음 (수정 완료)** | IS 전용 rule_bundle 적용으로 OOS 오염 제거됨 |
 | [2] 5분위 분석 | 낮음 | 횡단면 정렬이라 시계열 과적합 아님 |
 
@@ -679,13 +632,16 @@ Tier 3 (매월): OOS 수익률 조회
 OOS 구간에서 3개 포트폴리오의 성과(CAGR, MDD)를 동시 비교:
 - A. EW_All: 전체 유효 팩터 동일가중 (시장/팩터 베타)
 - B. EW_Top50: Top-50 후보군 동일가중 (1차 필터링 실력)
-- C. MP_Final: MC 최적화 가중 포트폴리오 (최종 실력)
+- C. Constrained EW: Top-N 동일가중 + style_cap(25%) 재분배 (제약 부가)
 
 | 패턴 | 의미 |
 |------|------|
-| C > B > A | 정상 — 필터링+최적화 모두 가치 창출 |
-| B > C > A | MC 과적합 — Top-50 EW가 더 나음 |
-| A > B | 1차 필터 과적합 — CAGR 기반 필터링 자체가 과거 우연 |
+| C > B > A | 정상 -- 필터링과 style_cap 제약 모두 가치 창출 |
+| B > C > A | OPTIMIZATION_OVERFIT -- style_cap 재분배가 OOS 수익을 깎음 (학습 가중치 없음) |
+| A > B | FILTER_OVERFIT -- rank_score 기반 Top-50 선정 자체가 과거 우연 |
+
+> 현재 C는 학습된 가중치가 아니라 **deterministic style_cap 재분배**일 뿐이다
+> (공분산/MC 최적화는 커밋 `8dfb64e`에서 제거됨).
 
 **2순위: OOS Percentile Tracking (최종 팩터 생존율)**
 
@@ -696,7 +652,7 @@ OOS 구간에서 3개 포트폴리오의 성과(CAGR, MDD)를 동시 비교:
 
 **3순위: Strict Jaccard Index (weight>0 팩터 안정성)**
 
-Top-50이 아닌, MC 최적화를 거쳐 **실제로 비중이 할당된 최종 팩터**(스타일 수에 따라 5~14개)에만 적용.
+Top-50이 아닌, **실제로 비중이 할당된 최종 팩터**에만 적용.
 집합 크기가 작아 Jaccard가 예민하게 반응 → 기준값을 Top-50 Jaccard보다 낮게 설정:
 - \> 0.5 → 안정적
 - 0.3~0.5 → 보통
@@ -709,7 +665,6 @@ Top-50이 아닌, MC 최적화를 거쳐 **실제로 비중이 할당된 최종 
 ### 6.5 방어 로직
 
 - **MIN_REQUIRED_FACTORS = 5**: 유효 팩터가 5개 미만이면 Tier 2 스킵, 이전 가중치 유지
-- **Style cap fallback**: MC feasibility 실패 시 style_cap을 0.25 → 0.40 → 1.00으로 단계적 완화
 - **EMA 가중치 블렌딩**: `turnover_smoothing_alpha` (0~1)로 가중치 변화 스무딩. 과적합 진단 시 1.0(스무딩 없음) 사용
 
 ### 6.6 CLI 커맨드
@@ -720,89 +675,34 @@ python main.py backtest <start> <end> [옵션]
   --factor-rebal-months  Tier 1 리밸런싱 주기 (기본: 6)
   --weight-rebal-months  Tier 2 리밸런싱 주기 (기본: 3)
   --top-factors          상위 팩터 수 (기본: 50)
-  --num-sims             MC 시뮬레이션 횟수 (기본: 1,000,000)
   --turnover-alpha       EMA 블렌딩 비율 (기본: 1.0)
 
 python main.py mp <start> <end> --benchmark
-  → monte_carlo 모드 MP vs. 동일가중(1/N) 비교 리포트
+  → MP vs. 동일가중(1/N) 비교 리포트
 ```
 
 ### 6.7 실제 실행 결과
 
-#### 6.7.1 확장 데이터 백테스트 (2009-2026, 136개월 OOS, 2026-04-13)
-
-상세 분석은 [`docs/backtest_results_2009_2026.md`](docs/backtest_results_2009_2026.md) 참조.
-
-**실행 커맨드:**
-```bash
-python main.py backtest 2009-12-31 2026-03-31 \
-  --min-is-months 60 --factor-rebal-months 6 --weight-rebal-months 3
-```
-
-**IS/OOS 구간 상세:**
-```
-전체 데이터: 2009-12 ~ 2026-03 (196개월)
-IS 고정 시작: 2009-12 (Expanding Window — 시작점 고정, 끝점만 확장)
-IS 최소 길이: 60개월 (2009-12 ~ 2014-11)
-OOS 구간: 2014-12 ~ 2026-03 (136개월, 11.3년)
-
-Tier 1 실행: 23회 (6개월마다, 규칙 재학습 + 팩터 수익률 사전 계산)
-Tier 2 실행: 46회 (3개월마다, 팩터 선정 + 가중치 재최적화, MC 100만회)
-Tier 3 실행: 136회 (매월, precomputed_ret_df 조회)
-총 소요 시간: 2,129초 (~35분)
-```
-
-**OOS 성과 (MC 모드 vs EW):**
-
-| | MP (MC 최적화) | EW (1/N) |
-|---|---|---|
-| CAGR | 2.70% | **3.21%** |
-| MDD | **-6.51%** | -8.64% |
-| Sharpe | 0.76 | **0.84** |
-
-**과적합 진단 (Funnel 패턴: MC_OVERFIT):**
-
-| 지표 | 값 | 해석 |
-|------|-----|------|
-| Funnel 패턴 | MC_OVERFIT | EW_Top50(3.21%) > MP(2.70%) > EW_All(1.77%) |
-| OOS Percentile | 47.24% | 보통 (랭킹 유지 미약) |
-| Strict Jaccard | 0.82 | 양호 (핵심 팩터 안정) |
-| IS-OOS Rank Corr | 0.14 | IS 순위와 OOS 성과 무관 |
-| Deflation Ratio | 0.43 | 주의 (보통 수준) |
-
-**핵심 시사점:** 136개월 장기 데이터에서도 EW(equal_weight)가 MC 최적화 대비 CAGR/Sharpe 우월. Top-50 팩터 필터링은 유효. MC는 IS 과적합 경향 재확인. MDD만 MC 우위.
-
-#### 6.7.2 기존 단기 백테스트 (2017-2026, 64개월 OOS, 2026-04-06)
-
-**실행 커맨드:**
-```bash
-python main.py backtest 2017-12-31 2026-03-31 \
-  --min-is-months 36 --factor-rebal-months 6 --weight-rebal-months 3 --num-sims 100000
-```
-
-**과적합 개선 이력 (64개월, Phase 1+2 실험):**
-```
-[기존 MC+믹스]       CAGR=+0.14%, Sharpe=0.054, MDD=-14.72%, Deflation=0.013
-  -> MC_OVERFIT 판정, IS 10.4% 대비 OOS 0.14% (IS의 1.3%만 실현)
-
-[Phase 1: EW+스킵]   CAGR=+0.39%, Sharpe=0.092, MDD=-14.91%, Deflation=0.049
-  -> MC 제거 + 2-팩터 믹스 스킵으로 DOF 제거
-
-[Phase 2: EW+t-stat] CAGR=+0.95%, Sharpe=0.243, MDD=-8.51%, Deflation=0.139
-  -> t-stat 랭킹으로 노이즈 팩터 필터, OOS CAGR 6.8x 개선
-```
-
-#### 6.7.3 기본 설정 및 산출 파일
+백테스트 결과 및 과적합 진단 상세는 [`docs/backtest_results_2009_2026.md`](docs/backtest_results_2009_2026.md) 참조.
 
 **현재 기본 설정 (config.py):**
-- `optimization_mode = "equal_weight"` (MC 1M 시행 대신 동일가중)
-- `skip_factor_mix = True` ([5] 2-팩터 믹스 스킵)
-- `factor_ranking_method = "tstat"` (CAGR 대신 t-통계량 랭킹)
-- `backtest_start = "2009-12-31"` (2017에서 확장)
+- `optimization_mode = "equal_weight"` (동일가중, 권장)
+- `factor_ranking_method = "tstat"` (기본; Sprint 1-A `"shrunk_tstat"` 실험 옵션 추가됨)
+- `use_cluster_dedup = False` (Sprint 1-B 실험; True 시 Hierarchical Clustering 기반 Top-N 중복 제거)
+- `backtest_start = "2009-12-31"`
+
+**Sprint 1 개선 (미활성 기본값, 실험 시 toggle):**
+- **1-A `shrunk_tstat`** — `service/backtest/factor_selection.py:compute_shrunk_tstat()`
+  James-Stein 계열 shrinkage로 팩터 t-stat을 스타일 그룹 평균 쪽으로 `lambda` 만큼 축소.
+  `lambda = var_within_style / (var_within_style + var_between_styles)` — 데이터 주도 결정.
+- **1-B `use_cluster_dedup`** — `cluster_and_dedup_top_n()`
+  IS 구간 팩터 L-S 수익률 상관으로 `1 - |corr|` distance, `scipy.cluster.hierarchy.linkage(method="average")`,
+  `fcluster(maxclust=n_clusters)`. 클러스터별 rank_score 상위 `per_cluster_keep` 개만 통과.
+  IS 전용 (OOS look-ahead 방지).
+- **1-C Newey-West 진단** — `compute_newey_west_tstat()`
+  Bartlett kernel, lag=3 기본. `meta_data.csv`의 `newey_west_tstat` 컬럼으로만 노출, 랭킹 교체 X.
 
 **산출 파일:**
-- `output/walk_forward_results.csv` — OOS 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
-- `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
-- `docs/backtest_results_2009_2026.md` — 136개월 OOS 분석 보고서
-
-**주의:** backtest는 내부적으로 monte_carlo 모드를 사용하여 `data/hardcoded_weights.csv`를 덮어쓴다. 실행 후 `git checkout -- data/hardcoded_weights.csv`로 프로덕션 가중치를 반드시 복원할 것.
+- `output/walk_forward_results.csv` -- OOS 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
+- `output/overfit_diagnostics.csv` -- 과적합 진단 5개 지표 요약
+- `docs/backtest_results_2009_2026.md` -- 136개월 OOS 분석 보고서

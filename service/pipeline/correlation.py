@@ -3,6 +3,10 @@
 
 팩터 수익률이 음수인 구간(하락 구간)의 상관관계를 NumPy 벡터 연산으로 계산한다.
 일반 상관관계보다 위험 관리에 더 유용한 지표이다.
+
+주: 현재 model_portfolio.py 및 walk_forward_engine.py에서 호출되지만, 결과값이
+optimize_constrained_weights() 에 전달되지 않는다. 공분산 기반 최적화가 제거된
+이후 사실상 dead code 상태이며, 향후 리스크 모델 재도입 시 재사용 reserved.
 """
 from __future__ import annotations
 

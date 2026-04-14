@@ -2,12 +2,12 @@
 
 ## Project Overview
 
-팩터 기반 포트폴리오 구성 파이프라인. 200+ 금융 팩터를 SQL Server에서 가져와 5분위 분석, 팩터 랭킹, 2-팩터 믹스 최적화, 스타일 캡 하 비중 결정을 거쳐 Model Portfolio(MP) 종목별 비중을 산출한다.
+팩터 기반 포트폴리오 구성 파이프라인. 200+ 금융 팩터를 SQL Server에서 가져와 5분위 분석, 팩터 랭킹, style_cap 재분배를 거쳐 Constrained EW(CEW) 종목별 비중을 산출한다. 공분산/리스크 모델 기반 최적화는 포함하지 않는다 (커밋 `8dfb64e`에서 제거).
 
 ## 외부 맥락 (코드에 없는 것)
 
 - **Bloomberg 연동:** 최종 output CSV는 Bloomberg Optimizer에 직접 입력하여 실행
-- **optimization_mode 주의:** `config.py`의 `optimization_mode`를 `"monte_carlo"`로 변경하면 기존 `data/hardcoded_weights.csv`가 `data/hardcoded_weights_backup/`에 자동 백업되고 새 비중으로 덮어쓰여짐. 프로덕션 비중에 직접 영향
+
 
 ## 컨벤션
 

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Walk-Forward (Expanding Window) 백테스트 엔진.
 
-기존 ModelPortfolioPipeline을 감싸는 오케스트레이터.
+ModelPortfolioPipeline을 감싸는 Walk-Forward 오케스트레이터.
 파이프라인 모듈의 내부 코드를 수정하지 않고, 순수 함수를 호출하여
 IS/OOS 분할 → 규칙 학습 → 팩터 수익률 사전 계산 → OOS 적용을 수행한다.
 
@@ -22,6 +22,11 @@ from rich.progress import track
 
 from config import PARAM, PIPELINE_PARAMS
 from service.backtest.data_slicer import get_oos_dates, slice_data_by_date
+from service.backtest.factor_selection import (
+    cluster_and_dedup_top_n,
+    compute_shrunk_tstat,
+    compute_tstat,
+)
 from service.backtest.result_stitcher import WalkForwardResult
 from service.pipeline.correlation import calculate_downside_correlation
 from service.pipeline.factor_analysis import (
@@ -32,10 +37,7 @@ from service.pipeline.model_portfolio import (
     ModelPortfolioPipeline,
     aggregate_factor_returns,
 )
-from service.pipeline.optimization import (
-    find_optimal_mix,
-    optimize_constrained_weights,
-)
+from service.pipeline.optimization import optimize_constrained_weights
 
 logger = logging.getLogger(__name__)
 
@@ -217,73 +219,24 @@ def _apply_rules_and_aggregate(
 def _run_weight_optimization(
     ret_df_is: pd.DataFrame,
     meta: pd.DataFrame,
-    neg_corr: pd.DataFrame,
     pp: dict,
     loop_index: int = 0,
-    style_caps_to_try: list[float] | None = None,
 ) -> tuple[dict[str, float], pd.DataFrame]:
-    """[5]~[6] 2-팩터 믹스 + MC 시뮬레이션으로 가중치를 산출한다.
+    """[6] 가중치 계산.
 
     Returns:
-        (weights_dict, meta) — weights_dict: {factor_abbr: weight}
+        (weights_dict, meta) -- weights_dict: {factor_abbr: weight}
     """
-    if style_caps_to_try is None:
-        style_caps_to_try = [0.25, 0.40, 1.00]
-
-    skip_mix = pp.get("skip_factor_mix", False)
     style_map = meta.set_index("factorAbbreviation")["styleName"]
+    factor_list = meta["factorAbbreviation"].tolist()
+    style_list = [style_map[f] for f in factor_list]
+    ret_subset = ret_df_is[factor_list]
 
-    if skip_mix:
-        # [5] 스킵: meta의 전체 팩터를 바로 [6]에 전달
-        factor_list = meta["factorAbbreviation"].tolist()
-        style_list = [style_map[f] for f in factor_list]
-        ret_subset = ret_df_is[factor_list]
-    else:
-        # [5] 스타일별 2-팩터 믹스
-        top_metrics = meta.groupby("styleName", as_index=False).first()
-        grids = []
-        for _, row in top_metrics.iterrows():
-            grid = find_optimal_mix(
-                ret_df_is, row.to_frame().T.reset_index(drop=True), neg_corr,
-                sub_factor_rank_weights=pp["sub_factor_rank_weights"],
-                portfolio_rank_weights=pp["portfolio_rank_weights"],
-            )
-            grid["styleName"] = row["styleName"]
-            grids.append(grid)
-        mix_grid = pd.concat(grids, ignore_index=True)
-
-        best_sub = (
-            mix_grid.sort_values("rank_total")
-            .groupby("main_factor", as_index=False)
-            .first()[["main_factor", "sub_factor"]]
-        )
-
-        cols_to_keep = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel())
-        ret_subset = ret_df_is[cols_to_keep]
-        factor_list = cols_to_keep.tolist()
-        style_list = [style_map[f] for f in factor_list]
-
-    # [6] 가중치 결정 — style_cap fallback
-    base_seed = pp.get("random_seed", 42) or 42
-    seed = base_seed + loop_index
-
-    for cap in style_caps_to_try:
-        try:
-            best_stats, weights_tbl = optimize_constrained_weights(
-                ret_subset, style_list,
-                mode="monte_carlo",
-                style_cap=cap,
-                num_sims=pp["num_sims"],
-                random_seed=seed,
-                portfolio_rank_weights=pp["portfolio_rank_weights"],
-            )
-            if cap != style_caps_to_try[0]:
-                logger.warning("Style cap relaxed to %.2f (default %.2f)", cap, style_caps_to_try[0])
-            break
-        except (ValueError, RuntimeError) as e:
-            if cap == style_caps_to_try[-1]:
-                raise
-            logger.warning("MC failed with style_cap=%.2f: %s — retrying with relaxed cap", cap, e)
+    best_stats, weights_tbl = optimize_constrained_weights(
+        ret_subset, style_list,
+        mode=pp["optimization_mode"],
+        style_cap=pp["style_cap"],
+    )
 
     weights_dict = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
     return weights_dict, meta
@@ -301,7 +254,6 @@ class WalkForwardEngine:
         weight_rebal_months: Tier 2 리밸런싱 주기 (기본 3).
         turnover_smoothing_alpha: EMA 가중치 블렌딩 비율 (기본 1.0 = 스무딩 없음).
         top_factors: 상위 팩터 수 (기본 50).
-        num_sims: MC 시뮬레이션 횟수 (기본 1_000_000).
     """
 
     def __init__(
@@ -311,14 +263,12 @@ class WalkForwardEngine:
         weight_rebal_months: int = 3,
         turnover_smoothing_alpha: float = 1.0,
         top_factors: int = 50,
-        num_sims: int = 1_000_000,
     ):
         self.min_is_months = min_is_months
         self.factor_rebal_months = factor_rebal_months
         self.weight_rebal_months = weight_rebal_months
         self.turnover_smoothing_alpha = turnover_smoothing_alpha
         self.top_factors = top_factors
-        self.num_sims = num_sims
 
     def run(
         self,
@@ -342,8 +292,7 @@ class WalkForwardEngine:
         # pipeline_params 커스텀 (config의 optimization_mode 유지)
         pp = dict(PIPELINE_PARAMS)
         if pp["optimization_mode"] == "hardcoded":
-            pp["optimization_mode"] = "monte_carlo"  # hardcoded는 backtest에서 사용 불가
-        pp["num_sims"] = self.num_sims
+            pp["optimization_mode"] = "equal_weight"  # hardcoded는 backtest에서 사용 불가
         pp["top_factor_count"] = self.top_factors
 
         # 1. 데이터 1회 로딩 — pipeline 인스턴스를 통해 [1] 실행
@@ -373,7 +322,7 @@ class WalkForwardEngine:
         cached_meta: pd.DataFrame | None = None
         cached_selected_factors: list[str] | None = None
         cached_top50_factors: list[str] | None = None
-        cached_is_mp_cagr: float = 0.0  # IS 구간 MP CAGR (Deflation Ratio용)
+        cached_is_cew_cagr: float = 0.0  # IS 구간 CEW CAGR (Deflation Ratio용)
 
         results: list[dict[str, Any]] = []
 
@@ -445,41 +394,52 @@ class WalkForwardEngine:
                         cagr_series = cum ** (12 / months) - 1
 
                         ranking_method = pp.get("factor_ranking_method", "cagr")
+                        monthly_rets = ret_df_is.iloc[1:]  # 첫 행(기준점 0) 제외
 
-                        if ranking_method == "tstat":
-                            # t-stat: mean / (std / sqrt(N)) -- 노이즈 팩터 페널티
-                            monthly_rets = ret_df_is.iloc[1:]  # 첫 행(기준점 0) 제외
-                            t_stats = monthly_rets.mean() / (monthly_rets.std() / np.sqrt(len(monthly_rets)))
-                            rank_score = t_stats
+                        # 스타일 맵 구성 (IS 전용 rule_bundle 기반)
+                        style_map_full: dict[str, str] = {}
+                        if cached_rule_bundle:
+                            kept_abbrs = cached_rule_bundle.get("kept_abbrs", []) or []
+                            kept_styles = cached_rule_bundle.get("kept_styles", []) or []
+                            for abbr, style in zip(kept_abbrs, kept_styles):
+                                style_map_full[abbr] = style
+
+                        if ranking_method == "shrunk_tstat":
+                            rank_score = compute_shrunk_tstat(monthly_rets, style_map_full)
+                        elif ranking_method == "tstat":
+                            rank_score = compute_tstat(monthly_rets)
                         else:
                             rank_score = cagr_series
 
                         meta_df = pd.DataFrame({
                             "factorAbbreviation": ret_df_is.columns,
                             "cagr": cagr_series.values,
-                            "rank_score": rank_score.values,
+                            "rank_score": rank_score.reindex(ret_df_is.columns).values,
                         })
 
-                        # kept_styles 매핑
-                        if cached_rule_bundle:
-                            style_map_full = {}
-                            fm = cached_rule_bundle.get("factor_metadata")
-                            if fm is not None:
-                                for _, row in fm.iterrows():
-                                    style_map_full[row["factorAbbreviation"]] = row["styleName"]
-                            meta_df["styleName"] = meta_df["factorAbbreviation"].map(style_map_full).fillna("Unknown")
-                            meta_df["factorName"] = meta_df["factorAbbreviation"]
-                        else:
-                            meta_df["styleName"] = "Unknown"
-                            meta_df["factorName"] = meta_df["factorAbbreviation"]
+                        meta_df["styleName"] = meta_df["factorAbbreviation"].map(style_map_full).fillna("Unknown")
+                        meta_df["factorName"] = meta_df["factorAbbreviation"]
 
                         meta_df["rank_style"] = meta_df.groupby("styleName")["rank_score"].rank(ascending=False)
                         meta_df["rank_total"] = meta_df["rank_score"].rank(ascending=False)
                         meta_df = meta_df.sort_values("rank_score", ascending=False).reset_index(drop=True)
 
                         top_n = min(pp["top_factor_count"], len(meta_df))
-                        meta_top = meta_df.head(top_n)
-                        selected = meta_top["factorAbbreviation"].tolist()
+
+                        # Sprint 1-B: Hierarchical Clustering 기반 중복 제거
+                        if pp.get("use_cluster_dedup", False):
+                            score_series = meta_df.set_index("factorAbbreviation")["rank_score"]
+                            selected = cluster_and_dedup_top_n(
+                                monthly_rets,
+                                score_series,
+                                n_clusters=int(pp.get("n_clusters", 18)),
+                                per_cluster_keep=int(pp.get("per_cluster_keep", 3)),
+                                top_n=top_n,
+                            )
+                            meta_top = meta_df.set_index("factorAbbreviation").loc[selected].reset_index()
+                        else:
+                            meta_top = meta_df.head(top_n)
+                            selected = meta_top["factorAbbreviation"].tolist()
                         cached_top50_factors = list(selected)
                         ret_df_selected = ret_df_is[selected]
 
@@ -489,7 +449,7 @@ class WalkForwardEngine:
 
                         try:
                             raw_new_weights, cached_meta = _run_weight_optimization(
-                                ret_df_selected, meta_top, neg_corr, pp, loop_index=i,
+                                ret_df_selected, meta_top, pp, loop_index=i,
                             )
                         except (ValueError, RuntimeError) as e:
                             logger.warning("OOS %s: weight optimization failed: %s — 이전 가중치 유지", oos_date, e)
@@ -506,7 +466,7 @@ class WalkForwardEngine:
                                     for f in ret_df_selected.columns if f in raw_new_weights
                                 )
                                 is_cum = (1 + is_weighted_ret).cumprod().iloc[-1]
-                                cached_is_mp_cagr = is_cum ** (12 / is_months) - 1
+                                cached_is_cew_cagr = is_cum ** (12 / is_months) - 1
 
                             # EMA 가중치 블렌딩
                             if self.turnover_smoothing_alpha >= 1.0 or cached_weights is None:
@@ -561,7 +521,7 @@ class WalkForwardEngine:
                 "oos_all_factor_returns": oos_all_factor_returns.to_dict(),
                 "top50_factors": list(cached_top50_factors) if cached_top50_factors else [],
                 "active_factors": [f for f, w in cached_weights.items() if w > 0],
-                "is_mp_cagr": cached_is_mp_cagr,
+                "is_cew_cagr": cached_is_cew_cagr,
             })
 
         elapsed = time.time() - t0

@@ -111,13 +111,12 @@ def _make_partial_filter_rule_learning(original_fn):
 # ============================================================================
 
 def main():
-    start_date, end_date, num_sims = parse_experiment_args()
+    start_date, end_date = parse_experiment_args()
     setup_logging()
 
     print("=" * 70)
     print("  Overfitting Experiment: Sector Filtering + L/N/S Labeling")
     print(f"  Period: {start_date} ~ {end_date}")
-    print(f"  MC Simulations: {num_sims:,}")
     print("=" * 70)
 
     original_rule_learning = _run_rule_learning
@@ -130,7 +129,6 @@ def main():
         monkey_patches={
             "_run_rule_learning": (wf_module, original_rule_learning),
         },
-        num_sims=num_sims,
     ))
 
     # B) NO_FILTER
@@ -143,7 +141,6 @@ def main():
                 _make_no_filter_rule_learning(original_rule_learning),
             ),
         },
-        num_sims=num_sims,
     ))
 
     # C) PARTIAL
@@ -156,7 +153,6 @@ def main():
                 _make_partial_filter_rule_learning(original_rule_learning),
             ),
         },
-        num_sims=num_sims,
     ))
 
     print_comparison_table(all_results, "Sector Filtering + L/N/S Labeling Overfitting Test")
