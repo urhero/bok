@@ -727,7 +727,52 @@ python main.py mp <start> <end> --benchmark
   → monte_carlo 모드 MP vs. 동일가중(1/N) 비교 리포트
 ```
 
-### 6.7 실제 실행 결과 (2026-04-03 기준)
+### 6.7 실제 실행 결과
+
+#### 6.7.1 확장 데이터 백테스트 (2009-2026, 136개월 OOS, 2026-04-13)
+
+상세 분석은 [`docs/backtest_results_2009_2026.md`](docs/backtest_results_2009_2026.md) 참조.
+
+**실행 커맨드:**
+```bash
+python main.py backtest 2009-12-31 2026-03-31 \
+  --min-is-months 60 --factor-rebal-months 6 --weight-rebal-months 3
+```
+
+**IS/OOS 구간 상세:**
+```
+전체 데이터: 2009-12 ~ 2026-03 (196개월)
+IS 고정 시작: 2009-12 (Expanding Window — 시작점 고정, 끝점만 확장)
+IS 최소 길이: 60개월 (2009-12 ~ 2014-11)
+OOS 구간: 2014-12 ~ 2026-03 (136개월, 11.3년)
+
+Tier 1 실행: 23회 (6개월마다, 규칙 재학습 + 팩터 수익률 사전 계산)
+Tier 2 실행: 46회 (3개월마다, 팩터 선정 + 가중치 재최적화, MC 100만회)
+Tier 3 실행: 136회 (매월, precomputed_ret_df 조회)
+총 소요 시간: 2,129초 (~35분)
+```
+
+**OOS 성과 (MC 모드 vs EW):**
+
+| | MP (MC 최적화) | EW (1/N) |
+|---|---|---|
+| CAGR | 2.70% | **3.21%** |
+| MDD | **-6.51%** | -8.64% |
+| Sharpe | 0.76 | **0.84** |
+
+**과적합 진단 (Funnel 패턴: MC_OVERFIT):**
+
+| 지표 | 값 | 해석 |
+|------|-----|------|
+| Funnel 패턴 | MC_OVERFIT | EW_Top50(3.21%) > MP(2.70%) > EW_All(1.77%) |
+| OOS Percentile | 47.24% | 보통 (랭킹 유지 미약) |
+| Strict Jaccard | 0.82 | 양호 (핵심 팩터 안정) |
+| IS-OOS Rank Corr | 0.14 | IS 순위와 OOS 성과 무관 |
+| Deflation Ratio | 0.43 | 주의 (보통 수준) |
+
+**핵심 시사점:** 136개월 장기 데이터에서도 EW(equal_weight)가 MC 최적화 대비 CAGR/Sharpe 우월. Top-50 팩터 필터링은 유효. MC는 IS 과적합 경향 재확인. MDD만 MC 우위.
+
+#### 6.7.2 기존 단기 백테스트 (2017-2026, 64개월 OOS, 2026-04-06)
 
 **실행 커맨드:**
 ```bash
@@ -735,38 +780,7 @@ python main.py backtest 2017-12-31 2026-03-31 \
   --min-is-months 36 --factor-rebal-months 6 --weight-rebal-months 3 --num-sims 100000
 ```
 
-**IS/OOS 구간 상세:**
-```
-전체 데이터: 2017-12 ~ 2026-03 (100개월)
-IS 고정 시작: 2017-12 (Expanding Window — 시작점 고정, 끝점만 확장)
-IS 최소 길이: 36개월 (2017-12 ~ 2020-11)
-OOS 구간: 2020-12 ~ 2026-03 (64개월, 매월 1개월씩 기록)
-
-  OOS#1  → IS 36개월 (2017-12 ~ 2020-11) → OOS 2020-12  [Tier1+2 재학습]
-  OOS#2  → IS 37개월 (2017-12 ~ 2020-12) → OOS 2021-01  [조회만]
-  OOS#3  → IS 38개월 (2017-12 ~ 2021-01) → OOS 2021-02  [조회만]
-  OOS#4  → IS 39개월 (2017-12 ~ 2021-02) → OOS 2021-03  [Tier2 재최적화]
-  ...
-  OOS#7  → IS 42개월 (2017-12 ~ 2021-05) → OOS 2021-06  [Tier1+2 재학습]
-  ...
-  OOS#64 → IS 99개월 (2017-12 ~ 2026-02) → OOS 2026-03  [Tier2 재최적화]
-
-Tier 1 실행: 11회 (6개월마다, 규칙 재학습 + 팩터 수익률 사전 계산)
-Tier 2 실행: 22회 (3개월마다, 팩터 선정 + 가중치 재최적화)
-Tier 3 실행: 64회 (매월, precomputed_ret_df 조회)
-총 소요 시간: 651초 (~11분)
-```
-
-**OOS 성과 비교 (EW + t-stat 최적 설정):**
-```
-              EW+t-stat(현재)    기존 MC(참고)
-CAGR:         +0.95%              +0.14%
-MDD:          -8.51%             -14.72%
-Sharpe:        0.243               0.054
-Deflation:     0.139               0.013
-```
-
-**과적합 진단 및 최적화 이력 (2026-04-06):**
+**과적합 개선 이력 (64개월, Phase 1+2 실험):**
 ```
 [기존 MC+믹스]       CAGR=+0.14%, Sharpe=0.054, MDD=-14.72%, Deflation=0.013
   -> MC_OVERFIT 판정, IS 10.4% 대비 OOS 0.14% (IS의 1.3%만 실현)
@@ -774,17 +788,21 @@ Deflation:     0.139               0.013
 [Phase 1: EW+스킵]   CAGR=+0.39%, Sharpe=0.092, MDD=-14.91%, Deflation=0.049
   -> MC 제거 + 2-팩터 믹스 스킵으로 DOF 제거
 
-[Phase 2: EW+t-stat] CAGR=+0.95%, Sharpe=0.243, MDD=-8.51%, Deflation=0.139 (현재)
+[Phase 2: EW+t-stat] CAGR=+0.95%, Sharpe=0.243, MDD=-8.51%, Deflation=0.139
   -> t-stat 랭킹으로 노이즈 팩터 필터, OOS CAGR 6.8x 개선
 ```
+
+#### 6.7.3 기본 설정 및 산출 파일
 
 **현재 기본 설정 (config.py):**
 - `optimization_mode = "equal_weight"` (MC 1M 시행 대신 동일가중)
 - `skip_factor_mix = True` ([5] 2-팩터 믹스 스킵)
 - `factor_ranking_method = "tstat"` (CAGR 대신 t-통계량 랭킹)
+- `backtest_start = "2009-12-31"` (2017에서 확장)
 
 **산출 파일:**
-- `output/walk_forward_results.csv` — OOS 64개월 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
+- `output/walk_forward_results.csv` — OOS 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
 - `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
+- `docs/backtest_results_2009_2026.md` — 136개월 OOS 분석 보고서
 
 **주의:** backtest는 내부적으로 monte_carlo 모드를 사용하여 `data/hardcoded_weights.csv`를 덮어쓴다. 실행 후 `git checkout -- data/hardcoded_weights.csv`로 프로덕션 가중치를 반드시 복원할 것.

@@ -51,8 +51,8 @@
 >   - 100% NaN 팩터는 WARN으로 별도 보고 후 제외, 나머지 유효 데이터에 대해 NaN 비율 10% 임계값 검사
 
 ### 다운로드 (`download_factors.py`)
-- `python main.py download 2017-12-31 2026-02-28` — 전체 다운로드 → 연도별 parquet 분할 저장
-- `python main.py download 2017-12-31 2026-03-31 --incremental` — 증분 다운로드 (해당 연도 파일만 업데이트)
+- `python main.py download 2009-12-31 2026-03-31` — 전체 다운로드 → 연도별 parquet 분할 저장
+- `python main.py download 2009-12-31 2026-03-31 --incremental` — 증분 다운로드 (해당 연도 파일만 업데이트)
 - 저장 후 자동 검증: 빈 월 감지, 팩터 수 급변, M_RETURN 정합성 (Rich 시각화)
 
 ### 코드 구현
@@ -60,7 +60,7 @@
   - 로드 시 9가지 무결성 검증 (컬럼, 100% NaN 팩터 분리, NaN 비율, inf, 월 gap, 중복 등) → ERROR 발견 시 즉시 중단
   - Fallback: 단일 파일, legacy raw parquet, test CSV
 - `_prepare_metadata()`: factor_info merge (pipeline-ready에서는 skip), M_RETURN 병합
-- 백테스트 시작: `ddt >= 2017-12-31` (→ 2018년부터 실질 성과 반영)
+- 백테스트 시작: `ddt >= 2009-12-31` (→ 2010년부터 실질 성과 반영)
 
 ---
 
@@ -272,11 +272,11 @@ pipeline.return_matrix  # 월간 수익률 행렬
 ### Walk-Forward 백테스트 사용법
 ```bash
 # 기본 실행 (Expanding Window, IS 36개월, OOS 매월)
-python main.py backtest 2017-12-31 2026-03-31
+python main.py backtest 2009-12-31 2026-03-31
 
 # 파라미터 조정
-python main.py backtest 2017-12-31 2026-03-31 \
-  --min-is-months 36 \
+python main.py backtest 2009-12-31 2026-03-31 \
+  --min-is-months 60 \
   --factor-rebal-months 6 \
   --weight-rebal-months 3 \
   --num-sims 100000 \
@@ -286,15 +286,15 @@ python main.py backtest 2017-12-31 2026-03-31 \
 python main.py backtest test test_data.csv --min-is-months 4
 
 # 벤치마크 비교 (MP vs. 동일가중)
-python main.py mp 2017-12-31 2026-03-31 --benchmark
+python main.py mp 2009-12-31 2026-03-31 --benchmark
 ```
 
 ```python
 # 프로그래밍 방식
 from service.backtest.walk_forward_engine import WalkForwardEngine
 
-engine = WalkForwardEngine(min_is_months=36, factor_rebal_months=6, weight_rebal_months=3)
-result = engine.run("2017-12-31", "2026-03-31")
+engine = WalkForwardEngine(min_is_months=60, factor_rebal_months=6, weight_rebal_months=3)
+result = engine.run("2009-12-31", "2026-03-31")
 
 # OOS 성과 확인
 result.calc_performance()           # CAGR, MDD, Sharpe, Calmar
@@ -302,53 +302,53 @@ result.compare_mp_vs_ew_oos()       # MP vs. EW 비교
 result.to_csv("output/wf.csv")      # 결과 저장
 ```
 
-### 실제 실행 예시 및 결과 (2026-04-03 기준)
+### 실제 실행 예시 및 결과 (2026-04-14 기준)
 
-#### 1. 실제 데이터 백테스트 실행
+#### 1. 확장 데이터 백테스트 실행 (2009-2026, 136개월 OOS)
 ```bash
-python main.py backtest 2017-12-31 2026-03-31 \
-  --min-is-months 36 \
+python main.py backtest 2009-12-31 2026-03-31 \
+  --min-is-months 60 \
   --factor-rebal-months 6 \
-  --weight-rebal-months 3 \
-  --num-sims 100000
-# → 651초(~11분), OOS 64개월 (2020-12 ~ 2026-03)
+  --weight-rebal-months 3
+# → 2,129초(~35분), OOS 136개월 (2014-12 ~ 2026-03)
 ```
 
 **IS/OOS 구간:**
 ```
-전체 데이터: 2017-12 ~ 2026-03 (100개월)
-IS 시작: 항상 2017-12 고정 (Expanding Window)
-IS 최소: 36개월 (2017-12 ~ 2020-11)
-OOS 구간: 2020-12 ~ 2026-03 (64개월, 매월 기록)
+전체 데이터: 2009-12 ~ 2026-03 (196개월)
+IS 시작: 항상 2009-12 고정 (Expanding Window)
+IS 최소: 60개월 (2009-12 ~ 2014-11)
+OOS 구간: 2014-12 ~ 2026-03 (136개월, 매월 기록)
 
-매월 IS가 1개월씩 확장:
-  OOS#1  → IS 36개월 (2017-12 ~ 2020-11) → OOS 2020-12
-  OOS#2  → IS 37개월 (2017-12 ~ 2020-12) → OOS 2021-01
-  ...
-  OOS#64 → IS 99개월 (2017-12 ~ 2026-02) → OOS 2026-03
-
-Tier 1 (규칙 재학습): 11회 (6개월마다)
-Tier 2 (가중치 재최적화): 22회 (3개월마다)
-Tier 3 (OOS 수익률 조회): 64회 (매월)
+Tier 1 (규칙 재학습): 23회 (6개월마다)
+Tier 2 (가중치 재최적화): 46회 (3개월마다)
+Tier 3 (OOS 수익률 조회): 136회 (매월)
 ```
 
-**OOS 성과 결과 (EW + t-stat 최적 설정, 2026-04-06):**
-```
-              EW+t-stat(현재)    기존 MC(참고)
-CAGR:         +0.95%              +0.14%
-MDD:          -8.51%             -14.72%
-Sharpe:        0.243               0.054
-Deflation:     0.139               0.013
+**OOS 성과 비교 (MC 모드 vs EW):**
+
+| | MP (MC 최적화) | EW (1/N) |
+|---|---|---|
+| CAGR | 2.70% | **3.21%** |
+| MDD | **-6.51%** | -8.64% |
+| Sharpe | 0.76 | **0.84** |
+
+**과적합 진단 (Funnel 패턴: MC_OVERFIT)** — EW_Top50(3.21%) > MP(2.70%) > EW_All(1.77%). 장기 데이터에서도 EW가 MC 대비 우월 확인. 상세 분석은 [`docs/backtest_results_2009_2026.md`](docs/backtest_results_2009_2026.md) 참조.
+
+#### 2. 기존 단기 백테스트 결과 (2017-2026, 64개월 OOS, 2026-04-06)
+```bash
+python main.py backtest 2017-12-31 2026-03-31 --min-is-months 36 --num-sims 100000
+# → 651초(~11분)
 ```
 
-**과적합 개선 이력:**
+**과적합 개선 이력 (64개월):**
 ```
 기존 MC+믹스:        CAGR=+0.14%, Sharpe=0.054, Deflation=0.013
 Phase 1 EW+스킵:     CAGR=+0.39%, Sharpe=0.092, Deflation=0.049
-Phase 2 EW+t-stat:   CAGR=+0.95%, Sharpe=0.243, Deflation=0.139 (현재)
+Phase 2 EW+t-stat:   CAGR=+0.95%, Sharpe=0.243, Deflation=0.139
 ```
 
-#### 2. 검증: 기존 mp 파이프라인 영향 없음 확인
+#### 3. 검증: 기존 mp 파이프라인 영향 없음 확인
 ```bash
 # 백테스트 전후 mp test 실행 → 동일 결과 확인
 python main.py mp test test_data.csv
@@ -360,6 +360,7 @@ git checkout -- data/hardcoded_weights.csv
 **산출 파일:**
 - `output/walk_forward_results.csv` — OOS 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
 - `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
+- `docs/backtest_results_2009_2026.md` — 2009-2026 136개월 OOS 분석 보고서
 
 ---
 
@@ -377,7 +378,7 @@ git checkout -- data/hardcoded_weights.csv
 | `portfolio_rank_weights` | (0.6, 0.4) | 포트폴리오: CAGR + MDD | `optimization.py` |
 | `min_sector_stocks` | 10 | 섹터-날짜 최소 종목 수 | `factor_analysis.py` |
 | `max_zero_return_months` | 10 | 0 수익률 허용 최대 월 수 | `model_portfolio.py` |
-| `backtest_start` | "2017-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
+| `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
 | `min_downside_obs` | 20 | 하락 상관관계 최소 관측 수 | `correlation.py` |
 | `num_sims` | 1,000,000 | 몬테카를로 시뮬레이션 횟수 | `optimization.py` |
 
