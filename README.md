@@ -176,14 +176,20 @@
 
 | 순위 | 지표 | 설명 | 해석 |
 |------|------|------|------|
-| 1순위 | Funnel Value-Add | EW_All vs EW_Top50 vs MP_Final 비교 | C>B>A 정상, B>C>A 최적화 과적합, A>B 필터과적합 |
+| 1순위 | Funnel Value-Add | EW_All vs EW_Top50 vs Constrained EW 비교 | C>B>A 정상, B>C>A style_cap 제약이 수익 깎음, A>B 필터과적합 |
 | 2순위 | OOS Percentile Tracking | weight>0 팩터의 OOS 백분위 생존율 | 상위40% 견고, 40~60% 보통, 60%+ 과적합의심 |
 | 3순위 | Strict Jaccard | weight>0 팩터 집합 안정성 | >0.5 안정, 0.3~0.5 보통, <0.3 불안정 |
 | 4순위(보조) | IS-OOS Rank Corr | IS CAGR 순위 vs OOS 실현 수익률 순위 Spearman | >0.3 양호, ≈0 무관, <0 과적합 |
 | 5순위(보조) | Deflation Ratio | OOS CAGR / IS CAGR | >0.6 양호, 0.3~0.6 주의, <0.3 심각 |
 
 ### 벤치마크 비교 (Step 0)
-`--benchmark` 옵션으로 MP vs. 동일가중(1/N) 비교를 수행한다. IS 전체 기간의 Sanity Check 용도.
+`--benchmark` 옵션으로 Constrained EW vs. 단순 동일가중(1/N) 비교를 수행한다. IS 전체 기간의 Sanity Check 용도.
+
+### Constrained EW 가 "최적화" 라는 이름의 함정
+현재 파이프라인의 최종 포트폴리오는 **Top-N 동일가중에 style_cap(25%) 재분배만 추가된
+형태**로, 공분산/리스크 모델 기반 최적화는 포함하지 않는다 (커밋 `8dfb64e` 에서 Monte Carlo
+최적화 제거). 학습되는 가중치가 없으므로 funnel에서 `Constrained EW < EW_Top50` 패턴이
+나온다면 이는 "최적화 과적합"이 아니라 **style_cap 제약이 OOS 수익을 깎는 것**을 의미한다.
 
 ### 핵심 모듈
 - `service/backtest/walk_forward_engine.py`: WalkForwardEngine 클래스 (오케스트레이터)
@@ -228,7 +234,7 @@ service/
 │   ├── correlation.py          # calculate_downside_correlation
 │   ├── optimization.py         # optimize_constrained_weights (hardcoded/equal_weight)
 │   ├── weight_construction.py  # build_factor_weight_frames, aggregate_mp_weights, calculate_style_weights, construct_long_short_df, calculate_vectorized_return
-│   └── benchmark_comparison.py # MP vs. 동일가중(1/N) 벤치마크 비교
+│   └── benchmark_comparison.py # Constrained EW vs. 동일가중(1/N) 벤치마크 비교
 │
 └── backtest/
     ├── walk_forward_engine.py  # Walk-Forward (Expanding Window) 오케스트레이터
@@ -265,7 +271,7 @@ python main.py backtest 2009-12-31 2026-03-31 \
 # 테스트 모드
 python main.py backtest test test_data.csv --min-is-months 4
 
-# 벤치마크 비교 (MP vs. 동일가중)
+# 벤치마크 비교 (Constrained EW vs. 동일가중)
 python main.py mp 2009-12-31 2026-03-31 --benchmark
 ```
 
@@ -278,7 +284,7 @@ result = engine.run("2009-12-31", "2026-03-31")
 
 # OOS 성과 확인
 result.calc_performance()           # CAGR, MDD, Sharpe, Calmar
-result.compare_mp_vs_ew_oos()       # MP vs. EW 비교
+result.compare_cew_vs_ew_oos()     # Constrained EW vs. EW 비교
 result.to_csv("output/wf.csv")      # 결과 저장
 ```
 
@@ -286,7 +292,7 @@ result.to_csv("output/wf.csv")      # 결과 저장
 백테스트 결과 및 과적합 진단 상세는 [`docs/backtest_results_2009_2026.md`](docs/backtest_results_2009_2026.md) 참조.
 
 **산출 파일:**
-- `output/walk_forward_results.csv` — OOS 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
+- `output/walk_forward_results.csv` — OOS 월별 Constrained EW / EW / EW_All / EW_Top50 수익률 + 누적 수익률
 - `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
 
 ---
@@ -299,7 +305,12 @@ result.to_csv("output/wf.csv")      # 결과 저장
 |---------|-----|------|-----------|
 | `style_cap` | 0.25 | 스타일 캡 (프로덕션 규제 요건) | `optimization.py` |
 | `transaction_cost_bps` | 30.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
-| `top_factor_count` | 50 | CAGR 기준 상위 팩터 선정 수 | `model_portfolio.py` |
+| `top_factor_count` | 50 | rank_score 기준 상위 팩터 선정 수 | `model_portfolio.py` |
+| `factor_ranking_method` | "tstat" | 팩터 랭킹 방식 (`shrunk_tstat` / `tstat` / `cagr`) | `walk_forward_engine.py` |
+| `use_cluster_dedup` | False | Top-N Hierarchical Clustering 중복 제거 (Sprint 1-B) | `walk_forward_engine.py` |
+| `n_clusters` | 18 | 클러스터 수 (`use_cluster_dedup=True`일 때) | `factor_selection.py` |
+| `per_cluster_keep` | 3 | 클러스터당 유지 팩터 수 | `factor_selection.py` |
+| `newey_west_lag` | 3 | Newey-West 보정 lag (meta_data 진단 컬럼) | `factor_selection.py` |
 | `spread_threshold_pct` | 0.10 | L/N/S 라벨링 임계값 | `factor_analysis.py` |
 | `min_sector_stocks` | 10 | 섹터-날짜 최소 종목 수 | `factor_analysis.py` |
 | `max_zero_return_months` | 10 | 0 수익률 허용 최대 월 수 | `model_portfolio.py` |

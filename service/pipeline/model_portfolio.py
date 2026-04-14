@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
-"""모델 포트폴리오(MP) 생성 파이프라인 오케스트레이터.
+"""Model Portfolio(MP) 생성 파이프라인 오케스트레이터.
 
 200+ 팩터 데이터를 분석하여 최종 투자 포트폴리오(MP)를 생성한다.
+현재 MP는 Top-N 동일가중(equal-weight)에 style_cap(기본 25%) 제약만 추가한
+Constrained EW 방식으로 구성된다. 공분산/리스크 모델 기반 최적화는 포함하지
+않는다 (커밋 8dfb64e에서 Monte Carlo 최적화는 제거됨).
+
 각 단계의 실제 로직은 별도 모듈에 위치하며, 이 파일은 조율만 담당한다.
 
 모듈 구조:
 - factor_analysis.py: 5분위 분석 + 섹터 필터링
-- correlation.py: 하락 상관관계
-- optimization.py: 가중치 계산
+- correlation.py: 하락 상관관계 (현재 계산만 되고 사용 안 됨)
+- optimization.py: 가중치 계산 (equal_weight + style_cap)
 - weight_construction.py: 롱/숏 포트폴리오 수익률 + MP 가중치 구성
 """
 from __future__ import annotations
@@ -85,10 +89,12 @@ def aggregate_factor_returns(
 
 
 class ModelPortfolioPipeline:
-    """모델 포트폴리오 생성 파이프라인.
+    """Model Portfolio(MP) 생성 파이프라인.
 
-    파이프라인의 각 단계를 순차적으로 실행하며,
-    중간 결과물을 인스턴스 변수로 보관하여 디버깅과 분석에 활용할 수 있다.
+    현재 MP는 Top-N 팩터를 동일가중(1/N)으로 할당한 뒤 style_cap 제약
+    (기본 25%)을 반복 재분배 적용하는 Constrained EW 방식으로 구성된다.
+    파이프라인의 각 단계를 순차적으로 실행하며, 중간 결과물을 인스턴스 변수로
+    보관하여 디버깅과 분석에 활용할 수 있다.
 
     사용법:
         pipeline = ModelPortfolioPipeline(PARAM, DATA_DIR / "factor_info.csv")
@@ -320,6 +326,18 @@ class ModelPortfolioPipeline:
         meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
         meta["rank_style"] = meta.groupby("styleName")["cagr"].rank(ascending=False)
         meta["rank_total"] = meta["cagr"].rank(ascending=False)
+
+        # Sprint 1-C: Newey-West 보정 t-stat 진단 컬럼 (랭킹 교체 X, 관찰용)
+        from service.backtest.factor_selection import compute_newey_west_tstat, compute_tstat
+
+        monthly_rets = ret_df.iloc[1:][meta["factorAbbreviation"].tolist()]
+        nw_lag = int(self.pipeline_params.get("newey_west_lag", 3))
+        meta["tstat"] = compute_tstat(monthly_rets).reindex(meta["factorAbbreviation"]).values
+        meta["newey_west_tstat"] = (
+            compute_newey_west_tstat(monthly_rets, lag=nw_lag)
+            .reindex(meta["factorAbbreviation"]).values
+        )
+
         meta = meta.sort_values("cagr", ascending=False).reset_index(drop=True)
 
         # 메타 저장
@@ -386,9 +404,9 @@ class ModelPortfolioPipeline:
 
 
 def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, test_file: str | None = None) -> None:
-    """모델 포트폴리오 파이프라인 실행 (backward compatibility wrapper).
+    """Model Portfolio 파이프라인 실행 래퍼.
 
-    main.py에서 호출하는 기존 함수 시그니처를 유지한다.
+    main.py의 CLI 엔트리 포인트.
     내부적으로 ModelPortfolioPipeline 클래스를 생성하고 run()을 호출한다.
     """
     pipeline = ModelPortfolioPipeline(

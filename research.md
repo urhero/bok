@@ -9,7 +9,7 @@
 
 ### 1.1 목적
 
-BOK은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 모델 포트폴리오(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다.
+BOK은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 Constrained EW 포트폴리오 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 Top-N 팩터 동일가중에 `style_cap`(기본 25%) 제약을 부가한 형태로 최종 종목별 투자 비중을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다. 공분산/리스크 모델 기반 최적화는 커밋 `8dfb64e`에서 제거됨.
 
 ### 핵심 Funnel 구조
 
@@ -27,7 +27,7 @@ main.py (CLI)
        ├→ factor_analysis.py       [5분위 분석]
        ├→ correlation.py           [하락 상관관계]
        ├→ optimization.py          [가중치 계산]
-       └→ weight_construction.py   [롱/숏 수익률 + MP 비중 구성]
+       └→ weight_construction.py   [롱/숏 수익률 + Constrained EW 비중 구성]
 ```
 
 ### 1.3 기술 스택
@@ -51,11 +51,11 @@ main.py (CLI)
 | 커맨드 | 용도 | 호출 경로 |
 |--------|------|-----------|
 | `python main.py download <start> <end>` | SQL → parquet 다운로드 | `run_download_pipeline()` |
-| `python main.py mp <start> <end>` | parquet → MP CSV 생성 | `run_model_portfolio_pipeline()` → `ModelPortfolioPipeline.run()` |
+| `python main.py mp <start> <end>` | parquet → Constrained EW CSV 생성 | `run_model_portfolio_pipeline()` → `ModelPortfolioPipeline.run()` |
 | `python main.py mp test <file>` | 소량 데이터 테스트 모드 | 동일 경로, `test_file` 인자 활성 |
 | `python main.py mp --report` | PDF 보고서만 생성 후 종료 | `_generate_report()` → `return` (early return) |
 | `python main.py backtest <start> <end>` | Walk-Forward OOS 백테스트 + 과적합 진단 | `WalkForwardEngine.run()` → `generate_overfit_report()` |
-| `python main.py mp <start> <end> --benchmark` | MP vs. 동일가중 벤치마크 비교 | `compare_vs_benchmark()` |
+| `python main.py mp <start> <end> --benchmark` | Constrained EW vs. 동일가중 벤치마크 비교 | `compare_vs_benchmark()` |
 
 ---
 
@@ -302,7 +302,7 @@ style_ls_weight = ls_weight * factor_weight / style_fw_sum
 ```python
 # 전체 팩터의 mp_ls_weight 합산 → MP 행
 agg_w = weight_raw.groupby(["ddt", "ticker", "isin", "gvkeyiid"])[["mp_ls_weight", "factor_weight"]].sum()
-agg_w["style"] = "MP"
+agg_w["style"] = "CEW"
 ```
 
 **출력 파일 4종**:
@@ -594,7 +594,7 @@ Tier 1 (6개월마다): 규칙 학습 + IS 규칙을 전체 데이터에 적용
   - aggregate_factor_returns 1회 실행
   - 산출물: precomputed_ret_df (전기간 x 유효 팩터 수익률 행렬)
 
-Tier 2 (3개월마다): 팩터 선정 + 가중치 최적화
+Tier 2 (3개월마다): 팩터 선정 + style_cap 기반 가중치 재분배
   - precomputed_ret_df에서 IS 구간만 슬라이스 (aggregate 재실행 불필요)
   - CAGR -> 상위 팩터 선정 -> [6] 실행
   - 산출물: cached_weights, cached_meta
@@ -632,13 +632,16 @@ Tier 3 (매월): OOS 수익률 조회
 OOS 구간에서 3개 포트폴리오의 성과(CAGR, MDD)를 동시 비교:
 - A. EW_All: 전체 유효 팩터 동일가중 (시장/팩터 베타)
 - B. EW_Top50: Top-50 후보군 동일가중 (1차 필터링 실력)
-- C. MP_Final: 최종 가중 포트폴리오 (최종 실력)
+- C. Constrained EW: Top-N 동일가중 + style_cap(25%) 재분배 (제약 부가)
 
 | 패턴 | 의미 |
 |------|------|
-| C > B > A | 정상 -- 필터링+최적화 모두 가치 창출 |
-| B > C > A | 최적화 과적합 -- Top-50 EW가 더 나음 |
-| A > B | 1차 필터 과적합 -- CAGR 기반 필터링 자체가 과거 우연 |
+| C > B > A | 정상 -- 필터링과 style_cap 제약 모두 가치 창출 |
+| B > C > A | OPTIMIZATION_OVERFIT -- style_cap 재분배가 OOS 수익을 깎음 (학습 가중치 없음) |
+| A > B | FILTER_OVERFIT -- rank_score 기반 Top-50 선정 자체가 과거 우연 |
+
+> 현재 C는 학습된 가중치가 아니라 **deterministic style_cap 재분배**일 뿐이다
+> (공분산/MC 최적화는 커밋 `8dfb64e`에서 제거됨).
 
 **2순위: OOS Percentile Tracking (최종 팩터 생존율)**
 
@@ -684,8 +687,20 @@ python main.py mp <start> <end> --benchmark
 
 **현재 기본 설정 (config.py):**
 - `optimization_mode = "equal_weight"` (동일가중, 권장)
-- `factor_ranking_method = "tstat"` (t-통계량 랭킹)
+- `factor_ranking_method = "tstat"` (기본; Sprint 1-A `"shrunk_tstat"` 실험 옵션 추가됨)
+- `use_cluster_dedup = False` (Sprint 1-B 실험; True 시 Hierarchical Clustering 기반 Top-N 중복 제거)
 - `backtest_start = "2009-12-31"`
+
+**Sprint 1 개선 (미활성 기본값, 실험 시 toggle):**
+- **1-A `shrunk_tstat`** — `service/backtest/factor_selection.py:compute_shrunk_tstat()`
+  James-Stein 계열 shrinkage로 팩터 t-stat을 스타일 그룹 평균 쪽으로 `lambda` 만큼 축소.
+  `lambda = var_within_style / (var_within_style + var_between_styles)` — 데이터 주도 결정.
+- **1-B `use_cluster_dedup`** — `cluster_and_dedup_top_n()`
+  IS 구간 팩터 L-S 수익률 상관으로 `1 - |corr|` distance, `scipy.cluster.hierarchy.linkage(method="average")`,
+  `fcluster(maxclust=n_clusters)`. 클러스터별 rank_score 상위 `per_cluster_keep` 개만 통과.
+  IS 전용 (OOS look-ahead 방지).
+- **1-C Newey-West 진단** — `compute_newey_west_tstat()`
+  Bartlett kernel, lag=3 기본. `meta_data.csv`의 `newey_west_tstat` 컬럼으로만 노출, 랭킹 교체 X.
 
 **산출 파일:**
 - `output/walk_forward_results.csv` -- OOS 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률

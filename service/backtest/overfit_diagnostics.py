@@ -32,70 +32,74 @@ logger = logging.getLogger(__name__)
 def calc_funnel_value_add(walk_forward_result: WalkForwardResult) -> dict[str, Any]:
     """파이프라인 단계별 가치 창출 검증.
 
-    A. EW_All:    전체 유효 팩터 동일가중 (시장/팩터 베타)
-    B. EW_Top50:  1차 필터링 후 동일가중 (필터링 실력)
-    C. MP_Final:  최종 가중 포트폴리오 (최종 실력)
+    A. EW_All:       전체 유효 팩터 동일가중 (시장/팩터 베타)
+    B. EW_Top50:     1차 필터링 후 동일가중 (필터링 실력)
+    C. Constrained EW: Top-N 동일가중 + style_cap(25%) 재분배 (제약 부가)
+
+    현재 C는 학습된 가중치가 아니라 deterministic 재분배일 뿐이다
+    (공분산/MC 최적화는 커밋 8dfb64e에서 제거됨).
 
     판별 기준 (CAGR 기준):
-      C > B > A -> 정상 (필터링+최적화 모두 가치 창출)
-      B > C > A -> 최적화 과적합 (최적화가 오히려 수익 깎음)
-      A > B     -> 1차 필터 과적합 (CAGR 기준 필터링 자체가 과거 우연)
+      C > B > A -> 정상 (필터링 + style_cap 제약 모두 가치 창출)
+      B > C > A -> OPTIMIZATION_OVERFIT: style_cap 재분배가 OOS 수익을 깎음
+      A > B     -> FILTER_OVERFIT: rank_score 기반 Top-N 선정 자체가 과거 우연
     """
     # OOS 데이터가 없으면 판별 불가
     if len(walk_forward_result.oos_returns) == 0:
         return {
             "pattern": "INSUFFICIENT_DATA",
-            "ew_all_cagr": 0.0, "ew_top50_cagr": 0.0, "mp_cagr": 0.0,
-            "ew_all_mdd": 0.0, "ew_top50_mdd": 0.0, "mp_mdd": 0.0,
-            "ew_all_sharpe": 0.0, "ew_top50_sharpe": 0.0, "mp_sharpe": 0.0,
+            "ew_all_cagr": 0.0, "ew_top50_cagr": 0.0, "cew_cagr": 0.0,
+            "ew_all_mdd": 0.0, "ew_top50_mdd": 0.0, "cew_mdd": 0.0,
+            "ew_all_sharpe": 0.0, "ew_top50_sharpe": 0.0, "cew_sharpe": 0.0,
             "interpretation": "OOS 데이터 부족 - Funnel Value-Add 판별 불가",
         }
 
-    mp_perf = walk_forward_result.calc_performance()
+    cew_perf = walk_forward_result.calc_performance()
     ew_all_perf = walk_forward_result.calc_ew_all_performance()
     ew_top50_perf = walk_forward_result.calc_ew_top50_performance()
 
     cagr_a = ew_all_perf["cagr"]
     cagr_b = ew_top50_perf["cagr"]
-    cagr_c = mp_perf["cagr"]
+    cagr_cew = cew_perf["cagr"]
 
     mdd_a = ew_all_perf["mdd"]
     mdd_b = ew_top50_perf["mdd"]
-    mdd_c = mp_perf["mdd"]
+    mdd_cew = cew_perf["mdd"]
 
     # 판별
     if cagr_a > cagr_b:
         pattern = "FILTER_OVERFIT"
         interpretation = (
             f"A(EW_All)={cagr_a:.4%} > B(EW_Top50)={cagr_b:.4%} "
-            f"-> 1차 필터 과적합: CAGR 기반 Top-50 선정 자체가 과거 우연. "
-            f"하위 150개 팩터 평균보다도 못함"
+            f"-> 1차 필터 과적합: rank_score(tstat/shrunk_tstat 등) 기반 Top-50 선정 "
+            f"자체가 과거 우연. 하위 팩터 평균보다도 못함."
         )
-    elif cagr_b > cagr_c:
+    elif cagr_b > cagr_cew:
         pattern = "OPTIMIZATION_OVERFIT"
         interpretation = (
-            f"B(EW_Top50)={cagr_b:.4%} > C(MP)={cagr_c:.4%} > A(EW_All)={cagr_a:.4%} "
-            f"-> 최적화 과적합: Top-50 필터링은 유효하나, 가중치 최적화가 IS를 외워서 OOS 수익을 깎음. "
-            f"Top-50 동일가중이 더 나은 결과"
+            f"B(EW_Top50)={cagr_b:.4%} > C(Constrained EW)={cagr_cew:.4%} > A(EW_All)={cagr_a:.4%} "
+            f"-> style_cap 재분배 제약이 OOS 수익을 깎음. 현재 Constrained EW는 "
+            f"Top-50 동일가중에 스타일캡만 추가한 형태이며 학습되는 가중치는 없음. "
+            f"Top-50 동일가중이 더 나은 결과."
         )
     else:
         pattern = "NORMAL"
         interpretation = (
-            f"C(MP)={cagr_c:.4%} > B(EW_Top50)={cagr_b:.4%} > A(EW_All)={cagr_a:.4%} "
-            f"-> 정상: 필터링과 가중치 최적화 모두 가치 창출"
+            f"C(Constrained EW)={cagr_cew:.4%} > B(EW_Top50)={cagr_b:.4%} > A(EW_All)={cagr_a:.4%} "
+            f"-> 정상: 필터링과 style_cap 제약 모두 가치 창출."
         )
 
     return {
         "pattern": pattern,
         "ew_all_cagr": cagr_a,
         "ew_top50_cagr": cagr_b,
-        "mp_cagr": cagr_c,
+        "cew_cagr": cagr_cew,
         "ew_all_mdd": mdd_a,
         "ew_top50_mdd": mdd_b,
-        "mp_mdd": mdd_c,
+        "cew_mdd": mdd_cew,
         "ew_all_sharpe": ew_all_perf["sharpe"],
         "ew_top50_sharpe": ew_top50_perf["sharpe"],
-        "mp_sharpe": mp_perf["sharpe"],
+        "cew_sharpe": cew_perf["sharpe"],
         "interpretation": interpretation,
     }
 
@@ -434,9 +438,9 @@ def generate_overfit_report(walk_forward_result: WalkForwardResult, full_period_
     deflation = calc_deflation_ratio(walk_forward_result, full_period_cagr)
 
     # OOS 성과
-    mp_perf = walk_forward_result.calc_performance()
+    cew_perf = walk_forward_result.calc_performance()
     ew_perf = walk_forward_result.calc_ew_performance()
-    comparison = walk_forward_result.compare_mp_vs_ew_oos()
+    comparison = walk_forward_result.compare_cew_vs_ew_oos()
 
     n_oos = len(walk_forward_result.oos_returns)
 
@@ -445,10 +449,10 @@ def generate_overfit_report(walk_forward_result: WalkForwardResult, full_period_
         "funnel_pattern": funnel["pattern"],
         "funnel_ew_all_cagr": funnel["ew_all_cagr"],
         "funnel_ew_top50_cagr": funnel["ew_top50_cagr"],
-        "funnel_mp_cagr": funnel["mp_cagr"],
+        "funnel_cew_cagr": funnel["cew_cagr"],
         "funnel_ew_all_mdd": funnel["ew_all_mdd"],
         "funnel_ew_top50_mdd": funnel["ew_top50_mdd"],
-        "funnel_mp_mdd": funnel["mp_mdd"],
+        "funnel_cew_mdd": funnel["cew_mdd"],
         "funnel_interpretation": funnel["interpretation"],
         # 2순위: OOS Percentile Tracking
         "oos_avg_percentile": percentile["avg_percentile"],
@@ -464,17 +468,17 @@ def generate_overfit_report(walk_forward_result: WalkForwardResult, full_period_
         "deflation_ratio": deflation.get("deflation_ratio", np.nan),
         "deflation_interpretation": deflation["interpretation"],
         # OOS 성과
-        "oos_cagr": mp_perf["cagr"],
-        "oos_mdd": mp_perf["mdd"],
-        "oos_sharpe": mp_perf["sharpe"],
-        "oos_calmar": mp_perf["calmar"],
+        "oos_cagr": cew_perf["cagr"],
+        "oos_mdd": cew_perf["mdd"],
+        "oos_sharpe": cew_perf["sharpe"],
+        "oos_calmar": cew_perf["calmar"],
         # OOS EW 성과
         "oos_ew_cagr": ew_perf["cagr"],
         "oos_ew_mdd": ew_perf["mdd"],
         "oos_ew_sharpe": ew_perf["sharpe"],
-        # MP vs EW 비교
-        "mp_vs_ew_excess_cagr": comparison["excess_cagr"],
-        "mp_vs_ew_win_rate": comparison["win_rate"],
+        # CEW vs EW_Top50 비교
+        "cew_vs_ew_excess_cagr": comparison["excess_cagr"],
+        "cew_vs_ew_win_rate": comparison["win_rate"],
         # 경고
         "warning": (
             f"OOS 기간이 {n_oos}개월({n_oos / 12:.1f}년)이므로 특정 매크로 환경에 편향되었을 수 있음. "
@@ -516,9 +520,9 @@ def print_overfit_report(report: dict[str, Any]) -> None:
         "Top-50 후보군 동일가중",
     )
     funnel_table.add_row(
-        "C. MP_Final", f"{report['funnel_mp_cagr']:.4%}",
-        f"{report['funnel_mp_mdd']:.4%}",
-        "최종 가중 포트폴리오",
+        "C. Constrained EW", f"{report['funnel_cew_cagr']:.4%}",
+        f"{report['funnel_cew_mdd']:.4%}",
+        "Top-N EW + style_cap 25%",
     )
 
     console.print(funnel_table)
@@ -569,16 +573,16 @@ def print_overfit_report(report: dict[str, Any]) -> None:
     console.print(table)
 
     # 성과 비교 테이블
-    perf_table = Table(title="OOS 성과 비교 (MP vs. Equal-Weight)", show_header=True)
+    perf_table = Table(title="OOS 성과 비교 (Constrained EW vs. Pure EW)", show_header=True)
     perf_table.add_column("Metric", style="bold")
-    perf_table.add_column("MP (Optimized)", justify="right")
-    perf_table.add_column("EW (1/N)", justify="right")
+    perf_table.add_column("Constrained EW", justify="right")
+    perf_table.add_column("EW_Top50 (1/N)", justify="right")
 
     perf_table.add_row("CAGR", f"{report['oos_cagr']:.4%}", f"{report['oos_ew_cagr']:.4%}")
-    perf_table.add_row("Excess CAGR", f"{report['mp_vs_ew_excess_cagr']:.4%}", "-")
+    perf_table.add_row("Excess CAGR", f"{report['cew_vs_ew_excess_cagr']:.4%}", "-")
     perf_table.add_row("MDD", f"{report['oos_mdd']:.4%}", f"{report['oos_ew_mdd']:.4%}")
     perf_table.add_row("Sharpe", f"{report['oos_sharpe']:.4f}", f"{report['oos_ew_sharpe']:.4f}")
-    perf_table.add_row("Win Rate", f"{report['mp_vs_ew_win_rate']:.2%}", "-")
+    perf_table.add_row("Win Rate", f"{report['cew_vs_ew_win_rate']:.2%}", "-")
 
     console.print(perf_table)
 

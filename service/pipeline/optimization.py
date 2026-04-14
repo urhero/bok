@@ -93,11 +93,15 @@ def optimize_constrained_weights(
     tol: float = 1e-12,
     test_mode: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """스타일 캡 하 최적 포트폴리오 가중치를 결정한다.
+    """스타일 캡 하 포트폴리오 가중치를 결정한다.
+
+    현재 "최적화"라는 이름과 달리, 공분산/리스크 모델 기반의 진짜 최적화는
+    제거됐다 (커밋 8dfb64e). 두 모드 모두 학습되는 가중치 없음.
 
     두 가지 모드를 지원한다:
-    - "hardcoded": 프로덕션용 고정 가중치 반환 (기본값)
-    - "equal_weight": 1/N 동일가중 + 스타일 캡 재분배 (권장)
+    - "equal_weight": 1/N 동일가중 + 스타일 캡 재분배 (config.py 기본값;
+      backtest 모드에서 "hardcoded"를 주면 자동으로 이 모드로 변환됨)
+    - "hardcoded": 프로덕션용 고정 가중치 CSV (data/hardcoded_weights.csv) 반환
 
     Args:
         rtn_df: (날짜 x 팩터) 월간 수익률 행렬

@@ -91,7 +91,7 @@ class TestFunnelValueAdd:
         )
         funnel = calc_funnel_value_add(result)
         assert funnel["pattern"] == "NORMAL"
-        assert funnel["mp_cagr"] > funnel["ew_top50_cagr"]
+        assert funnel["cew_cagr"] > funnel["ew_top50_cagr"]
 
     def test_optimization_overfit_pattern(self):
         """B > C > A -> OPTIMIZATION_OVERFIT 패턴.
@@ -137,7 +137,7 @@ class TestFunnelValueAdd:
         funnel = calc_funnel_value_add(result)
         assert "ew_all_cagr" in funnel
         assert "ew_top50_cagr" in funnel
-        assert "mp_cagr" in funnel
+        assert "cew_cagr" in funnel
         assert "interpretation" in funnel
 
     def test_insufficient_data(self):

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Walk-Forward (Expanding Window) 백테스트 엔진.
 
-기존 ModelPortfolioPipeline을 감싸는 오케스트레이터.
+ModelPortfolioPipeline을 감싸는 Walk-Forward 오케스트레이터.
 파이프라인 모듈의 내부 코드를 수정하지 않고, 순수 함수를 호출하여
 IS/OOS 분할 → 규칙 학습 → 팩터 수익률 사전 계산 → OOS 적용을 수행한다.
 
@@ -22,6 +22,11 @@ from rich.progress import track
 
 from config import PARAM, PIPELINE_PARAMS
 from service.backtest.data_slicer import get_oos_dates, slice_data_by_date
+from service.backtest.factor_selection import (
+    cluster_and_dedup_top_n,
+    compute_shrunk_tstat,
+    compute_tstat,
+)
 from service.backtest.result_stitcher import WalkForwardResult
 from service.pipeline.correlation import calculate_downside_correlation
 from service.pipeline.factor_analysis import (
@@ -317,7 +322,7 @@ class WalkForwardEngine:
         cached_meta: pd.DataFrame | None = None
         cached_selected_factors: list[str] | None = None
         cached_top50_factors: list[str] | None = None
-        cached_is_mp_cagr: float = 0.0  # IS 구간 MP CAGR (Deflation Ratio용)
+        cached_is_cew_cagr: float = 0.0  # IS 구간 CEW CAGR (Deflation Ratio용)
 
         results: list[dict[str, Any]] = []
 
@@ -389,41 +394,52 @@ class WalkForwardEngine:
                         cagr_series = cum ** (12 / months) - 1
 
                         ranking_method = pp.get("factor_ranking_method", "cagr")
+                        monthly_rets = ret_df_is.iloc[1:]  # 첫 행(기준점 0) 제외
 
-                        if ranking_method == "tstat":
-                            # t-stat: mean / (std / sqrt(N)) -- 노이즈 팩터 페널티
-                            monthly_rets = ret_df_is.iloc[1:]  # 첫 행(기준점 0) 제외
-                            t_stats = monthly_rets.mean() / (monthly_rets.std() / np.sqrt(len(monthly_rets)))
-                            rank_score = t_stats
+                        # 스타일 맵 구성 (IS 전용 rule_bundle 기반)
+                        style_map_full: dict[str, str] = {}
+                        if cached_rule_bundle:
+                            kept_abbrs = cached_rule_bundle.get("kept_abbrs", []) or []
+                            kept_styles = cached_rule_bundle.get("kept_styles", []) or []
+                            for abbr, style in zip(kept_abbrs, kept_styles):
+                                style_map_full[abbr] = style
+
+                        if ranking_method == "shrunk_tstat":
+                            rank_score = compute_shrunk_tstat(monthly_rets, style_map_full)
+                        elif ranking_method == "tstat":
+                            rank_score = compute_tstat(monthly_rets)
                         else:
                             rank_score = cagr_series
 
                         meta_df = pd.DataFrame({
                             "factorAbbreviation": ret_df_is.columns,
                             "cagr": cagr_series.values,
-                            "rank_score": rank_score.values,
+                            "rank_score": rank_score.reindex(ret_df_is.columns).values,
                         })
 
-                        # kept_styles 매핑
-                        if cached_rule_bundle:
-                            style_map_full = {}
-                            fm = cached_rule_bundle.get("factor_metadata")
-                            if fm is not None:
-                                for _, row in fm.iterrows():
-                                    style_map_full[row["factorAbbreviation"]] = row["styleName"]
-                            meta_df["styleName"] = meta_df["factorAbbreviation"].map(style_map_full).fillna("Unknown")
-                            meta_df["factorName"] = meta_df["factorAbbreviation"]
-                        else:
-                            meta_df["styleName"] = "Unknown"
-                            meta_df["factorName"] = meta_df["factorAbbreviation"]
+                        meta_df["styleName"] = meta_df["factorAbbreviation"].map(style_map_full).fillna("Unknown")
+                        meta_df["factorName"] = meta_df["factorAbbreviation"]
 
                         meta_df["rank_style"] = meta_df.groupby("styleName")["rank_score"].rank(ascending=False)
                         meta_df["rank_total"] = meta_df["rank_score"].rank(ascending=False)
                         meta_df = meta_df.sort_values("rank_score", ascending=False).reset_index(drop=True)
 
                         top_n = min(pp["top_factor_count"], len(meta_df))
-                        meta_top = meta_df.head(top_n)
-                        selected = meta_top["factorAbbreviation"].tolist()
+
+                        # Sprint 1-B: Hierarchical Clustering 기반 중복 제거
+                        if pp.get("use_cluster_dedup", False):
+                            score_series = meta_df.set_index("factorAbbreviation")["rank_score"]
+                            selected = cluster_and_dedup_top_n(
+                                monthly_rets,
+                                score_series,
+                                n_clusters=int(pp.get("n_clusters", 18)),
+                                per_cluster_keep=int(pp.get("per_cluster_keep", 3)),
+                                top_n=top_n,
+                            )
+                            meta_top = meta_df.set_index("factorAbbreviation").loc[selected].reset_index()
+                        else:
+                            meta_top = meta_df.head(top_n)
+                            selected = meta_top["factorAbbreviation"].tolist()
                         cached_top50_factors = list(selected)
                         ret_df_selected = ret_df_is[selected]
 
@@ -450,7 +466,7 @@ class WalkForwardEngine:
                                     for f in ret_df_selected.columns if f in raw_new_weights
                                 )
                                 is_cum = (1 + is_weighted_ret).cumprod().iloc[-1]
-                                cached_is_mp_cagr = is_cum ** (12 / is_months) - 1
+                                cached_is_cew_cagr = is_cum ** (12 / is_months) - 1
 
                             # EMA 가중치 블렌딩
                             if self.turnover_smoothing_alpha >= 1.0 or cached_weights is None:
@@ -505,7 +521,7 @@ class WalkForwardEngine:
                 "oos_all_factor_returns": oos_all_factor_returns.to_dict(),
                 "top50_factors": list(cached_top50_factors) if cached_top50_factors else [],
                 "active_factors": [f for f, w in cached_weights.items() if w > 0],
-                "is_mp_cagr": cached_is_mp_cagr,
+                "is_cew_cagr": cached_is_cew_cagr,
             })
 
         elapsed = time.time() - t0
