@@ -14,16 +14,14 @@
 200+ 유효 팩터                      [1]~[3] 데이터 로딩 + 5분위 + 섹터 필터
        │
        ▼
-   Top-50 후보군 (Candidate Pool)   [4] CAGR 기준 상위 50개 선별
+   Top-50 후보군 (Candidate Pool)   [4] t-stat 기준 상위 50개 선별
        │
-       ▼                            [5] 스타일별 2-팩터 믹스 최적화
-   최종 weight>0 팩터 (5~14개)       [6] MC 시뮬레이션으로 비중 할당
-       │                                 (스타일 수에 따라 가변)
+       ▼
+   weight>0 팩터 (최대 50개)         [6] 스타일 캡 하 비중 결정
+       │
        ▼
    종목별 MP 비중 산출               [7] CSV 출력 → Bloomberg Optimizer
 ```
-
-**Top-50은 최적화기에 던져줄 후보 풀일 뿐이다.** 진짜 의사결정의 결정체는 [5]~[6]을 거쳐 비중이 0%를 초과하여 할당된 최종 5~14개 팩터이다.
 
 ---
 
@@ -34,33 +32,18 @@
 - 학술·실무 근거에 기반한 다수(200+) 팩터를 사전에 정의 및 축적
 - 각 팩터는 **스타일 단위(Valuation, Momentum, Quality, Growth 등)**로 분류
 
-### 입력 데이터 (Pipeline-Ready Parquet — 연도별 분할)
-- `data/{benchmark}_factor_{YYYY}.parquet` — **연도별 분할** 팩터 데이터 (factor_info merge 완료, categorical, zstd 압축)
-  - 컬럼: `gvkeyiid, ticker, isin, ddt, sec, val, factorAbbreviation, factorOrder`
-  - 예: `MXCN1A_factor_2018.parquet` (~22MB), `MXCN1A_factor_2024.parquet` (~20MB)
-  - 각 파일 <100MB → GitHub 추적 가능 (단일 파일은 ~168MB로 초과)
-- `data/{benchmark}_mreturn.parquet` — M_RETURN (gvkeyiid × ddt, 단일 파일, ~0.76MB)
-  - 67K행 (19M 팩터행에 중복 저장하지 않음)
-- `data/factor_info.csv` — 팩터 메타 정보 (factorAbbreviation, factorName, styleName, factorOrder)
-- `data/hardcoded_weights.csv` — 프로덕션 가중치 (hardcoded 모드에서 사용)
+### 입력 데이터
+- `data/{benchmark}_factor_{YYYY}.parquet` — 연도별 분할 팩터 데이터
+- `data/{benchmark}_mreturn.parquet` — 월간 수익률
+- `data/factor_info.csv` — 팩터 메타 정보
+- `data/hardcoded_weights.csv` — 프로덕션 고정 가중치 (hardcoded 모드용)
 
-> **분할 저장/로드 유틸리티**: `service/download/parquet_io.py`
-> - `save_factor_parquet_by_year()` — 연도별 분할 저장
-> - `load_factor_parquet()` — 분할 파일 자동 병합 로드 (단일 파일 fallback 지원)
-> - `validate_loaded_factor_data()` — 9가지 무결성 검증 (컬럼, 100% NaN 팩터 분리, NaN 비율, inf, gap, 중복 등)
->   - 100% NaN 팩터는 WARN으로 별도 보고 후 제외, 나머지 유효 데이터에 대해 NaN 비율 10% 임계값 검사
+### 다운로드
+- `python main.py download 2009-12-31 2026-03-31` — 전체 다운로드
+- `python main.py download 2009-12-31 2026-03-31 --incremental` — 증분 다운로드
+- 로드 시 자동 무결성 검증 수행
 
-### 다운로드 (`download_factors.py`)
-- `python main.py download 2009-12-31 2026-03-31` — 전체 다운로드 → 연도별 parquet 분할 저장
-- `python main.py download 2009-12-31 2026-03-31 --incremental` — 증분 다운로드 (해당 연도 파일만 업데이트)
-- 저장 후 자동 검증: 빈 월 감지, 팩터 수 급변, M_RETURN 정합성 (Rich 시각화)
-
-### 코드 구현
-- `_load_data()`: `load_factor_parquet(validate=True)`로 연도별 분할 파일 자동 병합 로드
-  - 로드 시 9가지 무결성 검증 (컬럼, 100% NaN 팩터 분리, NaN 비율, inf, 월 gap, 중복 등) → ERROR 발견 시 즉시 중단
-  - Fallback: 단일 파일, legacy raw parquet, test CSV
-- `_prepare_metadata()`: factor_info merge (pipeline-ready에서는 skip), M_RETURN 병합
-- 백테스트 시작: `ddt >= 2009-12-31` (→ 2010년부터 실질 성과 반영)
+> 연도별 분할 구조, 검증 항목 상세, fallback 경로는 [research.md §2.3, §4.3](research.md) 참조.
 
 ---
 
@@ -101,33 +84,14 @@
 
 ## [4] 롱-숏 수익률 + 팩터 유니버스 선정
 
-### (a) 롱-숏 수익률 측정
-- **핵심 함수 흐름**
-  - `weight_construction.construct_long_short_df()` — 롱/숏 종목군 구성 (동일가중)
-  - `weight_construction.calculate_vectorized_return()` — 리밸런싱 반영, 턴오버 계산, 거래비용(30bp) 차감
-  - `model_portfolio.aggregate_factor_returns()` — 팩터별 **월간 롱-숏 수익률** 생성
+### (a) 롱-숏 수익률
+- 각 팩터별 롱/숏 포트폴리오 구성 → 거래비용(30bp) 차감 → 월간 L-S 수익률 행렬 생성
+- 핵심 함수: `model_portfolio.aggregate_factor_returns()`
 
-### (b) 팩터 유니버스 최종 선정 (200+ -> Top-50 후보군)
-- **핵심 함수:** `ModelPortfolioPipeline._evaluate_universe()`
-- 팩터별 월간 롱-숏 수익률 행렬 구성
-- 랭킹 산출: **t-stat 기반** (기본값, 노이즈 팩터 페널티) 또는 CAGR 기반 (기존)
-- **상위 50개 팩터를 후보군(Candidate Pool)으로 선정**
-- **하락 상관관계** 계산
-- *이 50개는 [5]~[6]에 투입할 후보일 뿐, 최종 비중 할당은 [6]에서 결정*
-
----
-
-## [5] 2-팩터 믹스 최적화 (기본값: 스킵)
-
-### 핵심 함수
-`optimization.find_optimal_mix()`
-
-> **기본값 `skip_factor_mix=True`:** OOS 실험에서 2-팩터 믹스가 과적합의 주범으로 확인되어 기본 스킵. 기존 방식은 `config.py`에서 `skip_factor_mix=False`로 복원 가능.
-
-### 절차 (skip_factor_mix=False일 때)
-- 스타일별 CAGR 기준 **1위 팩터를 메인 팩터로 선정**
-- 메인 팩터 대비 CAGR + 하락 상관관계를 고려하여 **보조 팩터** 도출
-- 메인-보조 팩터 조합에 대해 비중 0~100% 그리드 탐색 -> CAGR 및 MDD 평가
+### (b) 팩터 유니버스 최종 선정 (200+ -> Top-50)
+- 랭킹 방식: **t-stat 기반** (기본), `shrunk_tstat` / `cagr` 선택 가능
+- 상위 50개를 후보군으로 선정 → 하락 상관관계 계산
+- 최종 비중 할당은 [6]에서 결정
 
 ---
 
@@ -136,17 +100,15 @@
 ### 핵심 함수
 `optimization.optimize_constrained_weights()`
 
-### 가중치 결정 모드 (3가지)
-- `mode="equal_weight"` **(기본값, 권장)**: 1/K 동일가중 + 스타일 캡 25% 재분배
+### 가중치 결정 모드 (2가지)
+- `mode="equal_weight"` **(기본값, 권장)**: 1/N 동일가중 + 스타일 캡 25% 재분배
 - `mode="hardcoded"`: `data/hardcoded_weights.csv`에서 프로덕션 고정 비중 로드
-- `mode="monte_carlo"`: 몬테카를로 최적화로 탐색 (과적합 위험)
 
-> **주의:** Walk-Forward 백테스트(`python main.py backtest`)는 `equal_weight` 또는 `monte_carlo` 모드만 사용한다. `hardcoded` 모드는 프로덕션 전용이며, 백테스트 결과와 일치하지 않는다.
+> 백테스트(`python main.py backtest`)는 `equal_weight` 모드를 사용한다.
 
 ### 절차 (equal_weight 모드)
-- 선정된 팩터에 1/K 동일가중 부여
+- 선정된 팩터에 1/N 동일가중 부여
 - 스타일별 비중 합계가 **스타일 캡(25%)**을 넘지 않도록 비례 재분배
-- `random_seed` 파라미터로 재현성 보장 (기본값 42, None이면 랜덤)
 
 ---
 
@@ -176,39 +138,19 @@
 
 ## [8] Walk-Forward 백테스트 (OOS 과적합 진단)
 
-### 개요
-기존 파이프라인([1]~[7])을 수정하지 않고, 외부에서 감싸는 방식으로 Expanding Window 백테스트를 수행한다. IS 데이터만으로 팩터 선정과 가중치를 결정하고 OOS 1개월 수익률을 기록하는 "의사 실전" 시뮬레이션이다.
+기존 파이프라인([1]~[7])을 감싸 Expanding Window로 실행. IS 데이터만으로 팩터 선정·가중치를 결정하고 OOS 1개월 수익률을 기록한다.
 
-### 계층적 리밸런싱 (Tiered Rebalancing)
-| Tier | 주기 | 대상 | 설명 |
-|------|------|------|------|
-| Tier 1 | 6개월 | [2]~[3] | IS 데이터로 규칙 학습(섹터 제거, L/N/S 라벨) -> 전체 데이터에 IS 규칙 적용 -> 팩터 수익률 사전 계산 |
-| Tier 2 | 3개월 | [4]~[6] | 팩터 선정 + 가중치 최적화 (IS 슬라이스만) |
-| Tier 3 | 매월 | OOS 적용 | precomputed_ret_df에서 조회만 (밀리초) |
+- **계층적 리밸런싱**: Tier 1(6개월, 규칙 학습) / Tier 2(3개월, 팩터 선정) / Tier 3(매월, OOS 조회)
+- **과적합 진단 5지표**: Funnel Value-Add, OOS Percentile Tracking, Strict Jaccard, IS-OOS Rank Correlation, Deflation Ratio
+- **벤치마크 비교**: `--benchmark` 옵션으로 MP vs. 동일가중(1/N) 비교
 
-> **OOS look-ahead bias 방지:** Tier 1에서 5분위 랭킹(횡단면, 안전)은 전체 데이터에서 계산하되, 섹터 제거와 L/N/S 라벨은 IS 전용 규칙(`rule_bundle`)을 직접 적용한다. `filter_and_label_factors()`를 전체 데이터로 재실행하지 않는다.
+> **상세**: 각 Tier의 look-ahead bias 방지 규칙, 5지표 해석 임계값, 판정 패턴(OPTIMIZATION_OVERFIT/FILTER_OVERFIT) 설명은 [research.md §6](research.md) 참조.
 
-### 과적합 진단 3단계 테스트 (우선순위 순)
-
-파이프라인의 2단계 축소(200+ → Top-50 → 최종 weight>0 팩터)가 진짜 가치를 창출했는지 검증한다.
-
-| 순위 | 지표 | 설명 | 해석 |
-|------|------|------|------|
-| 1순위 | Funnel Value-Add | EW_All vs EW_Top50 vs MP_Final 비교 | C>B>A 정상, B>C>A MC과적합, A>B 필터과적합 |
-| 2순위 | OOS Percentile Tracking | weight>0 팩터의 OOS 백분위 생존율 | 상위40% 견고, 40~60% 보통, 60%+ 과적합의심 |
-| 3순위 | Strict Jaccard | weight>0 팩터 집합 안정성 | >0.5 안정, 0.3~0.5 보통, <0.3 불안정 |
-| 4순위(보조) | IS-OOS Rank Corr | IS CAGR 순위 vs OOS 실현 수익률 순위 Spearman | >0.3 양호, ≈0 무관, <0 과적합 |
-| 5순위(보조) | Deflation Ratio | OOS CAGR / IS CAGR | >0.6 양호, 0.3~0.6 주의, <0.3 심각 |
-
-### 벤치마크 비교 (Step 0)
-`--benchmark` 옵션으로 monte_carlo 모드 MP vs. 동일가중(1/N) 비교를 수행한다. IS 전체 기간의 Sanity Check 용도.
-
-### 핵심 모듈
-- `service/backtest/walk_forward_engine.py`: WalkForwardEngine 클래스 (오케스트레이터)
-- `service/backtest/data_slicer.py`: IS/OOS 날짜 분할
-- `service/backtest/result_stitcher.py`: WalkForwardResult 컨테이너
-- `service/backtest/overfit_diagnostics.py`: 과적합 진단 5개 지표 (3단계 핵심 + 2 보조)
-- `service/pipeline/benchmark_comparison.py`: MP vs. EW 벤치마크 비교
+### 용어: MP vs Constrained EW
+- **MP (Model Portfolio)** — 프로덕션 산출물 (Bloomberg Optimizer 입력 CSV). 역할 이름.
+- **Constrained EW** — 현재 MP를 만드는 **구성 방식** (Top-N EW + `style_cap=25%` 재분배).
+- 백테스트 진단 리포트는 구성 방식을 명시하기 위해 "Constrained EW" 라벨을 사용. 프로덕션 CLI/파일명/CSV 컬럼은 "MP" 유지.
+- 과거 MP는 Monte Carlo 최적화로 구성됐으나 커밋 `8dfb64e`에서 제거됨.
 
 ---
 
@@ -220,8 +162,7 @@
 | `[2]` 5분위 분석 | 팩터별 분위 포트폴리오 구성 | `calculate_factor_stats_batch` |
 | `[3]` 섹터 필터 + 라벨링 | 비효과 섹터 제거, L/N/S 분류 | `filter_and_label_factors` |
 | `[4]` 팩터 유니버스 선정 | 롱-숏 수익률 + CAGR 랭킹 | `_evaluate_universe` |
-| `[5]` 팩터 믹스 | 스타일 대표성 + 하락 상관관계 고려 | `find_optimal_mix` |
-| `[6]` 비중 결정 | 스타일 캡 하 최적화 | `optimize_constrained_weights` |
+| `[6]` 비중 결정 | 스타일 캡 하 가중치 계산 | `optimize_constrained_weights` |
 | `[7]` MP 구성 + 출력 | 종목별 최종 비중, CSV 저장 | `_construct_and_export` |
 | `[8]` Walk-Forward 백테스트 | OOS 과적합 진단 | `WalkForwardEngine.run` |
 
@@ -245,9 +186,9 @@ service/
 │   ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
 │   ├── factor_analysis.py      # calculate_factor_stats, calculate_factor_stats_batch, filter_and_label_factors
 │   ├── correlation.py          # calculate_downside_correlation
-│   ├── optimization.py         # find_optimal_mix, optimize_constrained_weights (hardcoded/equal_weight/monte_carlo)
+│   ├── optimization.py         # optimize_constrained_weights (hardcoded/equal_weight)
 │   ├── weight_construction.py  # build_factor_weight_frames, aggregate_mp_weights, calculate_style_weights, construct_long_short_df, calculate_vectorized_return
-│   └── benchmark_comparison.py # MP vs. 동일가중(1/N) 벤치마크 비교
+│   └── benchmark_comparison.py # Constrained EW vs. 동일가중(1/N) 벤치마크 비교
 │
 └── backtest/
     ├── walk_forward_engine.py  # Walk-Forward (Expanding Window) 오케스트레이터
@@ -279,13 +220,12 @@ python main.py backtest 2009-12-31 2026-03-31 \
   --min-is-months 60 \
   --factor-rebal-months 6 \
   --weight-rebal-months 3 \
-  --num-sims 100000 \
   --top-factors 50
 
 # 테스트 모드
 python main.py backtest test test_data.csv --min-is-months 4
 
-# 벤치마크 비교 (MP vs. 동일가중)
+# 벤치마크 비교 (Constrained EW vs. 동일가중)
 python main.py mp 2009-12-31 2026-03-31 --benchmark
 ```
 
@@ -298,69 +238,16 @@ result = engine.run("2009-12-31", "2026-03-31")
 
 # OOS 성과 확인
 result.calc_performance()           # CAGR, MDD, Sharpe, Calmar
-result.compare_mp_vs_ew_oos()       # MP vs. EW 비교
+result.compare_cew_vs_ew_oos()     # Constrained EW vs. EW 비교
 result.to_csv("output/wf.csv")      # 결과 저장
 ```
 
-### 실제 실행 예시 및 결과 (2026-04-14 기준)
-
-#### 1. 확장 데이터 백테스트 실행 (2009-2026, 136개월 OOS)
-```bash
-python main.py backtest 2009-12-31 2026-03-31 \
-  --min-is-months 60 \
-  --factor-rebal-months 6 \
-  --weight-rebal-months 3
-# → 2,129초(~35분), OOS 136개월 (2014-12 ~ 2026-03)
-```
-
-**IS/OOS 구간:**
-```
-전체 데이터: 2009-12 ~ 2026-03 (196개월)
-IS 시작: 항상 2009-12 고정 (Expanding Window)
-IS 최소: 60개월 (2009-12 ~ 2014-11)
-OOS 구간: 2014-12 ~ 2026-03 (136개월, 매월 기록)
-
-Tier 1 (규칙 재학습): 23회 (6개월마다)
-Tier 2 (가중치 재최적화): 46회 (3개월마다)
-Tier 3 (OOS 수익률 조회): 136회 (매월)
-```
-
-**OOS 성과 비교 (MC 모드 vs EW):**
-
-| | MP (MC 최적화) | EW (1/N) |
-|---|---|---|
-| CAGR | 2.70% | **3.21%** |
-| MDD | **-6.51%** | -8.64% |
-| Sharpe | 0.76 | **0.84** |
-
-**과적합 진단 (Funnel 패턴: MC_OVERFIT)** — EW_Top50(3.21%) > MP(2.70%) > EW_All(1.77%). 장기 데이터에서도 EW가 MC 대비 우월 확인. 상세 분석은 [`docs/backtest_results_2009_2026.md`](docs/backtest_results_2009_2026.md) 참조.
-
-#### 2. 기존 단기 백테스트 결과 (2017-2026, 64개월 OOS, 2026-04-06)
-```bash
-python main.py backtest 2017-12-31 2026-03-31 --min-is-months 36 --num-sims 100000
-# → 651초(~11분)
-```
-
-**과적합 개선 이력 (64개월):**
-```
-기존 MC+믹스:        CAGR=+0.14%, Sharpe=0.054, Deflation=0.013
-Phase 1 EW+스킵:     CAGR=+0.39%, Sharpe=0.092, Deflation=0.049
-Phase 2 EW+t-stat:   CAGR=+0.95%, Sharpe=0.243, Deflation=0.139
-```
-
-#### 3. 검증: 기존 mp 파이프라인 영향 없음 확인
-```bash
-# 백테스트 전후 mp test 실행 → 동일 결과 확인
-python main.py mp test test_data.csv
-
-# monte_carlo 모드가 덮어쓴 hardcoded_weights.csv 복원
-git checkout -- data/hardcoded_weights.csv
-```
+### 실행 결과
+백테스트 결과 및 과적합 진단 상세는 [`docs/backtest_results_2009_2026.md`](docs/backtest_results_2009_2026.md) 참조.
 
 **산출 파일:**
-- `output/walk_forward_results.csv` — OOS 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
+- `output/walk_forward_results.csv` — OOS 월별 Constrained EW / EW / EW_All / EW_Top50 수익률 + 누적 수익률
 - `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
-- `docs/backtest_results_2009_2026.md` — 2009-2026 136개월 OOS 분석 보고서
 
 ---
 
@@ -372,15 +259,17 @@ git checkout -- data/hardcoded_weights.csv
 |---------|-----|------|-----------|
 | `style_cap` | 0.25 | 스타일 캡 (프로덕션 규제 요건) | `optimization.py` |
 | `transaction_cost_bps` | 30.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
-| `top_factor_count` | 50 | CAGR 기준 상위 팩터 선정 수 | `model_portfolio.py` |
+| `top_factor_count` | 50 | rank_score 기준 상위 팩터 선정 수 | `model_portfolio.py` |
+| `factor_ranking_method` | "tstat" | 팩터 랭킹 방식 (`shrunk_tstat` / `tstat` / `cagr`) | `walk_forward_engine.py` |
+| `use_cluster_dedup` | False | Top-N Hierarchical Clustering 중복 제거 (Sprint 1-B) | `walk_forward_engine.py` |
+| `n_clusters` | 18 | 클러스터 수 (`use_cluster_dedup=True`일 때) | `factor_selection.py` |
+| `per_cluster_keep` | 3 | 클러스터당 유지 팩터 수 | `factor_selection.py` |
+| `newey_west_lag` | 3 | Newey-West 보정 lag (meta_data 진단 컬럼) | `factor_selection.py` |
 | `spread_threshold_pct` | 0.10 | L/N/S 라벨링 임계값 | `factor_analysis.py` |
-| `sub_factor_rank_weights` | (0.7, 0.3) | 보조 팩터: CAGR + 상관관계 | `optimization.py` |
-| `portfolio_rank_weights` | (0.6, 0.4) | 포트폴리오: CAGR + MDD | `optimization.py` |
 | `min_sector_stocks` | 10 | 섹터-날짜 최소 종목 수 | `factor_analysis.py` |
 | `max_zero_return_months` | 10 | 0 수익률 허용 최대 월 수 | `model_portfolio.py` |
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
 | `min_downside_obs` | 20 | 하락 상관관계 최소 관측 수 | `correlation.py` |
-| `num_sims` | 1,000,000 | 몬테카를로 시뮬레이션 횟수 | `optimization.py` |
 
 ## 보안 설정
 

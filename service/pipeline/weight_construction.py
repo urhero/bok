@@ -77,7 +77,7 @@ def aggregate_mp_weights(
     weight_raw: pd.DataFrame,
     end_date_ts: pd.Timestamp,
 ) -> pd.DataFrame:
-    """MP(전체 팩터 합산) 가중치를 생성한다.
+    """MP(Model Portfolio, 전체 팩터 합산) 가중치를 생성한다.
 
     Args:
         weight_raw: build_factor_weight_frames() 결과

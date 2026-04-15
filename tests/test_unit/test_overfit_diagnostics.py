@@ -91,14 +91,14 @@ class TestFunnelValueAdd:
         )
         funnel = calc_funnel_value_add(result)
         assert funnel["pattern"] == "NORMAL"
-        assert funnel["mp_cagr"] > funnel["ew_top50_cagr"]
+        assert funnel["cew_cagr"] > funnel["ew_top50_cagr"]
 
-    def test_mc_overfit_pattern(self):
-        """B > C > A → MC_OVERFIT 패턴.
+    def test_optimization_overfit_pattern(self):
+        """B > C > A -> OPTIMIZATION_OVERFIT 패턴.
 
         조건: EW_All(A) < EW_Top50(B) > MP_Final(C)
-        - Top50에 고수익 팩터 배치 → EW_Top50 높음
-        - 전체에 저수익 팩터 포함 → EW_All 낮음
+        - Top50에 고수익 팩터 배치 -> EW_Top50 높음
+        - 전체에 저수익 팩터 포함 -> EW_All 낮음
         - MP는 Top50 EW보다 낮게 설정
         """
         result = _make_result(
@@ -114,7 +114,7 @@ class TestFunnelValueAdd:
             top50_factors=["F1", "F2", "F3", "F4", "F5"],
         )
         funnel = calc_funnel_value_add(result)
-        assert funnel["pattern"] == "MC_OVERFIT"
+        assert funnel["pattern"] == "OPTIMIZATION_OVERFIT"
 
     def test_filter_overfit_pattern(self):
         """A > B → FILTER_OVERFIT 패턴."""
@@ -137,7 +137,7 @@ class TestFunnelValueAdd:
         funnel = calc_funnel_value_add(result)
         assert "ew_all_cagr" in funnel
         assert "ew_top50_cagr" in funnel
-        assert "mp_cagr" in funnel
+        assert "cew_cagr" in funnel
         assert "interpretation" in funnel
 
     def test_insufficient_data(self):

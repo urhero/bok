@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
-"""모델 포트폴리오(MP) 생성 파이프라인 오케스트레이터.
+"""Model Portfolio(MP) 생성 파이프라인 오케스트레이터.
 
 200+ 팩터 데이터를 분석하여 최종 투자 포트폴리오(MP)를 생성한다.
+현재 MP는 Top-N 동일가중(equal-weight)에 style_cap(기본 25%) 제약만 추가한
+Constrained EW 방식으로 구성된다. 공분산/리스크 모델 기반 최적화는 포함하지
+않는다 (커밋 8dfb64e에서 Monte Carlo 최적화는 제거됨).
+
 각 단계의 실제 로직은 별도 모듈에 위치하며, 이 파일은 조율만 담당한다.
 
 모듈 구조:
 - factor_analysis.py: 5분위 분석 + 섹터 필터링
-- correlation.py: 하락 상관관계
-- optimization.py: 2-팩터 믹스 + 가중치 시뮬레이션
+- correlation.py: 하락 상관관계 (현재 계산만 되고 사용 안 됨)
+- optimization.py: 가중치 계산 (equal_weight + style_cap)
 - weight_construction.py: 롱/숏 포트폴리오 수익률 + MP 가중치 구성
 """
 from __future__ import annotations
@@ -30,10 +34,7 @@ from service.pipeline.factor_analysis import (
     calculate_factor_stats_batch,
     filter_and_label_factors,
 )
-from service.pipeline.optimization import (
-    find_optimal_mix,
-    optimize_constrained_weights,
-)
+from service.pipeline.optimization import optimize_constrained_weights
 from service.pipeline.weight_construction import (
     aggregate_mp_weights,
     build_factor_weight_frames,
@@ -88,10 +89,12 @@ def aggregate_factor_returns(
 
 
 class ModelPortfolioPipeline:
-    """모델 포트폴리오 생성 파이프라인.
+    """Model Portfolio(MP) 생성 파이프라인.
 
-    파이프라인의 각 단계를 순차적으로 실행하며,
-    중간 결과물을 인스턴스 변수로 보관하여 디버깅과 분석에 활용할 수 있다.
+    현재 MP는 Top-N 팩터를 동일가중(1/N)으로 할당한 뒤 style_cap 제약
+    (기본 25%)을 반복 재분배 적용하는 Constrained EW 방식으로 구성된다.
+    파이프라인의 각 단계를 순차적으로 실행하며, 중간 결과물을 인스턴스 변수로
+    보관하여 디버깅과 분석에 활용할 수 있다.
 
     사용법:
         pipeline = ModelPortfolioPipeline(PARAM, DATA_DIR / "factor_info.csv")
@@ -147,18 +150,16 @@ class ModelPortfolioPipeline:
             kept_abbrs, kept_names, kept_styles, self.filtered_data, test_file
         )
 
-        # [5] 2-팩터 믹스 최적화 — README [5]
-        best_sub, ret_subset, factor_list, style_list = self._optimize_mixes(
-            self.return_matrix, self.meta, self.correlation_matrix
-        )
-
         # [6] 스타일 캡 하 비중 결정 — README [6]
+        style_map = self.meta.set_index("factorAbbreviation")["styleName"]
+        factor_list = self.meta["factorAbbreviation"].tolist()
+        style_list = [style_map[f] for f in factor_list]
+        ret_subset = self.return_matrix[factor_list]
+
         sim_result = optimize_constrained_weights(
             ret_subset, style_list, test_mode=bool(test_file),
             mode=self.pipeline_params["optimization_mode"],
             style_cap=self.pipeline_params["style_cap"],
-            num_sims=self.pipeline_params["num_sims"],
-            portfolio_rank_weights=self.pipeline_params["portfolio_rank_weights"],
         )
         self.weights = sim_result[1]
 
@@ -325,6 +326,18 @@ class ModelPortfolioPipeline:
         meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
         meta["rank_style"] = meta.groupby("styleName")["cagr"].rank(ascending=False)
         meta["rank_total"] = meta["cagr"].rank(ascending=False)
+
+        # Sprint 1-C: Newey-West 보정 t-stat 진단 컬럼 (랭킹 교체 X, 관찰용)
+        from service.backtest.factor_selection import compute_newey_west_tstat, compute_tstat
+
+        monthly_rets = ret_df.iloc[1:][meta["factorAbbreviation"].tolist()]
+        nw_lag = int(self.pipeline_params.get("newey_west_lag", 3))
+        meta["tstat"] = compute_tstat(monthly_rets).reindex(meta["factorAbbreviation"]).values
+        meta["newey_west_tstat"] = (
+            compute_newey_west_tstat(monthly_rets, lag=nw_lag)
+            .reindex(meta["factorAbbreviation"]).values
+        )
+
         meta = meta.sort_values("cagr", ascending=False).reset_index(drop=True)
 
         # 메타 저장
@@ -341,39 +354,6 @@ class ModelPortfolioPipeline:
 
         logger.info("Return matrix built (%d factors)", len(order))
         return ret_df, negative_corr, meta
-
-    def _optimize_mixes(self, return_matrix, meta, correlation_matrix):
-        """스타일별 2-팩터 믹스를 최적화한다."""
-        top_metrics = meta.groupby("styleName", as_index=False).first()
-        grids = []
-        for _, row in top_metrics.iterrows():
-            grid = find_optimal_mix(
-                return_matrix, row.to_frame().T.reset_index(drop=True), correlation_matrix,
-                sub_factor_rank_weights=self.pipeline_params["sub_factor_rank_weights"],
-                portfolio_rank_weights=self.pipeline_params["portfolio_rank_weights"],
-            )
-            grid["styleName"] = row["styleName"]
-            grids.append(grid)
-        mix_grid = pd.concat(grids, ignore_index=True)
-
-        best_sub = (
-            mix_grid.sort_values("rank_total")
-            .groupby("main_factor", as_index=False)
-            .first()[["main_factor", "sub_factor"]]
-        )
-
-        style_map = meta.set_index("factorAbbreviation")["styleName"]
-        best_sub["main_style"] = best_sub["main_factor"].map(style_map)
-        best_sub["sub_style"] = best_sub["sub_factor"].map(style_map)
-        best_sub = best_sub[["main_factor", "main_style", "sub_factor", "sub_style"]]
-
-        cols_to_keep = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel())
-        ret_subset = return_matrix[cols_to_keep]
-
-        factor_list = pd.unique(best_sub[["main_factor", "sub_factor"]].to_numpy().ravel()).tolist()
-        style_list = [style_map[f] for f in factor_list]
-
-        return best_sub, ret_subset, factor_list, style_list
 
     def _construct_and_export(self, sim_result, kept_abbrs, filtered_data, end_date, test_file):
         """종목별 가중치를 산출하고 CSV로 출력한다."""
@@ -424,9 +404,9 @@ class ModelPortfolioPipeline:
 
 
 def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, test_file: str | None = None) -> None:
-    """모델 포트폴리오 파이프라인 실행 (backward compatibility wrapper).
+    """Model Portfolio 파이프라인 실행 래퍼.
 
-    main.py에서 호출하는 기존 함수 시그니처를 유지한다.
+    main.py의 CLI 엔트리 포인트.
     내부적으로 ModelPortfolioPipeline 클래스를 생성하고 run()을 호출한다.
     """
     pipeline = ModelPortfolioPipeline(

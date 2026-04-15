@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """벤치마크 비교 모듈 (Step 0).
 
-simulation 모드 최적화 가중치(MC) vs 동일가중(1/N) 비교.
+MP(Model Portfolio, 현재는 Top-N EW + style_cap 방식으로 구성) vs
+단순 동일가중(1/N) 벤치마크 비교.
 기존 파이프라인 코드를 수정하지 않고, ret_df와 weights만 받아서 비교한다.
 """
 from __future__ import annotations
@@ -47,7 +48,7 @@ def create_equal_weight_benchmark(ret_df: pd.DataFrame) -> dict[str, Any]:
 
 
 def create_mp_portfolio_return(ret_df: pd.DataFrame, weights: dict[str, float]) -> dict[str, Any]:
-    """simulation 모드 팩터 가중치를 적용한 MP 수익률을 계산한다.
+    """MP(Model Portfolio) 팩터 가중치를 적용한 수익률을 계산한다.
 
     Args:
         ret_df: 팩터별 수익률 행렬 (Date × Factor).
@@ -140,7 +141,7 @@ def print_benchmark_report(report: dict[str, Any]) -> None:
     console = Console()
     table = Table(title="MP vs. Equal-Weight Benchmark (IS 전체 기간)", show_header=True)
     table.add_column("Metric", style="bold")
-    table.add_column("MP (Optimized)", justify="right")
+    table.add_column("MP (Model Portfolio)", justify="right")
     table.add_column("EW (1/N)", justify="right")
 
     table.add_row("CAGR", f"{report['mp_cagr']:.4%}", f"{report['ew_cagr']:.4%}")
@@ -154,6 +155,6 @@ def print_benchmark_report(report: dict[str, Any]) -> None:
     console.print(table)
 
     if report["excess_cagr"] <= 0:
-        console.print("[yellow]⚠ MP가 동일가중을 이기지 못함 — Walk-Forward 실행 전 모델 점검 권장[/yellow]")
+        console.print("[yellow]⚠ MP가 동일가중을 이기지 못함 — 모델 점검 권장[/yellow]")
     else:
         console.print("[green]✓ MP가 동일가중 대비 초과 성과 확인[/green]")
