@@ -32,33 +32,18 @@
 - 학술·실무 근거에 기반한 다수(200+) 팩터를 사전에 정의 및 축적
 - 각 팩터는 **스타일 단위(Valuation, Momentum, Quality, Growth 등)**로 분류
 
-### 입력 데이터 (Pipeline-Ready Parquet — 연도별 분할)
-- `data/{benchmark}_factor_{YYYY}.parquet` — **연도별 분할** 팩터 데이터 (factor_info merge 완료, categorical, zstd 압축)
-  - 컬럼: `gvkeyiid, ticker, isin, ddt, sec, val, factorAbbreviation, factorOrder`
-  - 예: `MXCN1A_factor_2018.parquet` (~22MB), `MXCN1A_factor_2024.parquet` (~20MB)
-  - 각 파일 <100MB → GitHub 추적 가능 (단일 파일은 ~168MB로 초과)
-- `data/{benchmark}_mreturn.parquet` — M_RETURN (gvkeyiid × ddt, 단일 파일, ~0.76MB)
-  - 67K행 (19M 팩터행에 중복 저장하지 않음)
-- `data/factor_info.csv` — 팩터 메타 정보 (factorAbbreviation, factorName, styleName, factorOrder)
-- `data/hardcoded_weights.csv` — 프로덕션 가중치 (hardcoded 모드에서 사용)
+### 입력 데이터
+- `data/{benchmark}_factor_{YYYY}.parquet` — 연도별 분할 팩터 데이터
+- `data/{benchmark}_mreturn.parquet` — 월간 수익률
+- `data/factor_info.csv` — 팩터 메타 정보
+- `data/hardcoded_weights.csv` — 프로덕션 고정 가중치 (hardcoded 모드용)
 
-> **분할 저장/로드 유틸리티**: `service/download/parquet_io.py`
-> - `save_factor_parquet_by_year()` — 연도별 분할 저장
-> - `load_factor_parquet()` — 분할 파일 자동 병합 로드 (단일 파일 fallback 지원)
-> - `validate_loaded_factor_data()` — 9가지 무결성 검증 (컬럼, 100% NaN 팩터 분리, NaN 비율, inf, gap, 중복 등)
->   - 100% NaN 팩터는 WARN으로 별도 보고 후 제외, 나머지 유효 데이터에 대해 NaN 비율 10% 임계값 검사
+### 다운로드
+- `python main.py download 2009-12-31 2026-03-31` — 전체 다운로드
+- `python main.py download 2009-12-31 2026-03-31 --incremental` — 증분 다운로드
+- 로드 시 자동 무결성 검증 수행
 
-### 다운로드 (`download_factors.py`)
-- `python main.py download 2009-12-31 2026-03-31` — 전체 다운로드 → 연도별 parquet 분할 저장
-- `python main.py download 2009-12-31 2026-03-31 --incremental` — 증분 다운로드 (해당 연도 파일만 업데이트)
-- 저장 후 자동 검증: 빈 월 감지, 팩터 수 급변, M_RETURN 정합성 (Rich 시각화)
-
-### 코드 구현
-- `_load_data()`: `load_factor_parquet(validate=True)`로 연도별 분할 파일 자동 병합 로드
-  - 로드 시 9가지 무결성 검증 (컬럼, 100% NaN 팩터 분리, NaN 비율, inf, 월 gap, 중복 등) → ERROR 발견 시 즉시 중단
-  - Fallback: 단일 파일, legacy raw parquet, test CSV
-- `_prepare_metadata()`: factor_info merge (pipeline-ready에서는 skip), M_RETURN 병합
-- 백테스트 시작: `ddt >= 2009-12-31` (→ 2010년부터 실질 성과 반영)
+> 연도별 분할 구조, 검증 항목 상세, fallback 경로는 [research.md §2.3, §4.3](research.md) 참조.
 
 ---
 
@@ -99,19 +84,14 @@
 
 ## [4] 롱-숏 수익률 + 팩터 유니버스 선정
 
-### (a) 롱-숏 수익률 측정
-- **핵심 함수 흐름**
-  - `weight_construction.construct_long_short_df()` — 롱/숏 종목군 구성 (동일가중)
-  - `weight_construction.calculate_vectorized_return()` — 리밸런싱 반영, 턴오버 계산, 거래비용(30bp) 차감
-  - `model_portfolio.aggregate_factor_returns()` — 팩터별 **월간 롱-숏 수익률** 생성
+### (a) 롱-숏 수익률
+- 각 팩터별 롱/숏 포트폴리오 구성 → 거래비용(30bp) 차감 → 월간 L-S 수익률 행렬 생성
+- 핵심 함수: `model_portfolio.aggregate_factor_returns()`
 
-### (b) 팩터 유니버스 최종 선정 (200+ -> Top-50 후보군)
-- **핵심 함수:** `ModelPortfolioPipeline._evaluate_universe()`
-- 팩터별 월간 롱-숏 수익률 행렬 구성
-- 랭킹 산출: **t-stat 기반** (기본값, 노이즈 팩터 페널티) 또는 CAGR 기반 (기존)
-- **상위 50개 팩터를 후보군(Candidate Pool)으로 선정**
-- **하락 상관관계** 계산
-- *이 50개는 [5]~[6]에 투입할 후보일 뿐, 최종 비중 할당은 [6]에서 결정*
+### (b) 팩터 유니버스 최종 선정 (200+ -> Top-50)
+- 랭킹 방식: **t-stat 기반** (기본), `shrunk_tstat` / `cagr` 선택 가능
+- 상위 50개를 후보군으로 선정 → 하락 상관관계 계산
+- 최종 비중 할당은 [6]에서 결정
 
 ---
 
@@ -158,45 +138,19 @@
 
 ## [8] Walk-Forward 백테스트 (OOS 과적합 진단)
 
-### 개요
-기존 파이프라인([1]~[7])을 수정하지 않고, 외부에서 감싸는 방식으로 Expanding Window 백테스트를 수행한다. IS 데이터만으로 팩터 선정과 가중치를 결정하고 OOS 1개월 수익률을 기록하는 "의사 실전" 시뮬레이션이다.
+기존 파이프라인([1]~[7])을 감싸 Expanding Window로 실행. IS 데이터만으로 팩터 선정·가중치를 결정하고 OOS 1개월 수익률을 기록한다.
 
-### 계층적 리밸런싱 (Tiered Rebalancing)
-| Tier | 주기 | 대상 | 설명 |
-|------|------|------|------|
-| Tier 1 | 6개월 | [2]~[3] | IS 데이터로 규칙 학습(섹터 제거, L/N/S 라벨) -> 전체 데이터에 IS 규칙 적용 -> 팩터 수익률 사전 계산 |
-| Tier 2 | 3개월 | [4]~[6] | 팩터 선정 + 가중치 최적화 (IS 슬라이스만) |
-| Tier 3 | 매월 | OOS 적용 | precomputed_ret_df에서 조회만 (밀리초) |
+- **계층적 리밸런싱**: Tier 1(6개월, 규칙 학습) / Tier 2(3개월, 팩터 선정) / Tier 3(매월, OOS 조회)
+- **과적합 진단 5지표**: Funnel Value-Add, OOS Percentile Tracking, Strict Jaccard, IS-OOS Rank Correlation, Deflation Ratio
+- **벤치마크 비교**: `--benchmark` 옵션으로 MP vs. 동일가중(1/N) 비교
 
-> **OOS look-ahead bias 방지:** Tier 1에서 5분위 랭킹(횡단면, 안전)은 전체 데이터에서 계산하되, 섹터 제거와 L/N/S 라벨은 IS 전용 규칙(`rule_bundle`)을 직접 적용한다. `filter_and_label_factors()`를 전체 데이터로 재실행하지 않는다.
+> **상세**: 각 Tier의 look-ahead bias 방지 규칙, 5지표 해석 임계값, 판정 패턴(OPTIMIZATION_OVERFIT/FILTER_OVERFIT) 설명은 [research.md §6](research.md) 참조.
 
-### 과적합 진단 3단계 테스트 (우선순위 순)
-
-파이프라인의 2단계 축소(200+ → Top-50 → 최종 weight>0 팩터)가 진짜 가치를 창출했는지 검증한다.
-
-| 순위 | 지표 | 설명 | 해석 |
-|------|------|------|------|
-| 1순위 | Funnel Value-Add | EW_All vs EW_Top50 vs Constrained EW 비교 | C>B>A 정상, B>C>A style_cap 제약이 수익 깎음, A>B 필터과적합 |
-| 2순위 | OOS Percentile Tracking | weight>0 팩터의 OOS 백분위 생존율 | 상위40% 견고, 40~60% 보통, 60%+ 과적합의심 |
-| 3순위 | Strict Jaccard | weight>0 팩터 집합 안정성 | >0.5 안정, 0.3~0.5 보통, <0.3 불안정 |
-| 4순위(보조) | IS-OOS Rank Corr | IS CAGR 순위 vs OOS 실현 수익률 순위 Spearman | >0.3 양호, ≈0 무관, <0 과적합 |
-| 5순위(보조) | Deflation Ratio | OOS CAGR / IS CAGR | >0.6 양호, 0.3~0.6 주의, <0.3 심각 |
-
-### 벤치마크 비교 (Step 0)
-`--benchmark` 옵션으로 MP vs. 단순 동일가중(1/N) 비교를 수행한다. IS 전체 기간의 Sanity Check 용도.
-
-### 용어 가이드: MP(Model Portfolio) vs Constrained EW
+### 용어: MP vs Constrained EW
 - **MP (Model Portfolio)** — 프로덕션 산출물 (Bloomberg Optimizer 입력 CSV). 역할 이름.
-- **Constrained EW** — 현재 MP를 만드는 **구성 방식**. Top-N 팩터 동일가중 + `style_cap(25%)` 재분배.
-- 과거 MP는 Monte Carlo 최적화로 구성됐으나 커밋 `8dfb64e`에서 제거됨. 지금은 학습되는 가중치가 없는 **deterministic 재분배**. funnel에서 `Constrained EW < EW_Top50` 패턴이 나온다면 이는 "최적화 과적합"이 아니라 **style_cap 제약이 OOS 수익을 깎는 것**을 의미한다.
-- 백테스트 진단 (`overfit_diagnostics.csv`, walk-forward 리포트)에서는 MP 대신 **"Constrained EW"** 라는 이름으로 표기해 구성 방식을 명시한다. 프로덕션 CLI/파일명/CSV 컬럼은 **"MP"** 유지.
-
-### 핵심 모듈
-- `service/backtest/walk_forward_engine.py`: WalkForwardEngine 클래스 (오케스트레이터)
-- `service/backtest/data_slicer.py`: IS/OOS 날짜 분할
-- `service/backtest/result_stitcher.py`: WalkForwardResult 컨테이너
-- `service/backtest/overfit_diagnostics.py`: 과적합 진단 5개 지표 (3단계 핵심 + 2 보조)
-- `service/pipeline/benchmark_comparison.py`: MP vs. EW 벤치마크 비교
+- **Constrained EW** — 현재 MP를 만드는 **구성 방식** (Top-N EW + `style_cap=25%` 재분배).
+- 백테스트 진단 리포트는 구성 방식을 명시하기 위해 "Constrained EW" 라벨을 사용. 프로덕션 CLI/파일명/CSV 컬럼은 "MP" 유지.
+- 과거 MP는 Monte Carlo 최적화로 구성됐으나 커밋 `8dfb64e`에서 제거됨.
 
 ---
 
