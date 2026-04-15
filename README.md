@@ -183,13 +183,13 @@
 | 5순위(보조) | Deflation Ratio | OOS CAGR / IS CAGR | >0.6 양호, 0.3~0.6 주의, <0.3 심각 |
 
 ### 벤치마크 비교 (Step 0)
-`--benchmark` 옵션으로 Constrained EW vs. 단순 동일가중(1/N) 비교를 수행한다. IS 전체 기간의 Sanity Check 용도.
+`--benchmark` 옵션으로 MP vs. 단순 동일가중(1/N) 비교를 수행한다. IS 전체 기간의 Sanity Check 용도.
 
-### Constrained EW 가 "최적화" 라는 이름의 함정
-현재 파이프라인의 최종 포트폴리오는 **Top-N 동일가중에 style_cap(25%) 재분배만 추가된
-형태**로, 공분산/리스크 모델 기반 최적화는 포함하지 않는다 (커밋 `8dfb64e` 에서 Monte Carlo
-최적화 제거). 학습되는 가중치가 없으므로 funnel에서 `Constrained EW < EW_Top50` 패턴이
-나온다면 이는 "최적화 과적합"이 아니라 **style_cap 제약이 OOS 수익을 깎는 것**을 의미한다.
+### 용어 가이드: MP(Model Portfolio) vs Constrained EW
+- **MP (Model Portfolio)** — 프로덕션 산출물 (Bloomberg Optimizer 입력 CSV). 역할 이름.
+- **Constrained EW** — 현재 MP를 만드는 **구성 방식**. Top-N 팩터 동일가중 + `style_cap(25%)` 재분배.
+- 과거 MP는 Monte Carlo 최적화로 구성됐으나 커밋 `8dfb64e`에서 제거됨. 지금은 학습되는 가중치가 없는 **deterministic 재분배**. funnel에서 `Constrained EW < EW_Top50` 패턴이 나온다면 이는 "최적화 과적합"이 아니라 **style_cap 제약이 OOS 수익을 깎는 것**을 의미한다.
+- 백테스트 진단 (`overfit_diagnostics.csv`, walk-forward 리포트)에서는 MP 대신 **"Constrained EW"** 라는 이름으로 표기해 구성 방식을 명시한다. 프로덕션 CLI/파일명/CSV 컬럼은 **"MP"** 유지.
 
 ### 핵심 모듈
 - `service/backtest/walk_forward_engine.py`: WalkForwardEngine 클래스 (오케스트레이터)

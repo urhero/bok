@@ -9,7 +9,7 @@
 
 ### 1.1 목적
 
-BOK은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 Constrained EW 포트폴리오 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 Top-N 팩터 동일가중에 `style_cap`(기본 25%) 제약을 부가한 형태로 최종 종목별 투자 비중을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다. 공분산/리스크 모델 기반 최적화는 커밋 `8dfb64e`에서 제거됨.
+BOK은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 Model Portfolio(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중(MP)을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다. 현재 MP는 Top-N 팩터 동일가중에 `style_cap`(기본 25%) 제약을 부가한 **Constrained EW 방식**으로 구성된다 — 공분산/리스크 모델 기반 최적화는 커밋 `8dfb64e`에서 제거됨.
 
 ### 핵심 Funnel 구조
 
@@ -27,7 +27,7 @@ main.py (CLI)
        ├→ factor_analysis.py       [5분위 분석]
        ├→ correlation.py           [하락 상관관계]
        ├→ optimization.py          [가중치 계산]
-       └→ weight_construction.py   [롱/숏 수익률 + Constrained EW 비중 구성]
+       └→ weight_construction.py   [롱/숏 수익률 + MP 비중 구성]
 ```
 
 ### 1.3 기술 스택
@@ -51,11 +51,11 @@ main.py (CLI)
 | 커맨드 | 용도 | 호출 경로 |
 |--------|------|-----------|
 | `python main.py download <start> <end>` | SQL → parquet 다운로드 | `run_download_pipeline()` |
-| `python main.py mp <start> <end>` | parquet → Constrained EW CSV 생성 | `run_model_portfolio_pipeline()` → `ModelPortfolioPipeline.run()` |
+| `python main.py mp <start> <end>` | parquet → MP CSV 생성 | `run_model_portfolio_pipeline()` → `ModelPortfolioPipeline.run()` |
 | `python main.py mp test <file>` | 소량 데이터 테스트 모드 | 동일 경로, `test_file` 인자 활성 |
 | `python main.py mp --report` | PDF 보고서만 생성 후 종료 | `_generate_report()` → `return` (early return) |
 | `python main.py backtest <start> <end>` | Walk-Forward OOS 백테스트 + 과적합 진단 | `WalkForwardEngine.run()` → `generate_overfit_report()` |
-| `python main.py mp <start> <end> --benchmark` | Constrained EW vs. 동일가중 벤치마크 비교 | `compare_vs_benchmark()` |
+| `python main.py mp <start> <end> --benchmark` | MP vs. 동일가중 벤치마크 비교 | `compare_vs_benchmark()` |
 
 ---
 
@@ -703,6 +703,6 @@ python main.py mp <start> <end> --benchmark
   Bartlett kernel, lag=3 기본. `meta_data.csv`의 `newey_west_tstat` 컬럼으로만 노출, 랭킹 교체 X.
 
 **산출 파일:**
-- `output/walk_forward_results.csv` -- OOS 월별 MP/EW/EW_All/EW_Top50 수익률 + 누적 수익률
+- `output/walk_forward_results.csv` -- OOS 월별 Constrained EW / EW / EW_All / EW_Top50 수익률 + 누적 수익률 (컬럼 prefix `cew_*`)
 - `output/overfit_diagnostics.csv` -- 과적합 진단 5개 지표 요약
 - `docs/backtest_results_2009_2026.md` -- 136개월 OOS 분석 보고서
