@@ -29,7 +29,8 @@ if not PARAM["user_name"]:
 #
 # [최적화 모드 가이드]
 #   optimization_mode: "equal_weight"(기본, 권장) / "hardcoded"(프로덕션 고정 가중치)
-#   factor_ranking_method: "tstat"(권장) / "cagr"(기존)
+#   factor_ranking_method: "shrunk_tstat"(Sprint 1-A) / "tstat" / "cagr"
+#   use_cluster_dedup: Sprint 1-B Hierarchical Clustering 중복 제거 on/off
 #
 PIPELINE_PARAMS = {
     "style_cap": 0.25,                # 스타일별 최대 비중 (프로덕션 규제 요건)
@@ -42,5 +43,9 @@ PIPELINE_PARAMS = {
     "backtest_end": "2026-03-31",      # 백테스트 종료일
     "min_downside_obs": 20,            # 하락 상관관계 최소 관측 수
     "optimization_mode": "equal_weight", # "hardcoded": 고정 가중치, "equal_weight": 동일가중 (권장)
-    "factor_ranking_method": "tstat",  # "tstat": t-통계량 랭킹 (권장), "cagr": 기존 CAGR 랭킹
+    "factor_ranking_method": "tstat",  # "shrunk_tstat" / "tstat"(현 기본) / "cagr"
+    "use_cluster_dedup": False,        # Sprint 1-B: Top-N 중복 제거 (실험 기본 off)
+    "n_clusters": 18,                  # 클러스터 수 (use_cluster_dedup=True일 때)
+    "per_cluster_keep": 3,             # 클러스터당 유지 팩터 수
+    "newey_west_lag": 3,               # Newey-West 보정 lag (meta_data.csv 진단용)
 }

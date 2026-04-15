@@ -3,7 +3,7 @@
 사용법:
     python main.py download 2023-01-01 2023-12-31          # 전체 다운로드
     python main.py download 2023-01-01 2023-12-31 --incremental  # 증분 다운로드
-    python main.py mp 2023-01-01 2023-12-31                # MP 생성
+    python main.py mp 2023-01-01 2023-12-31                # Model Portfolio 생성
     python main.py mp test test_data.csv                   # 테스트 모드
     python main.py mp 2023-01-01 2023-12-31 --benchmark    # MP + 벤치마크 비교
     python main.py backtest 2017-12-31 2026-03-31          # Walk-Forward 백테스트
@@ -39,8 +39,10 @@ def main(argv: list[str] | None = None) -> int:
     parser_download.add_argument("--no-validate", action="store_true",
                                   help="Skip post-download validation checks.")
 
-    # mp: pipeline-ready parquet → MP → CSV — README [1]~[7]
-    parser_report = subparsers.add_parser("mp", help="Generate MP from downloaded data.")
+    # mp: pipeline-ready parquet → Model Portfolio → CSV — README [1]~[7]
+    # 현재 MP는 Top-N 동일가중 + style_cap(25%) 재분배 방식으로 구성됨 (Constrained EW).
+    # 과거 Monte Carlo 최적화는 커밋 8dfb64e에서 제거됨.
+    parser_report = subparsers.add_parser("mp", help="Generate Model Portfolio from downloaded data.")
     parser_report.add_argument("args", nargs="+", help="'test <filename>' or '<start_date> <end_date>'")
     parser_report.add_argument("--report", action="store_true", help="Generate report and exit.")
     parser_report.add_argument("--benchmark", action="store_true",
@@ -205,10 +207,10 @@ def _run_backtest(args):
         ("1순위 - Funnel Value-Add", "패턴", oos_report["funnel_pattern"], oos_report["funnel_interpretation"]),
         ("1순위 - Funnel Value-Add", "EW_All CAGR", _pct(oos_report["funnel_ew_all_cagr"]), "전체 유효 팩터 동일가중"),
         ("1순위 - Funnel Value-Add", "EW_Top50 CAGR", _pct(oos_report["funnel_ew_top50_cagr"]), "Top-50 후보군 동일가중"),
-        ("1순위 - Funnel Value-Add", "MP_Final CAGR", _pct(oos_report["funnel_mp_cagr"]), "최종 가중 포트폴리오"),
+        ("1순위 - Funnel Value-Add", "Constrained EW CAGR", _pct(oos_report["funnel_cew_cagr"]), "Constrained EW (Top-N + style_cap)"),
         ("1순위 - Funnel Value-Add", "EW_All MDD", _pct(oos_report["funnel_ew_all_mdd"]), ""),
         ("1순위 - Funnel Value-Add", "EW_Top50 MDD", _pct(oos_report["funnel_ew_top50_mdd"]), ""),
-        ("1순위 - Funnel Value-Add", "MP_Final MDD", _pct(oos_report["funnel_mp_mdd"]), ""),
+        ("1순위 - Funnel Value-Add", "Constrained EW MDD", _pct(oos_report["funnel_cew_mdd"]), ""),
         # 2순위: OOS Percentile Tracking
         ("2순위 - OOS Percentile", "평균 백분위", _pct(oos_report["oos_avg_percentile"]), oos_report["oos_percentile_interpretation"]),
         # 3순위: Strict Jaccard
@@ -219,15 +221,15 @@ def _run_backtest(args):
         # 5순위 (보조): Deflation Ratio
         ("5순위(보조) - Deflation", "Deflation Ratio", _dec(oos_report["deflation_ratio"]), oos_report["deflation_interpretation"]),
         # OOS 성과
-        ("OOS 성과 - MP", "CAGR", _pct(oos_report["oos_cagr"]), ""),
-        ("OOS 성과 - MP", "MDD", _pct(oos_report["oos_mdd"]), ""),
-        ("OOS 성과 - MP", "Sharpe", _dec(oos_report["oos_sharpe"]), ""),
-        ("OOS 성과 - MP", "Calmar", _dec(oos_report["oos_calmar"]), ""),
+        ("OOS 성과 - Constrained EW", "CAGR", _pct(oos_report["oos_cagr"]), ""),
+        ("OOS 성과 - Constrained EW", "MDD", _pct(oos_report["oos_mdd"]), ""),
+        ("OOS 성과 - Constrained EW", "Sharpe", _dec(oos_report["oos_sharpe"]), ""),
+        ("OOS 성과 - Constrained EW", "Calmar", _dec(oos_report["oos_calmar"]), ""),
         ("OOS 성과 - EW", "CAGR", _pct(oos_report["oos_ew_cagr"]), ""),
         ("OOS 성과 - EW", "MDD", _pct(oos_report["oos_ew_mdd"]), ""),
         ("OOS 성과 - EW", "Sharpe", _dec(oos_report["oos_ew_sharpe"]), ""),
-        ("MP vs EW 비교", "Excess CAGR", _pct(oos_report["mp_vs_ew_excess_cagr"]), ""),
-        ("MP vs EW 비교", "Win Rate", _pct(oos_report["mp_vs_ew_win_rate"]), ""),
+        ("Constrained EW vs EW_Top50 비교", "Excess CAGR", _pct(oos_report["cew_vs_ew_excess_cagr"]), ""),
+        ("Constrained EW vs EW_Top50 비교", "Win Rate", _pct(oos_report["cew_vs_ew_win_rate"]), ""),
         ("주의사항", "경고", "", oos_report["warning"]),
         ("주의사항", "한계점", "", oos_report["limitation"]),
     ]
