@@ -12,15 +12,23 @@ sys.path.insert(0, str(ROOT))
 from scripts.run_cluster_turnover_experiment import build_cases
 
 
-def test_build_cases_returns_8_cases():
+def test_build_cases_returns_11_cases():
     cases = build_cases()
-    assert len(cases) == 8
+    assert len(cases) == 11
 
 
 def test_case_names_are_unique():
     cases = build_cases()
     names = [c["name"] for c in cases]
-    assert len(set(names)) == 8
+    assert len(set(names)) == 11
+
+
+def test_nocap_cases_set_style_cap_to_1():
+    """*_nocap 케이스는 style_cap=1.0 을 override 로 주입."""
+    cases = build_cases()
+    for name in ["baseline_nocap", "cluster_nocap", "combo_nocap_0.5"]:
+        case = next(c for c in cases if c["name"] == name)
+        assert case["override"].get("style_cap") == 1.0
 
 
 def test_baseline_case_has_empty_override_and_alpha_1():

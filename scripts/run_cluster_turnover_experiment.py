@@ -44,9 +44,11 @@ _PERF_COLUMNS: tuple[str, ...] = (
 
 
 def build_cases() -> list[dict[str, Any]]:
-    """실험 8 케이스 정의.
+    """실험 11 케이스 정의.
 
     per_cluster_keep=3 고정, 한 축씩 변화시켜 효과를 분리한다.
+    `*_nocap` 케이스는 style_cap=1.0 으로 스타일 캡을 사실상 해제
+    (clustering 이 이미 다각화를 제공하므로 중복 제거 효과 검증).
 
     Returns:
         각 케이스는 {"name": str, "override": dict, "alpha": float} 형식.
@@ -69,6 +71,16 @@ def build_cases() -> list[dict[str, Any]]:
         }, "alpha": 0.7},
         {"name": "combo_18_0.5", "override": {
             "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+        }, "alpha": 0.5},
+        # style_cap 해제 변형 (clustering 이 이미 다각화를 제공한다는 가설 검증)
+        {"name": "baseline_nocap", "override": {"style_cap": 1.0}, "alpha": 1.0},
+        {"name": "cluster_nocap", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+            "style_cap": 1.0,
+        }, "alpha": 1.0},
+        {"name": "combo_nocap_0.5", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+            "style_cap": 1.0,
         }, "alpha": 0.5},
     ]
 
