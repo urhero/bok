@@ -263,12 +263,14 @@ class WalkForwardEngine:
         weight_rebal_months: int = 3,
         turnover_smoothing_alpha: float = 1.0,
         top_factors: int = 50,
+        pipeline_params_override: dict | None = None,
     ):
         self.min_is_months = min_is_months
         self.factor_rebal_months = factor_rebal_months
         self.weight_rebal_months = weight_rebal_months
         self.turnover_smoothing_alpha = turnover_smoothing_alpha
         self.top_factors = top_factors
+        self.pipeline_params_override = pipeline_params_override
 
     def run(
         self,
@@ -291,6 +293,8 @@ class WalkForwardEngine:
 
         # pipeline_params 커스텀 (config의 optimization_mode 유지)
         pp = dict(PIPELINE_PARAMS)
+        if self.pipeline_params_override:
+            pp.update(self.pipeline_params_override)
         if pp["optimization_mode"] == "hardcoded":
             pp["optimization_mode"] = "equal_weight"  # hardcoded는 backtest에서 사용 불가
         pp["top_factor_count"] = self.top_factors
