@@ -206,3 +206,6 @@ node_modules/
 # Claude Code temporary files
 tmpclaude-*
 nul
+
+# 실험 산출물 (크기 큼, per-run 재현성 있음 — config.json 으로 재현 가능)
+output/experiments/
