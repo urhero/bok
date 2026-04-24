@@ -234,3 +234,31 @@ def test_build_summary_row_percentile_warn():
     row = build_summary_row(case, report, 0.3, 90.0, "OK", None)
     assert row["oos_pctile_flag"] == "WARN"
     assert row["verdict"] == "PERCENTILE_WARN"
+
+
+def test_build_summary_row_computes_net_cagr_cew():
+    """net_cagr_cew = cagr_cew - avg_turnover * tc_annual_rate."""
+    case = {"name": "cluster_18", "override": {
+        "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+    }, "alpha": 0.7}
+    report = _fake_overfit_report()
+    # oos_cagr = 0.10 (from fixture), avg_turnover = 0.25, tc_annual_rate = 0.012 (default)
+    # expected net = 0.10 - 0.25 * 0.012 = 0.10 - 0.003 = 0.097
+    row = build_summary_row(case, report, 0.25, 100.0, "OK", None)
+    assert abs(row["net_cagr_cew"] - 0.097) < 1e-9
+
+
+def test_build_summary_row_net_cagr_respects_custom_tc_rate():
+    """tc_annual_rate 를 override 하면 네트 CAGR 계산에 반영된다."""
+    case = {"name": "baseline", "override": {}, "alpha": 1.0}
+    report = _fake_overfit_report()  # oos_cagr = 0.10
+    # avg_turnover = 0.5, tc_annual_rate = 0.02 -> net = 0.10 - 0.5 * 0.02 = 0.09
+    row = build_summary_row(case, report, 0.5, 100.0, "OK", None, tc_annual_rate=0.02)
+    assert abs(row["net_cagr_cew"] - 0.09) < 1e-9
+
+
+def test_build_summary_row_failed_has_nan_net_cagr():
+    """FAILED 케이스는 net_cagr_cew 도 NaN."""
+    case = {"name": "x", "override": {}, "alpha": 1.0}
+    row = build_summary_row(case, None, float("nan"), 1.0, "FAILED", "err")
+    assert np.isnan(row["net_cagr_cew"])

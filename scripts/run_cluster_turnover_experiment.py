@@ -33,6 +33,15 @@ sys.path.insert(0, str(ROOT))
 logger = logging.getLogger(__name__)
 
 
+# summary.csv 의 성과 관련 컬럼 (FAILED 행에서 NaN 으로 채움)
+_PERF_COLUMNS: tuple[str, ...] = (
+    "cagr_cew", "net_cagr_cew", "sharpe_cew", "mdd_cew", "calmar_cew",
+    "cagr_ew", "sharpe_ew",
+    "funnel_a_cagr", "funnel_b_cagr", "funnel_c_cagr",
+    "oos_pctile_value", "strict_jaccard", "is_oos_rank_corr", "deflation_ratio",
+)
+
+
 def build_cases() -> list[dict[str, Any]]:
     """실험 8 케이스 정의.
 
@@ -124,10 +133,15 @@ def build_summary_row(
     runtime_sec: float,
     status: str,
     error: str | None,
+    tc_annual_rate: float = 0.012,  # 30bp x 4 rebal/year (default)
 ) -> dict[str, Any]:
     """케이스 1개의 결과를 summary.csv 한 행 dict 로 변환.
 
     `overfit_report` 가 None 이면 FAILED 케이스.
+
+    tc_annual_rate: 팩터 간 리밸런싱 연간 거래비용 계수 (기본 0.012 = 30bp x 4/year).
+        net_cagr_cew = cagr_cew - avg_turnover * tc_annual_rate.
+        가중치 리밸런싱 주기/거래비용이 다르면 호출부에서 조정.
     """
     override = case.get("override", {})
     row: dict[str, Any] = {
@@ -144,12 +158,7 @@ def build_summary_row(
 
     if status != "OK" or overfit_report is None:
         # FAILED: 성과 컬럼 NaN
-        for k in [
-            "cagr_cew", "sharpe_cew", "mdd_cew", "calmar_cew",
-            "cagr_ew", "sharpe_ew",
-            "funnel_a_cagr", "funnel_b_cagr", "funnel_c_cagr",
-            "oos_pctile_value", "strict_jaccard", "is_oos_rank_corr", "deflation_ratio",
-        ]:
+        for k in _PERF_COLUMNS:
             row[k] = float("nan")
         row["funnel_verdict"] = "N/A"
         row["oos_pctile_flag"] = "N/A"
@@ -161,6 +170,11 @@ def build_summary_row(
 
     row.update({
         "cagr_cew": overfit_report["oos_cagr"],
+        "net_cagr_cew": (
+            overfit_report["oos_cagr"]
+            if pd.isna(avg_turnover)
+            else overfit_report["oos_cagr"] - avg_turnover * tc_annual_rate
+        ),
         "sharpe_cew": overfit_report["oos_sharpe"],
         "mdd_cew": overfit_report["oos_mdd"],
         "calmar_cew": overfit_report["oos_calmar"],
