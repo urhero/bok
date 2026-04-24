@@ -592,3 +592,146 @@ def _fmt_dec_signed(v: Any) -> str:
         return f"{float(v):+.3f}"
     except (TypeError, ValueError):
         return "N/A"
+
+
+def _git_sha() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=ROOT,
+        ).decode().strip()
+    except Exception:
+        return "unknown"
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Hierarchical Clustering x Turnover Smoothing 실험 러너",
+    )
+    p.add_argument("--start", default="2009-12-31", help="백테스트 시작일 (기본: 2009-12-31)")
+    p.add_argument("--end", default="2026-03-31", help="백테스트 종료일 (기본: 2026-03-31)")
+    p.add_argument("--min-is-months", type=int, default=36)
+    p.add_argument("--factor-rebal-months", type=int, default=6)
+    p.add_argument("--weight-rebal-months", type=int, default=3)
+    p.add_argument("--top-factors", type=int, default=50)
+    p.add_argument("--workers", type=int, default=4, help="병렬 워커 수 (기본 4)")
+    p.add_argument("--sequential", action="store_true", help="순차 실행 (디버그용)")
+    p.add_argument("--test-mode", type=str, default=None,
+                   help="test_data.csv 파일명 (소량 smoke test 용)")
+    p.add_argument("--only", type=str, default=None,
+                   help="쉼표 구분 케이스 이름만 실행 (예: baseline,cluster_18)")
+    p.add_argument("--out-root", type=str, default=None,
+                   help="결과 저장 루트 (기본: output/experiments/cluster_turnover_<ts>)")
+    return p.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    args = _parse_args(argv)
+
+    cases = build_cases()
+    if args.only:
+        wanted = {s.strip() for s in args.only.split(",")}
+        cases = [c for c in cases if c["name"] in wanted]
+        if not cases:
+            logger.error("--only 가 어떤 케이스도 매칭하지 않음: %s", args.only)
+            return 2
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_root = Path(args.out_root) if args.out_root else (
+        ROOT / "output" / "experiments" / f"cluster_turnover_{ts}"
+    )
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    common = {
+        "start": args.start,
+        "end": args.end,
+        "min_is_months": args.min_is_months,
+        "factor_rebal_months": args.factor_rebal_months,
+        "weight_rebal_months": args.weight_rebal_months,
+        "top_factors": args.top_factors,
+        "test_file": args.test_mode,
+    }
+
+    # config.json
+    config = {
+        "run_id": out_root.name,
+        "git_sha": _git_sha(),
+        "backtest_start": args.start,
+        "backtest_end": args.end,
+        "min_is_months": args.min_is_months,
+        "factor_rebal_months": args.factor_rebal_months,
+        "weight_rebal_months": args.weight_rebal_months,
+        "top_factors": args.top_factors,
+        "factor_ranking_method": "tstat",
+        "workers": 1 if args.sequential else args.workers,
+        "test_mode": bool(args.test_mode),
+        "cases": cases,
+    }
+    with (out_root / "config.json").open("w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+
+    logger.info("Experiment started: %s (%d cases)", out_root, len(cases))
+
+    rows: list[dict[str, Any]] = []
+    if args.sequential or args.workers == 1 or args.test_mode:
+        # 순차 실행 (test_mode 도 순차로 강제 - 메모리 절약)
+        for i, c in enumerate(cases, 1):
+            logger.info("[%d/%d] running %s", i, len(cases), c["name"])
+            row = run_single_case(c, str(out_root), common)
+            logger.info("[%d/%d] %s -> %s (%.1fs)", i, len(cases), c["name"],
+                        row["status"], row["runtime_sec"])
+            rows.append(row)
+    else:
+        with ProcessPoolExecutor(max_workers=args.workers) as ex:
+            futures = {
+                ex.submit(run_single_case, c, str(out_root), common): c for c in cases
+            }
+            done = 0
+            for fut in as_completed(futures):
+                case = futures[fut]
+                try:
+                    row = fut.result()
+                except Exception as e:
+                    row = build_summary_row(
+                        case, None, float("nan"), 0.0,
+                        "FAILED", f"{type(e).__name__}: {e}",
+                    )
+                done += 1
+                logger.info("[%d/%d] %s -> %s (%.1fs)",
+                            done, len(cases), case["name"],
+                            row["status"], row["runtime_sec"])
+                rows.append(row)
+
+    # 케이스 이름 순서로 정렬 (build_cases 정의 순서)
+    name_order = {c["name"]: i for i, c in enumerate(cases)}
+    rows.sort(key=lambda r: name_order.get(r["case"], 999))
+
+    summary_df = pd.DataFrame(rows)
+    summary_df.to_csv(out_root / "summary.csv", index=False)
+
+    render_markdown_report(
+        summary_df,
+        out_root / "REPORT.md",
+        meta={
+            "git_sha": config["git_sha"],
+            "start": args.start,
+            "end": args.end,
+            "min_is_months": args.min_is_months,
+            "factor_rebal_months": args.factor_rebal_months,
+            "weight_rebal_months": args.weight_rebal_months,
+            "top_factors": args.top_factors,
+            "workers": config["workers"],
+        },
+    )
+
+    n_ok = (summary_df["status"] == "OK").sum()
+    n_fail = (summary_df["status"] == "FAILED").sum()
+    logger.info(
+        "Experiment complete: %d OK / %d FAILED -> %s",
+        n_ok, n_fail, out_root / "REPORT.md",
+    )
+    return 0 if n_fail == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
