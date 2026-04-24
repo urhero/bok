@@ -371,6 +371,28 @@ def _save_overfit_diagnostics_csv(report: dict[str, Any], path: Path) -> None:
     )
 
 
+def pick_recommendation(summary_df: pd.DataFrame) -> dict[str, Any] | None:
+    """summary_df 에서 추천 케이스 1개를 선정.
+
+    규칙: status==OK AND verdict==OK 인 행 중, sharpe_cew 상위 3개를 추린 뒤
+    그 중 avg_turnover 가 가장 낮은 행을 선택.
+
+    Args:
+        summary_df: build_summary_row 의 행들로 구성된 DataFrame.
+
+    Returns:
+        선정된 행의 dict, 또는 후보 없음 시 None.
+    """
+    ok_rows = summary_df[
+        (summary_df["status"] == "OK") & (summary_df["verdict"] == "OK")
+    ].copy()
+    if len(ok_rows) == 0:
+        return None
+    top3 = ok_rows.nlargest(min(3, len(ok_rows)), "sharpe_cew")
+    best = top3.loc[top3["avg_turnover"].idxmin()]
+    return best.to_dict()
+
+
 def render_markdown_report(
     summary_df: pd.DataFrame,
     out_path: Path,
@@ -453,15 +475,10 @@ def render_markdown_report(
     # §4 추천 조합
     lines.append("## 4. 추천 조합")
     lines.append("")
-    ok_rows = summary_df[
-        (summary_df["status"] == "OK") & (summary_df["verdict"] == "OK")
-    ].copy()
-    if len(ok_rows) == 0:
+    best = pick_recommendation(summary_df)
+    if best is None:
         lines.append("- 추천 가능한 케이스 없음 (모두 FAILED 또는 과적합 판정)")
     else:
-        # verdict=OK 중 Sharpe 상위 3개 -> 그 중 avg_turnover 최저
-        top3 = ok_rows.nlargest(min(3, len(ok_rows)), "sharpe_cew")
-        best = top3.loc[top3["avg_turnover"].idxmin()]
         lines.append(
             f"- 선정 규칙: `verdict==OK` 중 Sharpe 상위 3개, 그 중 `avg_turnover` 최저"
         )
@@ -500,7 +517,12 @@ def render_markdown_report(
 def _render_interpretation(
     df: pd.DataFrame, bl_cagr: float, bl_turnover: float,
 ) -> list[str]:
-    """§3 해석 섹션의 자동 스켈레톤 (방향성/수치만; 도메인 해석은 사람 보강)."""
+    """§3 해석 섹션의 자동 스켈레톤 (방향성/수치만; 도메인 해석은 사람 보강).
+
+    주의: build_cases() 의 케이스 이름 (baseline, cluster_12/18/24,
+    smooth_0.7/0.5, combo_18_0.7/0.5) 에 하드코딩 되어 있다. 케이스 이름을
+    바꾸려면 이 함수도 동기화해야 한다 (실패 시 §3 하위 섹션이 조용히 비어 나옴).
+    """
     def _row(name: str) -> dict | None:
         sub = df[df["case"] == name]
         return sub.iloc[0].to_dict() if len(sub) else None

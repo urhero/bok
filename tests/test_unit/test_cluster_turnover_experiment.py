@@ -348,3 +348,41 @@ def test_render_markdown_report_recommendation_picks_highest_sharpe_ok():
         # "최종 추천" 섹션이 cluster_18 을 포함해야
         rec_section = text.split("## 4. 추천 조합")[1].split("## 5.")[0]
         assert "cluster_18" in rec_section
+
+
+from scripts.run_cluster_turnover_experiment import pick_recommendation
+
+
+def test_pick_recommendation_returns_none_when_no_ok_rows():
+    """모든 케이스가 FAILED 또는 과적합 verdict 일 때 None 반환."""
+    df = pd.DataFrame([
+        {"case": "a", "status": "FAILED", "verdict": "N/A", "sharpe_cew": np.nan, "avg_turnover": np.nan},
+        {"case": "b", "status": "OK", "verdict": "OPTIMIZATION_OVERFIT", "sharpe_cew": 1.0, "avg_turnover": 0.1},
+    ])
+    assert pick_recommendation(df) is None
+
+
+def test_pick_recommendation_picks_highest_sharpe_min_turnover():
+    """verdict=OK 중 Sharpe 상위 3개 -> 그 중 avg_turnover 최저."""
+    df = pd.DataFrame([
+        {"case": "low_sharpe", "status": "OK", "verdict": "OK", "sharpe_cew": 0.5, "avg_turnover": 0.01},
+        {"case": "top_sharpe_high_to", "status": "OK", "verdict": "OK", "sharpe_cew": 1.2, "avg_turnover": 0.50},
+        {"case": "top_sharpe_low_to", "status": "OK", "verdict": "OK", "sharpe_cew": 1.1, "avg_turnover": 0.05},
+        {"case": "mid_sharpe", "status": "OK", "verdict": "OK", "sharpe_cew": 1.0, "avg_turnover": 0.15},
+    ])
+    # top3 by Sharpe: top_sharpe_high_to (1.2), top_sharpe_low_to (1.1), mid_sharpe (1.0)
+    # min turnover among top3: top_sharpe_low_to (0.05)
+    best = pick_recommendation(df)
+    assert best is not None
+    assert best["case"] == "top_sharpe_low_to"
+
+
+def test_pick_recommendation_single_ok_row_returned():
+    """OK 행이 1개뿐이어도 그것을 반환."""
+    df = pd.DataFrame([
+        {"case": "only", "status": "OK", "verdict": "OK", "sharpe_cew": 0.7, "avg_turnover": 0.2},
+        {"case": "bad", "status": "OK", "verdict": "FILTER_OVERFIT", "sharpe_cew": 2.0, "avg_turnover": 0.01},
+    ])
+    best = pick_recommendation(df)
+    assert best is not None
+    assert best["case"] == "only"
