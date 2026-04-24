@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import subprocess
 import sys
 import time
@@ -246,6 +247,9 @@ def run_single_case(
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.WARNING)
     # 기존 핸들러 제거 후 파일 핸들러만 추가
+    # 주의: 기존 핸들러를 모두 제거 (Rich progress bar 억제 목적).
+    # ProcessPool 워커에서는 격리된 state 이므로 안전. --sequential 모드에서는
+    # 메인 프로세스의 logging 설정을 영구적으로 변경하므로 의도적 (디버그용 모드).
     for h in list(root_logger.handlers):
         root_logger.removeHandler(h)
     fh = logging.StreamHandler(log_fh)
@@ -311,24 +315,35 @@ def run_single_case(
 
 
 def _json_safe(d: dict[str, Any]) -> dict[str, Any]:
-    """NaN/Inf 를 None 으로, numpy 타입을 native 로 변환 (JSON 호환)."""
+    """NaN/Inf 를 None 으로, numpy 타입을 native 로 변환 (JSON 호환).
+
+    주의: numpy 타입이 Python primitive 의 subclass 라서 분기 순서 중요.
+    numpy.float64 은 float 의 subclass 이므로 np.floating 체크를 먼저.
+    이 함수는 flat dict 전용 — 중첩 dict 은 재귀하지 않는다.
+    """
     out: dict[str, Any] = {}
     for k, v in d.items():
-        if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
-            out[k] = None
-        elif isinstance(v, (np.integer,)):
-            out[k] = int(v)
-        elif isinstance(v, (np.floating,)):
-            out[k] = None if np.isnan(v) else float(v)
-        elif isinstance(v, (np.bool_,)):
+        # numpy types first (float64 is a subclass of float, bool_ is separate)
+        if isinstance(v, np.bool_):
             out[k] = bool(v)
+        elif isinstance(v, np.integer):
+            out[k] = int(v)
+        elif isinstance(v, np.floating):
+            out[k] = None if np.isnan(v) or np.isinf(v) else float(v)
+        elif isinstance(v, float):
+            out[k] = None if (math.isnan(v) or math.isinf(v)) else v
         else:
             out[k] = v
     return out
 
 
 def _save_overfit_diagnostics_csv(report: dict[str, Any], path: Path) -> None:
-    """기존 main.py 의 overfit_diagnostics.csv 포맷을 재현."""
+    """기존 main.py overfit_diagnostics.csv 포맷의 subset 을 저장.
+
+    main.py 의 전체 ~22행 포맷 중 핵심 14행 (Funnel 4 + 지표 4 + 성과 6) 만 출력.
+    MDD 서브필드/p-value/주의사항/한계점은 summary 리포트에서 별도 표시되므로 생략.
+    전체 포맷이 필요하면 `python main.py backtest` CLI 경로 사용.
+    """
     def _pct(v):
         return f"{v:.4%}" if isinstance(v, float) and not np.isnan(v) else "N/A"
 
