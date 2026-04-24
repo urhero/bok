@@ -239,7 +239,9 @@ def run_single_case(
     case_dir = Path(out_root) / case["name"]
     case_dir.mkdir(parents=True, exist_ok=True)
 
-    # 워커 stdout/stderr 를 case_dir/run.log 로 리디렉트
+    # Python logging 을 case_dir/run.log 로 리디렉트 (stdout/stderr 는 parent 에 inherit).
+    # print() 호출이나 numpy/pandas 런타임 warning 은 여전히 parent 로 나오지만,
+    # 이 프로젝트는 logging 을 쓰므로 실용상 문제 없음.
     log_path = case_dir / "run.log"
     log_fh = log_path.open("w", encoding="utf-8")
 
@@ -389,7 +391,11 @@ def pick_recommendation(summary_df: pd.DataFrame) -> dict[str, Any] | None:
     if len(ok_rows) == 0:
         return None
     top3 = ok_rows.nlargest(min(3, len(ok_rows)), "sharpe_cew")
-    best = top3.loc[top3["avg_turnover"].idxmin()]
+    # avg_turnover 가 모두 NaN 인 경우 (OOS <2 rebalance) idxmin 이 NaN 반환 -> KeyError 방지
+    with_turnover = top3.dropna(subset=["avg_turnover"])
+    if len(with_turnover) == 0:
+        return top3.iloc[0].to_dict()
+    best = with_turnover.loc[with_turnover["avg_turnover"].idxmin()]
     return best.to_dict()
 
 

@@ -386,3 +386,14 @@ def test_pick_recommendation_single_ok_row_returned():
     best = pick_recommendation(df)
     assert best is not None
     assert best["case"] == "only"
+
+
+def test_pick_recommendation_fallback_when_all_turnovers_nan():
+    """OK 행들의 avg_turnover 가 전부 NaN 이면 top3 중 Sharpe 최고 행 fallback."""
+    df = pd.DataFrame([
+        {"case": "high", "status": "OK", "verdict": "OK", "sharpe_cew": 1.2, "avg_turnover": np.nan},
+        {"case": "mid", "status": "OK", "verdict": "OK", "sharpe_cew": 0.9, "avg_turnover": np.nan},
+    ])
+    best = pick_recommendation(df)
+    assert best is not None
+    assert best["case"] == "high"
