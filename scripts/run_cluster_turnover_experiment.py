@@ -115,3 +115,85 @@ def classify_verdict(funnel_pattern: str, oos_pctile: float) -> str:
     if not pd.isna(oos_pctile) and oos_pctile >= 0.60:
         return "PERCENTILE_WARN"
     return "OK"
+
+
+def build_summary_row(
+    case: dict[str, Any],
+    overfit_report: dict[str, Any] | None,
+    avg_turnover: float,
+    runtime_sec: float,
+    status: str,
+    error: str | None,
+) -> dict[str, Any]:
+    """케이스 1개의 결과를 summary.csv 한 행 dict 로 변환.
+
+    `overfit_report` 가 None 이면 FAILED 케이스.
+    """
+    override = case.get("override", {})
+    row: dict[str, Any] = {
+        "case": case["name"],
+        "use_cluster_dedup": bool(override.get("use_cluster_dedup", False)),
+        "n_clusters": override.get("n_clusters"),
+        "per_cluster_keep": override.get("per_cluster_keep"),
+        "turnover_alpha": case["alpha"],
+        "status": status,
+        "error": error,
+        "runtime_sec": runtime_sec,
+        "avg_turnover": avg_turnover,
+    }
+
+    if status != "OK" or overfit_report is None:
+        # FAILED: 성과 컬럼 NaN
+        for k in [
+            "cagr_cew", "sharpe_cew", "mdd_cew", "calmar_cew",
+            "cagr_ew", "sharpe_ew",
+            "funnel_a_cagr", "funnel_b_cagr", "funnel_c_cagr",
+            "oos_pctile_value", "strict_jaccard", "is_oos_rank_corr", "deflation_ratio",
+        ]:
+            row[k] = float("nan")
+        row["funnel_verdict"] = "N/A"
+        row["oos_pctile_flag"] = "N/A"
+        row["verdict"] = "N/A"
+        return row
+
+    pattern = overfit_report["funnel_pattern"]
+    pctile = overfit_report.get("oos_avg_percentile", float("nan"))
+
+    row.update({
+        "cagr_cew": overfit_report["oos_cagr"],
+        "sharpe_cew": overfit_report["oos_sharpe"],
+        "mdd_cew": overfit_report["oos_mdd"],
+        "calmar_cew": overfit_report["oos_calmar"],
+        "cagr_ew": overfit_report["oos_ew_cagr"],
+        "sharpe_ew": overfit_report["oos_ew_sharpe"],
+        "funnel_a_cagr": overfit_report["funnel_ew_all_cagr"],
+        "funnel_b_cagr": overfit_report["funnel_ew_top50_cagr"],
+        "funnel_c_cagr": overfit_report["funnel_cew_cagr"],
+        "oos_pctile_value": pctile,
+        "strict_jaccard": overfit_report.get("strict_jaccard", float("nan")),
+        "is_oos_rank_corr": overfit_report.get("is_oos_rank_spearman", float("nan")),
+        "deflation_ratio": overfit_report.get("deflation_ratio", float("nan")),
+    })
+
+    # funnel_verdict 라벨
+    funnel_label_map = {
+        "NORMAL": "OK (C>B>A)",
+        "OPTIMIZATION_OVERFIT": "OPT_OVERFIT (B>C>A)",
+        "FILTER_OVERFIT": "FILTER_OVERFIT (A>B)",
+        "UNCATEGORIZED": "UNCATEGORIZED",
+        "INSUFFICIENT_DATA": "N/A",
+    }
+    row["funnel_verdict"] = funnel_label_map.get(pattern, pattern)
+
+    # oos_pctile_flag
+    if pd.isna(pctile):
+        row["oos_pctile_flag"] = "N/A"
+    elif pctile >= 0.60:
+        row["oos_pctile_flag"] = "WARN"
+    else:
+        row["oos_pctile_flag"] = "OK"
+
+    # 종합 verdict
+    row["verdict"] = classify_verdict(pattern, pctile)
+
+    return row

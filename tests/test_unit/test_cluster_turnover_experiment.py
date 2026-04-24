@@ -138,3 +138,99 @@ def test_verdict_uncategorized_pattern():
 def test_verdict_boundary_at_0_60_is_warn():
     """경계값 pctile == 0.60 는 PERCENTILE_WARN (>= 세만틱 고정)."""
     assert classify_verdict("NORMAL", 0.60) == "PERCENTILE_WARN"
+
+
+from scripts.run_cluster_turnover_experiment import build_summary_row
+
+
+def _fake_overfit_report() -> dict:
+    return {
+        "funnel_pattern": "NORMAL",
+        "funnel_ew_all_cagr": 0.05,
+        "funnel_ew_top50_cagr": 0.08,
+        "funnel_cew_cagr": 0.10,
+        "oos_avg_percentile": 0.42,
+        "strict_jaccard": 0.55,
+        "is_oos_rank_spearman": 0.35,
+        "deflation_ratio": 0.70,
+        "oos_cagr": 0.10,
+        "oos_mdd": -0.25,
+        "oos_sharpe": 1.1,
+        "oos_calmar": 0.4,
+        "oos_ew_cagr": 0.08,
+        "oos_ew_sharpe": 0.9,
+        "funnel_interpretation": "...",
+        "oos_percentile_interpretation": "...",
+        "strict_jaccard_interpretation": "...",
+        "rank_corr_interpretation": "...",
+        "deflation_interpretation": "...",
+    }
+
+
+def test_build_summary_row_ok_case():
+    case = {"name": "cluster_18", "override": {
+        "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+    }, "alpha": 1.0}
+    row = build_summary_row(
+        case=case,
+        overfit_report=_fake_overfit_report(),
+        avg_turnover=0.18,
+        runtime_sec=123.4,
+        status="OK",
+        error=None,
+    )
+    assert row["case"] == "cluster_18"
+    assert row["use_cluster_dedup"] is True
+    assert row["n_clusters"] == 18
+    assert row["per_cluster_keep"] == 3
+    assert row["turnover_alpha"] == 1.0
+    assert row["status"] == "OK"
+    assert row["cagr_cew"] == 0.10
+    assert row["sharpe_cew"] == 1.1
+    assert row["avg_turnover"] == 0.18
+    assert row["funnel_verdict"].startswith("OK")
+    assert row["oos_pctile_flag"] == "OK"
+    assert row["verdict"] == "OK"
+    assert row["runtime_sec"] == 123.4
+
+
+def test_build_summary_row_baseline_has_default_cluster_fields():
+    case = {"name": "baseline", "override": {}, "alpha": 1.0}
+    row = build_summary_row(
+        case=case,
+        overfit_report=_fake_overfit_report(),
+        avg_turnover=0.25,
+        runtime_sec=100.0,
+        status="OK",
+        error=None,
+    )
+    assert row["use_cluster_dedup"] is False
+    # baseline 은 override 에 cluster 필드가 없으므로 기본값 또는 NaN
+    assert row["n_clusters"] is None or np.isnan(row["n_clusters"])
+
+
+def test_build_summary_row_failed_case():
+    case = {"name": "cluster_18", "override": {
+        "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+    }, "alpha": 1.0}
+    row = build_summary_row(
+        case=case,
+        overfit_report=None,
+        avg_turnover=float("nan"),
+        runtime_sec=5.0,
+        status="FAILED",
+        error="ZeroDivisionError: ...",
+    )
+    assert row["status"] == "FAILED"
+    assert row["error"] == "ZeroDivisionError: ..."
+    assert np.isnan(row["cagr_cew"])
+    assert row["verdict"] == "N/A"
+
+
+def test_build_summary_row_percentile_warn():
+    report = _fake_overfit_report()
+    report["oos_avg_percentile"] = 0.70  # >= 0.60
+    case = {"name": "baseline", "override": {}, "alpha": 1.0}
+    row = build_summary_row(case, report, 0.3, 90.0, "OK", None)
+    assert row["oos_pctile_flag"] == "WARN"
+    assert row["verdict"] == "PERCENTILE_WARN"
