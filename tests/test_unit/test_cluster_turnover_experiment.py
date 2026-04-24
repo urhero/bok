@@ -262,3 +262,89 @@ def test_build_summary_row_failed_has_nan_net_cagr():
     case = {"name": "x", "override": {}, "alpha": 1.0}
     row = build_summary_row(case, None, float("nan"), 1.0, "FAILED", "err")
     assert np.isnan(row["net_cagr_cew"])
+
+
+import tempfile
+
+from scripts.run_cluster_turnover_experiment import render_markdown_report
+
+
+def _fake_summary_df():
+    # 2 케이스만 있는 축소판 (렌더링만 검증)
+    rows = [
+        {
+            "case": "baseline",
+            "use_cluster_dedup": False, "n_clusters": None, "per_cluster_keep": None,
+            "turnover_alpha": 1.0,
+            "status": "OK", "error": None, "runtime_sec": 100.0,
+            "cagr_cew": 0.08, "sharpe_cew": 0.9, "mdd_cew": -0.30,
+            "calmar_cew": 0.27, "cagr_ew": 0.07, "sharpe_ew": 0.8,
+            "net_cagr_cew": 0.076,  # 0.08 - 0.35 * 0.012 ~= 0.076
+            "avg_turnover": 0.35,
+            "funnel_a_cagr": 0.04, "funnel_b_cagr": 0.06, "funnel_c_cagr": 0.08,
+            "oos_pctile_value": 0.50, "oos_pctile_flag": "OK",
+            "strict_jaccard": 0.40, "is_oos_rank_corr": 0.30, "deflation_ratio": 0.65,
+            "funnel_verdict": "OK (C>B>A)", "verdict": "OK",
+        },
+        {
+            "case": "cluster_18",
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+            "turnover_alpha": 1.0,
+            "status": "OK", "error": None, "runtime_sec": 110.0,
+            "cagr_cew": 0.10, "sharpe_cew": 1.1, "mdd_cew": -0.25,
+            "calmar_cew": 0.40, "cagr_ew": 0.07, "sharpe_ew": 0.8,
+            "net_cagr_cew": 0.0964,  # 0.10 - 0.30 * 0.012 = 0.0964
+            "avg_turnover": 0.30,
+            "funnel_a_cagr": 0.04, "funnel_b_cagr": 0.08, "funnel_c_cagr": 0.10,
+            "oos_pctile_value": 0.45, "oos_pctile_flag": "OK",
+            "strict_jaccard": 0.50, "is_oos_rank_corr": 0.35, "deflation_ratio": 0.70,
+            "funnel_verdict": "OK (C>B>A)", "verdict": "OK",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def test_render_markdown_report_creates_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "REPORT.md"
+        render_markdown_report(
+            _fake_summary_df(),
+            out,
+            meta={"git_sha": "abc123", "start": "2020-01-01", "end": "2020-12-31", "workers": 2},
+        )
+        assert out.exists()
+
+
+def test_render_markdown_report_contains_key_sections():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "REPORT.md"
+        render_markdown_report(
+            _fake_summary_df(),
+            out,
+            meta={"git_sha": "abc123", "start": "2020-01-01", "end": "2020-12-31", "workers": 2},
+        )
+        text = out.read_text(encoding="utf-8")
+        assert "# Cluster Dedup" in text or "# Hierarchical" in text
+        assert "## 1. 성과 요약" in text
+        assert "## 2. 과적합 진단" in text
+        assert "## 3. 해석" in text
+        assert "## 4. 추천 조합" in text
+        assert "## 5. 실행 메타" in text
+        # 케이스 이름이 표에 나와야 함
+        assert "baseline" in text
+        assert "cluster_18" in text
+
+
+def test_render_markdown_report_recommendation_picks_highest_sharpe_ok():
+    # 두 케이스 모두 verdict=OK, cluster_18 의 sharpe 가 더 높음 -> 추천 = cluster_18
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "REPORT.md"
+        render_markdown_report(
+            _fake_summary_df(),
+            out,
+            meta={"git_sha": "abc123", "start": "2020-01-01", "end": "2020-12-31", "workers": 2},
+        )
+        text = out.read_text(encoding="utf-8")
+        # "최종 추천" 섹션이 cluster_18 을 포함해야
+        rec_section = text.split("## 4. 추천 조합")[1].split("## 5.")[0]
+        assert "cluster_18" in rec_section

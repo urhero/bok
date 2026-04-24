@@ -369,3 +369,226 @@ def _save_overfit_diagnostics_csv(report: dict[str, Any], path: Path) -> None:
     pd.DataFrame(rows, columns=["Category", "Metric", "Value", "Interpretation"]).to_csv(
         path, index=False, encoding="utf-8-sig",
     )
+
+
+def render_markdown_report(
+    summary_df: pd.DataFrame,
+    out_path: Path,
+    meta: dict[str, Any],
+) -> None:
+    """summary_df 를 입력받아 REPORT.md 생성.
+
+    spec §5 포맷 - §1 성과 요약 / §2 과적합 진단 / §3 해석 / §4 추천 / §5 메타.
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # baseline 기준선
+    baseline = summary_df[summary_df["case"] == "baseline"]
+    bl_cagr = float(baseline["cagr_cew"].iloc[0]) if len(baseline) else float("nan")
+    bl_turnover = float(baseline["avg_turnover"].iloc[0]) if len(baseline) else float("nan")
+
+    lines: list[str] = []
+    lines.append("# Cluster Dedup x Turnover Smoothing 실험 리포트")
+    lines.append("")
+    lines.append(f"- 실행일: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"- Git SHA: `{meta.get('git_sha', 'unknown')}`")
+    lines.append(f"- 백테스트 기간: `{meta.get('start', '?')}` ~ `{meta.get('end', '?')}`")
+    lines.append(
+        f"- 공통 파라미터: min_is={meta.get('min_is_months', 36)}, "
+        f"factor_rebal={meta.get('factor_rebal_months', 6)}, "
+        f"weight_rebal={meta.get('weight_rebal_months', 3)}, "
+        f"top={meta.get('top_factors', 50)}, ranking=tstat"
+    )
+    lines.append("")
+
+    # §1 성과 요약
+    lines.append("## 1. 성과 요약 (OOS, Net-of-cost)")
+    lines.append("")
+    lines.append("| 케이스 | CAGR | Net CAGR | Sharpe | MDD | Calmar | Avg Turnover | dCAGR vs base | dTurnover vs base |")
+    lines.append("|---|---|---|---|---|---|---|---|---|")
+    for _, r in summary_df.iterrows():
+        if r["status"] != "OK":
+            lines.append(f"| `{r['case']}` | FAILED: {r.get('error', '')} | | | | | | | |")
+            continue
+        d_cagr = r["cagr_cew"] - bl_cagr if not np.isnan(bl_cagr) else float("nan")
+        d_to = r["avg_turnover"] - bl_turnover if not np.isnan(bl_turnover) else float("nan")
+        lines.append(
+            f"| `{r['case']}` | {_fmt_pct(r['cagr_cew'])} | {_fmt_pct(r.get('net_cagr_cew'))} | "
+            f"{_fmt_dec(r['sharpe_cew'])} | {_fmt_pct(r['mdd_cew'])} | {_fmt_dec(r['calmar_cew'])} | "
+            f"{_fmt_dec(r['avg_turnover'])} | "
+            f"{_fmt_pct_signed(d_cagr)} | {_fmt_dec_signed(d_to)} |"
+        )
+    lines.append("")
+
+    # §2 과적합 진단
+    lines.append("## 2. 과적합 진단")
+    lines.append("")
+    lines.append("| 케이스 | Verdict | Funnel (A/B/C CAGR) | OOS Pctile (lower=better) | Jaccard (higher=better) | Rank Corr (higher=better) | Deflation |")
+    lines.append("|---|---|---|---|---|---|---|")
+    for _, r in summary_df.iterrows():
+        if r["status"] != "OK":
+            lines.append(f"| `{r['case']}` | FAILED | | | | | |")
+            continue
+        funnel_str = (
+            f"{r['funnel_verdict']} ({_fmt_pct(r['funnel_a_cagr'])}/"
+            f"{_fmt_pct(r['funnel_b_cagr'])}/{_fmt_pct(r['funnel_c_cagr'])})"
+        )
+        pctile_str = f"{_fmt_pct(r['oos_pctile_value'])} [{r['oos_pctile_flag']}]"
+        lines.append(
+            f"| `{r['case']}` | **{r['verdict']}** | {funnel_str} | {pctile_str} | "
+            f"{_fmt_dec(r['strict_jaccard'])} | {_fmt_dec(r['is_oos_rank_corr'])} | "
+            f"{_fmt_dec(r['deflation_ratio'])} |"
+        )
+    lines.append("")
+    lines.append("> *Deflation Ratio = OOS CAGR / IS CAGR. OOS 기간이 짧으면 단독 판단 금지.*")
+    lines.append("")
+
+    # §3 해석 (자동 스켈레톤)
+    lines.append("## 3. 해석")
+    lines.append("")
+    lines.extend(_render_interpretation(summary_df, bl_cagr, bl_turnover))
+    lines.append("")
+
+    # §4 추천 조합
+    lines.append("## 4. 추천 조합")
+    lines.append("")
+    ok_rows = summary_df[
+        (summary_df["status"] == "OK") & (summary_df["verdict"] == "OK")
+    ].copy()
+    if len(ok_rows) == 0:
+        lines.append("- 추천 가능한 케이스 없음 (모두 FAILED 또는 과적합 판정)")
+    else:
+        # verdict=OK 중 Sharpe 상위 3개 -> 그 중 avg_turnover 최저
+        top3 = ok_rows.nlargest(min(3, len(ok_rows)), "sharpe_cew")
+        best = top3.loc[top3["avg_turnover"].idxmin()]
+        lines.append(
+            f"- 선정 규칙: `verdict==OK` 중 Sharpe 상위 3개, 그 중 `avg_turnover` 최저"
+        )
+        lines.append(f"- **최종 추천: `{best['case']}`**")
+        lines.append(
+            f"  - 근거: CAGR {_fmt_pct(best['cagr_cew'])}, "
+            f"Sharpe {_fmt_dec(best['sharpe_cew'])}, "
+            f"Avg Turnover {_fmt_dec(best['avg_turnover'])} (baseline 대비 "
+            f"dCAGR {_fmt_pct_signed(best['cagr_cew'] - bl_cagr)}, "
+            f"dTurnover {_fmt_dec_signed(best['avg_turnover'] - bl_turnover)})"
+        )
+    lines.append("")
+
+    # §5 실행 메타
+    lines.append("## 5. 실행 메타")
+    lines.append("")
+    lines.append(f"- 워커 수: {meta.get('workers', '?')}")
+    total_runtime = summary_df["runtime_sec"].fillna(0).sum()
+    lines.append(f"- 총 소요 시간 (순차 합): {total_runtime:.1f}s")
+    lines.append("")
+    lines.append("| 케이스 | 상태 | Runtime (s) |")
+    lines.append("|---|---|---|")
+    for _, r in summary_df.iterrows():
+        lines.append(f"| `{r['case']}` | {r['status']} | {r['runtime_sec']:.1f} |")
+    lines.append("")
+    failed = summary_df[summary_df["status"] == "FAILED"]
+    if len(failed):
+        lines.append("### 실패 케이스")
+        for _, r in failed.iterrows():
+            lines.append(f"- `{r['case']}`: {r.get('error', 'Unknown error')}")
+        lines.append("")
+
+    out_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _render_interpretation(
+    df: pd.DataFrame, bl_cagr: float, bl_turnover: float,
+) -> list[str]:
+    """§3 해석 섹션의 자동 스켈레톤 (방향성/수치만; 도메인 해석은 사람 보강)."""
+    def _row(name: str) -> dict | None:
+        sub = df[df["case"] == name]
+        return sub.iloc[0].to_dict() if len(sub) else None
+
+    lines: list[str] = []
+
+    # 3.1 Clustering 단독 (baseline vs cluster_18)
+    lines.append("### 3.1 Clustering 효과 (baseline vs cluster_18)")
+    r2 = _row("cluster_18")
+    bl_row = _row("baseline")
+    if r2 and r2["status"] == "OK" and bl_row and bl_row["status"] == "OK":
+        lines.append(
+            f"- dCAGR: {_fmt_pct_signed(r2['cagr_cew'] - bl_cagr)}, "
+            f"dSharpe: {_fmt_dec_signed(r2['sharpe_cew'] - bl_row['sharpe_cew'])}, "
+            f"dTurnover: {_fmt_dec_signed(r2['avg_turnover'] - bl_turnover)}"
+        )
+        lines.append(f"- Verdict: baseline=`{bl_row['verdict']}`, cluster_18=`{r2['verdict']}`")
+    lines.append("")
+
+    # 3.2 n_clusters 민감도
+    lines.append("### 3.2 n_clusters 민감도 (cluster_12 / cluster_18 / cluster_24)")
+    for name in ["cluster_12", "cluster_18", "cluster_24"]:
+        r = _row(name)
+        if r and r["status"] == "OK":
+            lines.append(
+                f"- `{name}`: CAGR {_fmt_pct(r['cagr_cew'])}, "
+                f"Sharpe {_fmt_dec(r['sharpe_cew'])}, "
+                f"Turnover {_fmt_dec(r['avg_turnover'])}, Verdict `{r['verdict']}`"
+            )
+    lines.append("")
+
+    # 3.3 Smoothing 단독
+    lines.append("### 3.3 Turnover Smoothing 단독 효과 (baseline / smooth_0.7 / smooth_0.5)")
+    for name in ["baseline", "smooth_0.7", "smooth_0.5"]:
+        r = _row(name)
+        if r and r["status"] == "OK":
+            lines.append(
+                f"- `{name}` (alpha={r['turnover_alpha']}): "
+                f"CAGR {_fmt_pct(r['cagr_cew'])}, Turnover {_fmt_dec(r['avg_turnover'])}"
+            )
+    lines.append("")
+
+    # 3.4 조합
+    lines.append("### 3.4 조합 효과 (cluster_18 / combo_18_0.7 / combo_18_0.5)")
+    for name in ["cluster_18", "combo_18_0.7", "combo_18_0.5"]:
+        r = _row(name)
+        if r and r["status"] == "OK":
+            lines.append(
+                f"- `{name}` (alpha={r['turnover_alpha']}): "
+                f"CAGR {_fmt_pct(r['cagr_cew'])}, Sharpe {_fmt_dec(r['sharpe_cew'])}, "
+                f"Turnover {_fmt_dec(r['avg_turnover'])}"
+            )
+    lines.append("")
+    lines.append("> *§3 자동 해석은 방향성/수치만 제시. 도메인 해석은 사람이 보강.*")
+    return lines
+
+
+def _fmt_pct(v: Any) -> str:
+    try:
+        if v is None or (isinstance(v, float) and v != v):
+            return "N/A"
+        return f"{float(v):.2%}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
+def _fmt_dec(v: Any) -> str:
+    try:
+        if v is None or (isinstance(v, float) and v != v):
+            return "N/A"
+        return f"{float(v):.3f}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
+def _fmt_pct_signed(v: Any) -> str:
+    try:
+        if v is None or (isinstance(v, float) and v != v):
+            return "N/A"
+        return f"{float(v):+.2%}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
+def _fmt_dec_signed(v: Any) -> str:
+    try:
+        if v is None or (isinstance(v, float) and v != v):
+            return "N/A"
+        return f"{float(v):+.3f}"
+    except (TypeError, ValueError):
+        return "N/A"
