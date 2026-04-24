@@ -271,7 +271,7 @@ result.to_csv("output/wf.csv")      # 결과 저장
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
 | `min_downside_obs` | 20 | 하락 상관관계 최소 관측 수 | `correlation.py` |
 
-> **실험 결과:** `use_cluster_dedup` / `turnover_smoothing_alpha` 의 조합 효과 검증은 [docs/experiments/cluster_turnover_20260424.md](docs/experiments/cluster_turnover_20260424.md) 참조. Clustering 이 OPTIMIZATION_OVERFIT 해소, smoothing 단독 효과는 미미, 추천 조합은 `combo_18_0.5` (Sharpe 0.714 vs baseline 0.632).
+> **실험 결과:** `use_cluster_dedup` / `turnover_smoothing_alpha` / `style_cap` 조합 효과는 [docs/experiments/cluster_turnover_20260425.md](docs/experiments/cluster_turnover_20260425.md) 참조 (11 케이스). 핵심 발견: ① `OPTIMIZATION_OVERFIT` 실체는 style_cap 의 OOS 비용, ② Clustering 과 style_cap 은 다각화 역할이 중복 — cluster 적용 시 cap on/off 차이 noise 수준. 단순히 `style_cap=1.0` 만 풀어도 baseline CAGR 2.31%→2.55% (Sharpe 0.632→0.675, verdict OK) 회복. 프로덕션 규제 요건 허용 시 가장 큰 개선 여지.
 
 ## 보안 설정
 
