@@ -271,6 +271,8 @@ result.to_csv("output/wf.csv")      # 결과 저장
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
 | `min_downside_obs` | 20 | 하락 상관관계 최소 관측 수 | `correlation.py` |
 
+> **실험 결과:** `use_cluster_dedup` / `turnover_smoothing_alpha` 의 조합 효과 검증은 [docs/experiments/cluster_turnover_20260424.md](docs/experiments/cluster_turnover_20260424.md) 참조. Clustering 이 OPTIMIZATION_OVERFIT 해소, smoothing 단독 효과는 미미, 추천 조합은 `combo_18_0.5` (Sharpe 0.714 vs baseline 0.632).
+
 ## 보안 설정
 
 - **`.env`**: DB 비밀번호, 서버 주소 등 민감 정보 (git 미추적)
