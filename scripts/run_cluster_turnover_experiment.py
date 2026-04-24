@@ -61,3 +61,25 @@ def build_cases() -> list[dict[str, Any]]:
             "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
         }, "alpha": 0.5},
     ]
+
+
+def compute_avg_turnover(weight_history: pd.DataFrame) -> float:
+    """Tier 2 리밸런싱 간 factor-level turnover 평균.
+
+    turnover_t = (1/2) * sum_i |w_{t,i} - w_{t-1,i}|
+
+    신규/사라진 팩터의 이전/현재 가중치는 0 으로 간주 (fillna(0)).
+
+    Args:
+        weight_history: index=rebal date, columns=factor names, values=weight.
+
+    Returns:
+        평균 turnover (0.0 ~ 1.0 범위). 리밸런싱이 2회 미만이면 NaN.
+    """
+    if weight_history is None or weight_history.empty or len(weight_history) < 2:
+        return float("nan")
+
+    wh = weight_history.fillna(0.0)
+    # min_count=1 로 전체 NaN 행(diff 첫 행) 은 NaN 유지 → dropna 로 제거
+    diffs = wh.diff().abs().sum(axis=1, min_count=1) / 2.0
+    return float(diffs.dropna().mean())

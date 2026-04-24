@@ -47,3 +47,55 @@ def test_combo_strong_case():
     assert case["override"]["use_cluster_dedup"] is True
     assert case["override"]["n_clusters"] == 18
     assert case["alpha"] == 0.5
+
+
+import pandas as pd
+import numpy as np
+
+from scripts.run_cluster_turnover_experiment import compute_avg_turnover
+
+
+def test_compute_avg_turnover_empty_history():
+    """빈 weight_history 는 NaN 반환."""
+    wh = pd.DataFrame()
+    assert np.isnan(compute_avg_turnover(wh))
+
+
+def test_compute_avg_turnover_single_rebalance():
+    """단일 리밸런싱 시점은 diff 불가 → NaN."""
+    wh = pd.DataFrame(
+        {"factorA": [0.5], "factorB": [0.5]},
+        index=pd.to_datetime(["2020-01-31"]),
+    )
+    assert np.isnan(compute_avg_turnover(wh))
+
+
+def test_compute_avg_turnover_identical_weights_zero():
+    """가중치 변화 없는 연속 리밸런싱 → 0."""
+    wh = pd.DataFrame(
+        {"factorA": [0.5, 0.5, 0.5], "factorB": [0.5, 0.5, 0.5]},
+        index=pd.to_datetime(["2020-01-31", "2020-04-30", "2020-07-31"]),
+    )
+    assert compute_avg_turnover(wh) == 0.0
+
+
+def test_compute_avg_turnover_full_swap():
+    """A 100% -> B 100% 로 전환 시 turnover = 1.0 (L1/2)."""
+    wh = pd.DataFrame(
+        {"factorA": [1.0, 0.0], "factorB": [0.0, 1.0]},
+        index=pd.to_datetime(["2020-01-31", "2020-04-30"]),
+    )
+    # |1-0| + |0-1| = 2, /2 = 1.0
+    assert compute_avg_turnover(wh) == 1.0
+
+
+def test_compute_avg_turnover_with_nan_factors():
+    """새로 등장한 팩터는 이전 가중치 0 으로 간주."""
+    wh = pd.DataFrame({
+        "factorA": [0.5, np.nan],   # A 사라짐
+        "factorB": [0.5, 0.5],
+        "factorC": [np.nan, 0.5],   # C 새로 등장
+    }, index=pd.to_datetime(["2020-01-31", "2020-04-30"]))
+    # diff: |0-0.5| + |0.5-0.5| + |0.5-0| = 1.0, /2 = 0.5
+    result = compute_avg_turnover(wh)
+    assert abs(result - 0.5) < 1e-9
