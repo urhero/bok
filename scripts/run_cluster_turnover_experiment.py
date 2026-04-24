@@ -211,3 +211,146 @@ def build_summary_row(
     row["verdict"] = classify_verdict(pattern, pctile)
 
     return row
+
+
+def run_single_case(
+    case: dict[str, Any],
+    out_root: str,
+    common: dict[str, Any],
+) -> dict[str, Any]:
+    """단일 케이스를 실행하고 summary row dict 를 반환.
+
+    워커 프로세스 내부에서 호출된다. 예외 포집으로 실패 케이스도
+    FAILED 행으로 반환되어 병렬 실행이 한 케이스 때문에 중단되지 않는다.
+
+    Args:
+        case: build_cases() 의 단일 항목.
+        out_root: 실험 결과 루트 디렉토리 (str - ProcessPool pickling 호환).
+        common: 공통 파라미터 dict (start/end/min_is/rebal/top/test_file).
+
+    Returns:
+        build_summary_row() 형식의 dict.
+    """
+    # 워커 내부에서 import (ProcessPool spawn 호환)
+    from service.backtest.overfit_diagnostics import generate_overfit_report
+    from service.backtest.walk_forward_engine import WalkForwardEngine
+
+    case_dir = Path(out_root) / case["name"]
+    case_dir.mkdir(parents=True, exist_ok=True)
+
+    # 워커 stdout/stderr 를 case_dir/run.log 로 리디렉트
+    log_path = case_dir / "run.log"
+    log_fh = log_path.open("w", encoding="utf-8")
+
+    # logging 레벨 WARNING 으로 올려 rich progress 억제
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.WARNING)
+    # 기존 핸들러 제거 후 파일 핸들러만 추가
+    for h in list(root_logger.handlers):
+        root_logger.removeHandler(h)
+    fh = logging.StreamHandler(log_fh)
+    fh.setLevel(logging.WARNING)
+    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    root_logger.addHandler(fh)
+
+    # tc_annual_rate: transaction_cost_bps / 1e4 * (12 / weight_rebal_months)
+    tc_bps = 30.0  # default; overridable via common
+    weight_rebal = int(common.get("weight_rebal_months", 3))
+    tc_annual_rate = (common.get("transaction_cost_bps", tc_bps) / 1e4) * (12.0 / max(weight_rebal, 1))
+
+    t0 = time.time()
+    try:
+        engine = WalkForwardEngine(
+            min_is_months=common["min_is_months"],
+            factor_rebal_months=common["factor_rebal_months"],
+            weight_rebal_months=common["weight_rebal_months"],
+            top_factors=common["top_factors"],
+            turnover_smoothing_alpha=case["alpha"],
+            pipeline_params_override=case["override"],
+        )
+        result = engine.run(
+            common["start"], common["end"], test_file=common.get("test_file"),
+        )
+
+        # walk_forward CSV
+        result.to_csv(str(case_dir / "walk_forward.csv"))
+
+        # overfit 진단
+        overfit_report = generate_overfit_report(
+            result, full_period_cagr=result.is_full_period_cagr,
+        )
+
+        # overfit_diagnostics.csv (기존 main.py 포맷과 동일)
+        _save_overfit_diagnostics_csv(overfit_report, case_dir / "overfit_diagnostics.csv")
+
+        # avg_turnover
+        avg_to = compute_avg_turnover(result.weight_history)
+
+        runtime = time.time() - t0
+        summary = build_summary_row(
+            case, overfit_report, avg_to, runtime, "OK", None,
+            tc_annual_rate=tc_annual_rate,
+        )
+
+        # performance.json (summary 와 동일 필드)
+        with (case_dir / "performance.json").open("w", encoding="utf-8") as f:
+            json.dump(_json_safe(summary), f, ensure_ascii=False, indent=2)
+
+        return summary
+    except Exception as e:
+        tb = traceback.format_exc()
+        log_fh.write(f"\n\n[FAILED] {type(e).__name__}: {e}\n{tb}\n")
+        runtime = time.time() - t0
+        return build_summary_row(
+            case, None, float("nan"), runtime, "FAILED", f"{type(e).__name__}: {e}",
+            tc_annual_rate=tc_annual_rate,
+        )
+    finally:
+        log_fh.flush()
+        log_fh.close()
+
+
+def _json_safe(d: dict[str, Any]) -> dict[str, Any]:
+    """NaN/Inf 를 None 으로, numpy 타입을 native 로 변환 (JSON 호환)."""
+    out: dict[str, Any] = {}
+    for k, v in d.items():
+        if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+            out[k] = None
+        elif isinstance(v, (np.integer,)):
+            out[k] = int(v)
+        elif isinstance(v, (np.floating,)):
+            out[k] = None if np.isnan(v) else float(v)
+        elif isinstance(v, (np.bool_,)):
+            out[k] = bool(v)
+        else:
+            out[k] = v
+    return out
+
+
+def _save_overfit_diagnostics_csv(report: dict[str, Any], path: Path) -> None:
+    """기존 main.py 의 overfit_diagnostics.csv 포맷을 재현."""
+    def _pct(v):
+        return f"{v:.4%}" if isinstance(v, float) and not np.isnan(v) else "N/A"
+
+    def _dec(v):
+        return f"{v:.4f}" if isinstance(v, float) and not np.isnan(v) else "N/A"
+
+    rows = [
+        ("1순위 - Funnel Value-Add", "패턴", report["funnel_pattern"], report["funnel_interpretation"]),
+        ("1순위 - Funnel Value-Add", "EW_All CAGR", _pct(report["funnel_ew_all_cagr"]), "전체 유효 팩터 동일가중"),
+        ("1순위 - Funnel Value-Add", "EW_Top50 CAGR", _pct(report["funnel_ew_top50_cagr"]), "Top-50 후보군 동일가중"),
+        ("1순위 - Funnel Value-Add", "Constrained EW CAGR", _pct(report["funnel_cew_cagr"]), "Constrained EW (Top-N + style_cap)"),
+        ("2순위 - OOS Percentile", "평균 백분위", _pct(report["oos_avg_percentile"]), report["oos_percentile_interpretation"]),
+        ("3순위 - Strict Jaccard", "Strict Jaccard", _dec(report["strict_jaccard"]), report["strict_jaccard_interpretation"]),
+        ("4순위(보조) - Rank Corr", "IS-OOS Rank Correlation", _dec(report["is_oos_rank_spearman"]), report["rank_corr_interpretation"]),
+        ("5순위(보조) - Deflation", "Deflation Ratio", _dec(report["deflation_ratio"]), report["deflation_interpretation"]),
+        ("OOS 성과 - Constrained EW", "CAGR", _pct(report["oos_cagr"]), ""),
+        ("OOS 성과 - Constrained EW", "MDD", _pct(report["oos_mdd"]), ""),
+        ("OOS 성과 - Constrained EW", "Sharpe", _dec(report["oos_sharpe"]), ""),
+        ("OOS 성과 - Constrained EW", "Calmar", _dec(report["oos_calmar"]), ""),
+        ("OOS 성과 - EW", "CAGR", _pct(report["oos_ew_cagr"]), ""),
+        ("OOS 성과 - EW", "Sharpe", _dec(report["oos_ew_sharpe"]), ""),
+    ]
+    pd.DataFrame(rows, columns=["Category", "Metric", "Value", "Interpretation"]).to_csv(
+        path, index=False, encoding="utf-8-sig",
+    )
