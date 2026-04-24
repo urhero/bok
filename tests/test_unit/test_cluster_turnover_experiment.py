@@ -128,3 +128,13 @@ def test_verdict_insufficient_data_returns_na():
 def test_verdict_nan_pctile_with_normal_returns_ok():
     # pctile 계산 불가 시 (NaN) → 패턴만으로 판단
     assert classify_verdict("NORMAL", float("nan")) == "OK"
+
+
+def test_verdict_uncategorized_pattern():
+    """UNCATEGORIZED 패턴은 동명 verdict 로 전달 (spec §5.2)."""
+    assert classify_verdict("UNCATEGORIZED", 0.50) == "UNCATEGORIZED"
+
+
+def test_verdict_boundary_at_0_60_is_warn():
+    """경계값 pctile == 0.60 는 PERCENTILE_WARN (>= 세만틱 고정)."""
+    assert classify_verdict("NORMAL", 0.60) == "PERCENTILE_WARN"

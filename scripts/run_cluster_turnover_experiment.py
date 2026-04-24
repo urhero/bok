@@ -89,11 +89,12 @@ def classify_verdict(funnel_pattern: str, oos_pctile: float) -> str:
     """Funnel pattern + OOS Percentile 로 종합 verdict 산출.
 
     spec §5.2 규칙:
-      FILTER_OVERFIT (pattern) → FILTER_OVERFIT
-      OPTIMIZATION_OVERFIT (pattern) → OPTIMIZATION_OVERFIT
-      NORMAL + pctile >= 0.60 → PERCENTILE_WARN
-      NORMAL + pctile < 0.60 (또는 NaN) → OK
-      INSUFFICIENT_DATA → N/A
+      FILTER_OVERFIT (pattern) -> FILTER_OVERFIT
+      OPTIMIZATION_OVERFIT (pattern) -> OPTIMIZATION_OVERFIT
+      UNCATEGORIZED (pattern) -> UNCATEGORIZED
+      INSUFFICIENT_DATA (pattern) -> N/A
+      NORMAL + pctile >= 0.60 -> PERCENTILE_WARN
+      NORMAL + pctile < 0.60 (또는 NaN) -> OK
 
     Args:
         funnel_pattern: `generate_overfit_report` 결과의 `funnel_pattern`.
@@ -106,9 +107,11 @@ def classify_verdict(funnel_pattern: str, oos_pctile: float) -> str:
         return "FILTER_OVERFIT"
     if funnel_pattern == "OPTIMIZATION_OVERFIT":
         return "OPTIMIZATION_OVERFIT"
+    if funnel_pattern == "UNCATEGORIZED":
+        return "UNCATEGORIZED"
     if funnel_pattern == "INSUFFICIENT_DATA":
         return "N/A"
-    # NORMAL
-    if not (isinstance(oos_pctile, float) and oos_pctile != oos_pctile) and oos_pctile >= 0.60:
+    # NORMAL (또는 알 수 없는 값은 NORMAL 로 간주)
+    if not pd.isna(oos_pctile) and oos_pctile >= 0.60:
         return "PERCENTILE_WARN"
     return "OK"
