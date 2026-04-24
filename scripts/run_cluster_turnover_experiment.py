@@ -83,3 +83,32 @@ def compute_avg_turnover(weight_history: pd.DataFrame) -> float:
     # min_count=1 로 전체 NaN 행(diff 첫 행) 은 NaN 유지 → dropna 로 제거
     diffs = wh.diff().abs().sum(axis=1, min_count=1) / 2.0
     return float(diffs.dropna().mean())
+
+
+def classify_verdict(funnel_pattern: str, oos_pctile: float) -> str:
+    """Funnel pattern + OOS Percentile 로 종합 verdict 산출.
+
+    spec §5.2 규칙:
+      FILTER_OVERFIT (pattern) → FILTER_OVERFIT
+      OPTIMIZATION_OVERFIT (pattern) → OPTIMIZATION_OVERFIT
+      NORMAL + pctile >= 0.60 → PERCENTILE_WARN
+      NORMAL + pctile < 0.60 (또는 NaN) → OK
+      INSUFFICIENT_DATA → N/A
+
+    Args:
+        funnel_pattern: `generate_overfit_report` 결과의 `funnel_pattern`.
+        oos_pctile: 평균 OOS 백분위 (0~1). NaN 허용.
+
+    Returns:
+        verdict 문자열.
+    """
+    if funnel_pattern == "FILTER_OVERFIT":
+        return "FILTER_OVERFIT"
+    if funnel_pattern == "OPTIMIZATION_OVERFIT":
+        return "OPTIMIZATION_OVERFIT"
+    if funnel_pattern == "INSUFFICIENT_DATA":
+        return "N/A"
+    # NORMAL
+    if not (isinstance(oos_pctile, float) and oos_pctile != oos_pctile) and oos_pctile >= 0.60:
+        return "PERCENTILE_WARN"
+    return "OK"

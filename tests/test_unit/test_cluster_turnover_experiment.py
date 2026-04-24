@@ -99,3 +99,32 @@ def test_compute_avg_turnover_with_nan_factors():
     # diff: |0-0.5| + |0.5-0.5| + |0.5-0| = 1.0, /2 = 0.5
     result = compute_avg_turnover(wh)
     assert abs(result - 0.5) < 1e-9
+
+
+from scripts.run_cluster_turnover_experiment import classify_verdict
+
+
+def test_verdict_ok_when_normal_and_low_pctile():
+    assert classify_verdict("NORMAL", 0.45) == "OK"
+
+
+def test_verdict_percentile_warn_when_normal_but_high_pctile():
+    assert classify_verdict("NORMAL", 0.65) == "PERCENTILE_WARN"
+
+
+def test_verdict_optimization_overfit():
+    # pattern 이 OPTIMIZATION_OVERFIT 이면 pctile 무시
+    assert classify_verdict("OPTIMIZATION_OVERFIT", 0.30) == "OPTIMIZATION_OVERFIT"
+
+
+def test_verdict_filter_overfit():
+    assert classify_verdict("FILTER_OVERFIT", 0.30) == "FILTER_OVERFIT"
+
+
+def test_verdict_insufficient_data_returns_na():
+    assert classify_verdict("INSUFFICIENT_DATA", float("nan")) == "N/A"
+
+
+def test_verdict_nan_pctile_with_normal_returns_ok():
+    # pctile 계산 불가 시 (NaN) → 패턴만으로 판단
+    assert classify_verdict("NORMAL", float("nan")) == "OK"
