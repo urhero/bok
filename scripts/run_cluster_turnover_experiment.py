@@ -150,6 +150,35 @@ def build_cases() -> list[dict[str, Any]]:
             "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 1,
             "top_factor_count": 18,
         }, "alpha": 1.0},
+        # Phase 5: factor_ranking_method 변화 (baseline + best 두 archetype)
+        {"name": "baseline_shrunk", "override": {"factor_ranking_method": "shrunk_tstat"}, "alpha": 1.0},
+        {"name": "baseline_cagr", "override": {"factor_ranking_method": "cagr"}, "alpha": 1.0},
+        {"name": "combo_18_0.1_shrunk", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+            "factor_ranking_method": "shrunk_tstat",
+        }, "alpha": 0.1},
+        {"name": "combo_18_0.1_cagr", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+            "factor_ranking_method": "cagr",
+        }, "alpha": 0.1},
+        # Phase 5: factor_rebal_months 변화 (3 / 12)
+        {"name": "baseline_rebal3", "override": {}, "alpha": 1.0, "factor_rebal_months": 3},
+        {"name": "baseline_rebal12", "override": {}, "alpha": 1.0, "factor_rebal_months": 12},
+        {"name": "combo_18_0.1_rebal3", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+        }, "alpha": 0.1, "factor_rebal_months": 3},
+        {"name": "combo_18_0.1_rebal12", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+        }, "alpha": 0.1, "factor_rebal_months": 12},
+        # Phase 5: min_is_months 변화 (24 / 60)
+        {"name": "baseline_is24", "override": {}, "alpha": 1.0, "min_is_months": 24},
+        {"name": "baseline_is60", "override": {}, "alpha": 1.0, "min_is_months": 60},
+        {"name": "combo_18_0.1_is24", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+        }, "alpha": 0.1, "min_is_months": 24},
+        {"name": "combo_18_0.1_is60", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+        }, "alpha": 0.1, "min_is_months": 60},
     ]
 
 
@@ -346,9 +375,10 @@ def run_single_case(
 
     t0 = time.time()
     try:
+        # case-level engine arg override (없으면 common 의 값 사용)
         engine = WalkForwardEngine(
-            min_is_months=common["min_is_months"],
-            factor_rebal_months=common["factor_rebal_months"],
+            min_is_months=case.get("min_is_months", common["min_is_months"]),
+            factor_rebal_months=case.get("factor_rebal_months", common["factor_rebal_months"]),
             weight_rebal_months=common["weight_rebal_months"],
             top_factors=common["top_factors"],
             turnover_smoothing_alpha=case["alpha"],

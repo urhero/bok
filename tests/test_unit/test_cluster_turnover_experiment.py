@@ -12,15 +12,35 @@ sys.path.insert(0, str(ROOT))
 from scripts.run_cluster_turnover_experiment import build_cases
 
 
-def test_build_cases_returns_31_cases():
+def test_build_cases_returns_43_cases():
     cases = build_cases()
-    assert len(cases) == 31
+    assert len(cases) == 43
 
 
 def test_case_names_are_unique():
     cases = build_cases()
     names = [c["name"] for c in cases]
-    assert len(set(names)) == 31
+    assert len(set(names)) == 43
+
+
+def test_phase5_engine_arg_overrides():
+    """Phase 5 cases 가 case-level engine args 를 올바르게 주입."""
+    cases = build_cases()
+    # factor_rebal 변형
+    case_r3 = next(c for c in cases if c["name"] == "baseline_rebal3")
+    assert case_r3.get("factor_rebal_months") == 3
+    case_r12 = next(c for c in cases if c["name"] == "baseline_rebal12")
+    assert case_r12.get("factor_rebal_months") == 12
+    # min_is 변형
+    case_is24 = next(c for c in cases if c["name"] == "baseline_is24")
+    assert case_is24.get("min_is_months") == 24
+    case_is60 = next(c for c in cases if c["name"] == "baseline_is60")
+    assert case_is60.get("min_is_months") == 60
+    # ranking_method 는 override 경로
+    case_shrunk = next(c for c in cases if c["name"] == "baseline_shrunk")
+    assert case_shrunk["override"].get("factor_ranking_method") == "shrunk_tstat"
+    case_cagr = next(c for c in cases if c["name"] == "baseline_cagr")
+    assert case_cagr["override"].get("factor_ranking_method") == "cagr"
 
 
 def test_phase4_cases_override_top_factor_count():
