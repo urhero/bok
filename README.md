@@ -271,7 +271,7 @@ result.to_csv("output/wf.csv")      # 결과 저장
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
 | `min_downside_obs` | 20 | 하락 상관관계 최소 관측 수 | `correlation.py` |
 
-> **실험 결과:** `use_cluster_dedup` / `turnover_smoothing_alpha` / `style_cap` / `n_clusters` / `per_cluster_keep` 조합 효과는 [docs/experiments/cluster_turnover_20260425.md](docs/experiments/cluster_turnover_20260425.md) 참조 (21 케이스 광역 sweep). 핵심 발견: ① `OPTIMIZATION_OVERFIT` 실체 = style_cap 의 OOS 비용, ② n_clusters sweet spot 18~30, <18 → OPT_OVERFIT / >40 → FILTER_OVERFIT, ③ Clustering 후 style_cap 효과 거의 없음 (cap 0.5/1.0 결과 동일), ④ smoothing α 강할수록 CAGR/Sharpe/Turnover 모두 개선 (단조). 추천: `combo_18_0.3` (Sharpe 0.722) 또는 규제 허용 시 `baseline_nocap` (CAGR 2.55%).
+> **실험 결과:** [docs/experiments/cluster_turnover_20260425.md](docs/experiments/cluster_turnover_20260425.md) 참조 (28 케이스 광역 sweep). 핵심 발견: ① `OPTIMIZATION_OVERFIT` 실체 = style_cap 의 OOS 비용, ② n_clusters sweet spot 18~30 (8/10/12/15 → OPT_OVERFIT, 40 → FILTER_OVERFIT), ③ Clustering 후 style_cap 효과 거의 없음 (cap 0.5/1.0 결과 동일), ④ smoothing α 단조 개선이 0.1 부근 saturation. 두 archetype: `combo_18_0.1` (Sharpe 0.728, MDD -2.86%) 또는 규제 허용 시 `baseline_nocap_0.3` (CAGR 2.58%, Sharpe 0.679).
 
 ## 보안 설정
 
