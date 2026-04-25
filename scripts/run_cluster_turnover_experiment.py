@@ -137,6 +137,19 @@ def build_cases() -> list[dict[str, Any]]:
         {"name": "cluster_10", "override": {
             "use_cluster_dedup": True, "n_clusters": 10, "per_cluster_keep": 3,
         }, "alpha": 1.0},
+        # Phase 4: 진짜 strong dedup (keep=1 with n>=top_factors)
+        # top_factor_count override 로 portfolio 크기를 cluster 수에 맞춤.
+        {"name": "cluster_n50_keep1", "override": {
+            "use_cluster_dedup": True, "n_clusters": 50, "per_cluster_keep": 1,
+        }, "alpha": 1.0},
+        {"name": "cluster_n30_keep1_top30", "override": {
+            "use_cluster_dedup": True, "n_clusters": 30, "per_cluster_keep": 1,
+            "top_factor_count": 30,
+        }, "alpha": 1.0},
+        {"name": "cluster_n18_keep1_top18", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 1,
+            "top_factor_count": 18,
+        }, "alpha": 1.0},
     ]
 
 

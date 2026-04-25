@@ -12,15 +12,27 @@ sys.path.insert(0, str(ROOT))
 from scripts.run_cluster_turnover_experiment import build_cases
 
 
-def test_build_cases_returns_28_cases():
+def test_build_cases_returns_31_cases():
     cases = build_cases()
-    assert len(cases) == 28
+    assert len(cases) == 31
 
 
 def test_case_names_are_unique():
     cases = build_cases()
     names = [c["name"] for c in cases]
-    assert len(set(names)) == 28
+    assert len(set(names)) == 31
+
+
+def test_phase4_cases_override_top_factor_count():
+    """Phase 4 strong-dedup cases 는 top_factor_count 를 override 로 주입."""
+    cases = build_cases()
+    case_n30 = next(c for c in cases if c["name"] == "cluster_n30_keep1_top30")
+    assert case_n30["override"].get("top_factor_count") == 30
+    case_n18 = next(c for c in cases if c["name"] == "cluster_n18_keep1_top18")
+    assert case_n18["override"].get("top_factor_count") == 18
+    # cluster_n50_keep1 은 top_factor_count override 없음 (기본 50 사용)
+    case_n50 = next(c for c in cases if c["name"] == "cluster_n50_keep1")
+    assert "top_factor_count" not in case_n50["override"]
 
 
 def test_nocap_cases_set_style_cap_to_1():
