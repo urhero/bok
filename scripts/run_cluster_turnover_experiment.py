@@ -116,6 +116,27 @@ def build_cases() -> list[dict[str, Any]]:
         {"name": "combo_18_0.3", "override": {
             "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
         }, "alpha": 0.3},
+        # Phase 3: 더 강한 smoothing alpha + nocap x smoothing 조합
+        {"name": "combo_18_0.2", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+        }, "alpha": 0.2},
+        {"name": "combo_18_0.1", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+        }, "alpha": 0.1},
+        {"name": "baseline_nocap_0.5", "override": {"style_cap": 1.0}, "alpha": 0.5},
+        {"name": "baseline_nocap_0.3", "override": {"style_cap": 1.0}, "alpha": 0.3},
+        {"name": "combo_nocap_0.3", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+            "style_cap": 1.0,
+        }, "alpha": 0.3},
+        {"name": "combo_nocap_0.1", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+            "style_cap": 1.0,
+        }, "alpha": 0.1},
+        # Phase 3: n_clusters verdict 경계 (8↔12 사이)
+        {"name": "cluster_10", "override": {
+            "use_cluster_dedup": True, "n_clusters": 10, "per_cluster_keep": 3,
+        }, "alpha": 1.0},
     ]
 
 
