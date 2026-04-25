@@ -82,6 +82,40 @@ def build_cases() -> list[dict[str, Any]]:
             "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
             "style_cap": 1.0,
         }, "alpha": 0.5},
+        # n_clusters 와이드 sweep (per_cluster_keep=3 고정)
+        {"name": "cluster_8", "override": {
+            "use_cluster_dedup": True, "n_clusters": 8, "per_cluster_keep": 3,
+        }, "alpha": 1.0},
+        {"name": "cluster_15", "override": {
+            "use_cluster_dedup": True, "n_clusters": 15, "per_cluster_keep": 3,
+        }, "alpha": 1.0},
+        {"name": "cluster_20", "override": {
+            "use_cluster_dedup": True, "n_clusters": 20, "per_cluster_keep": 3,
+        }, "alpha": 1.0},
+        {"name": "cluster_30", "override": {
+            "use_cluster_dedup": True, "n_clusters": 30, "per_cluster_keep": 3,
+        }, "alpha": 1.0},
+        {"name": "cluster_40", "override": {
+            "use_cluster_dedup": True, "n_clusters": 40, "per_cluster_keep": 3,
+        }, "alpha": 1.0},
+        # per_cluster_keep 변화 (n_clusters=18 고정)
+        {"name": "cluster_18_keep1", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 1,
+        }, "alpha": 1.0},
+        {"name": "cluster_18_keep2", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 2,
+        }, "alpha": 1.0},
+        {"name": "cluster_18_keep5", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 5,
+        }, "alpha": 1.0},
+        # 중간 style_cap + 더 강한 smoothing
+        {"name": "combo_18_cap0.5", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+            "style_cap": 0.5,
+        }, "alpha": 0.5},
+        {"name": "combo_18_0.3", "override": {
+            "use_cluster_dedup": True, "n_clusters": 18, "per_cluster_keep": 3,
+        }, "alpha": 0.3},
     ]
 
 
