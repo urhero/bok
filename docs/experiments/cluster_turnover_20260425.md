@@ -1,7 +1,7 @@
 # Cluster Dedup x Turnover Smoothing 실험 리포트
 
-- 실행일: 2026-04-25 18:51:16
-- Git SHA: `ea37f11`
+- 실행일: 2026-04-25 21:00:10
+- Git SHA: `a97b0c5`
 - 백테스트 기간: `2009-12-31` ~ `2026-03-31`
 - 공통 파라미터: min_is=36, factor_rebal=6, weight_rebal=3, top=50, ranking=tstat
 
@@ -37,6 +37,9 @@
 | `combo_nocap_0.3` | 1.43% | 1.35% | 0.713 | -2.82% | 0.505 | 0.061 | -0.88% | +0.016 |
 | `combo_nocap_0.1` | 1.44% | 1.38% | 0.717 | -2.80% | 0.515 | 0.056 | -0.86% | +0.010 |
 | `cluster_10` | 2.00% | 1.88% | 0.805 | -5.37% | 0.373 | 0.102 | -0.30% | +0.056 |
+| `cluster_n50_keep1` | 0.33% | 0.25% | 0.180 | -4.44% | 0.074 | 0.071 | -1.98% | +0.025 |
+| `cluster_n30_keep1_top30` | 0.78% | 0.67% | 0.381 | -3.51% | 0.223 | 0.096 | -1.52% | +0.050 |
+| `cluster_n18_keep1_top18` | 0.81% | 0.67% | 0.350 | -3.38% | 0.241 | 0.122 | -1.49% | +0.076 |
 
 ## 2. 과적합 진단
 
@@ -70,6 +73,9 @@
 | `combo_nocap_0.3` | **OK** | OK (C>B>A) (1.11%/1.38%/1.43%) | 50.04% [OK] | 0.721 | 0.121 | 0.376 |
 | `combo_nocap_0.1` | **OK** | OK (C>B>A) (1.11%/1.38%/1.44%) | 50.04% [OK] | 0.721 | 0.121 | 0.381 |
 | `cluster_10` | **OPTIMIZATION_OVERFIT** | OPT_OVERFIT (B>C>A) (1.11%/2.18%/2.00%) | 48.73% [OK] | 0.602 | 0.166 | 0.470 |
+| `cluster_n50_keep1` | **FILTER_OVERFIT** | FILTER_OVERFIT (A>B) (1.11%/0.32%/0.33%) | 51.70% [OK] | 0.694 | 0.059 | 0.101 |
+| `cluster_n30_keep1_top30` | **FILTER_OVERFIT** | FILTER_OVERFIT (A>B) (1.11%/0.84%/0.78%) | 51.08% [OK] | 0.599 | 0.040 | 0.235 |
+| `cluster_n18_keep1_top18` | **FILTER_OVERFIT** | FILTER_OVERFIT (A>B) (1.11%/0.78%/0.81%) | 50.78% [OK] | 0.514 | 0.057 | 0.210 |
 
 > *Deflation Ratio = OOS CAGR / IS CAGR. OOS 기간이 짧으면 단독 판단 금지.*
 
@@ -96,92 +102,40 @@
 
 > *§3 자동 해석은 방향성/수치만 제시. 도메인 해석은 사람이 보강.*
 
+## 3-1. Phase 4 — 진짜 Strong Dedup 시도 (가설 반박)
+
+`top_factor_count` override 도입 후 1-per-cluster (진짜 keep=1) 검증:
+
+| 케이스 | n_clusters | keep | top | CAGR | Sharpe | Verdict |
+|---|---|---|---|---|---|---|
+| `cluster_n50_keep1` | 50 | 1 | 50 | 0.33% | 0.180 | **FILTER_OVERFIT** |
+| `cluster_n30_keep1_top30` | 30 | 1 | 30 | 0.78% | 0.381 | **FILTER_OVERFIT** |
+| `cluster_n18_keep1_top18` | 18 | 1 | 18 | 0.81% | 0.350 | **FILTER_OVERFIT** |
+
+**가설 반박**: 1-per-cluster 가 OOS 성과를 오히려 격감시킴.
+
+**원인 분석:**
+- 각 cluster 에서 t-stat 1등만 뽑으면 **다양한 cluster 의 무작위 대표** 가 됨
+- 1차 필터(t-stat) 의 핵심 가치는 cluster 내부 비교가 아닌 **전체 universe 절대 상위 선별**
+- Funnel pattern: A=EW_All=1.11% > B=EW_Top=0.32~0.84% → 필터가 가치 파괴
+- cluster_40 (keep=3) 도 같은 이유로 FILTER_OVERFIT 이었음 — cluster 너무 세분화 시 dedup 자체가 1차 필터의 신호를 희석
+
+**최적 dedup 균형점:**
+- n=18, keep=3 (총 54 후보 → top-50): t-stat 강자 + 약간의 다양성
+- n×keep < top_n 인 경우 자동 보정 → 사실상 같은 결과
+- n×keep >> top_n (cluster_18_keep5 = 90 후보): cap 트리거 → OPT_OVERFIT
+- n×keep ≈ top_n with keep=1: 신호 희석 → FILTER_OVERFIT
+
 ## 4. 추천 조합
 
 - 선정 규칙: `verdict==OK` 중 Sharpe 상위 3개, 그 중 `avg_turnover` 최저
 - **최종 추천: `combo_18_0.1`**
   - 근거: CAGR 1.47%, Sharpe 0.728, Avg Turnover 0.057 (baseline 대비 dCAGR -0.84%, dTurnover +0.011)
 
-## 4-1. 광역 sweep 관찰 (수동 보강)
-
-### A. n_clusters 곡선 (8 / 10 / 12 / 15 / 18 / 20 / 24 / 30 / 40) — 9지점
-
-| n_clusters | CAGR | Sharpe | Verdict |
-|---|---|---|---|
-| 8 | 1.48% | 0.549 | OPT_OVERFIT |
-| 10 | 2.00% | 0.805 | OPT_OVERFIT |
-| 12 | 2.08% | 0.866 | OPT_OVERFIT |
-| 15 | 1.68% | 0.760 | OPT_OVERFIT |
-| **18** | 1.39% | 0.693 | **OK** |
-| 20 | 1.21% | 0.597 | OK |
-| 24 | 1.23% | 0.611 | OK |
-| 30 | 1.43% | 0.644 | OK |
-| 40 | 1.12% | 0.456 | **FILTER_OVERFIT** |
-
-- **<18**: cluster 가 너무 거칠어 dedup 효과 부족 → style_cap 트리거 → OPT_OVERFIT 반복
-- **18~30**: sweet spot (verdict OK)
-- **40**: 너무 세분화되어 cluster 가 사실상 individual 팩터 → FILTER_OVERFIT
-
-verdict 경계 정확히 18 임을 cluster_10 추가로 재확인.
-
-### B. per_cluster_keep 효과 (n=18 고정)
-
-| keep | CAGR | Sharpe | Verdict | 비고 |
-|---|---|---|---|---|
-| 1 | 1.39% | 0.693 | OK | **자동 보정 → 효과 keep=3** |
-| 2 | 1.39% | 0.693 | OK | **자동 보정 → 효과 keep=3** |
-| 3 | 1.39% | 0.693 | OK | 기준 |
-| 5 | 1.78% | 0.814 | **OPT_OVERFIT** | 90 후보 → top-50 → cap 트리거 |
-
-> **코드 한계 발견:** `cluster_and_dedup_top_n()` 의 `n_clusters * keep < top_n` 자동 보정 로직 때문에 keep=1/2 가 사실상 keep=3 으로 강제됨. 진짜 강한 dedup(keep<3) 은 `top_factors` override 와 함께 별도 실험 필요.
-
-### C. 중간 style_cap (combo + cap 0.25 / 0.5 / 1.0)
-
-| 케이스 | cap | CAGR | Sharpe |
-|---|---|---|---|
-| `combo_18_0.5` | 0.25 | 1.43% | 0.714 |
-| `combo_18_cap0.5` | 0.5 | 1.41% | 0.708 |
-| `combo_nocap_0.5` | 1.0 | 1.41% | 0.708 |
-
-cap=0.5 와 cap=1.0 결과 완전 동일 → clustering 후 어떤 스타일도 50% 안 넘음. **clustering 후에는 cap 자체가 사실상 무력화**.
-
-### D. Smoothing α 풀 sweep (combo 18, α = 0.1 ~ 1.0) — saturation 확인
-
-| α | CAGR | Sharpe | Turnover | ΔSharpe |
-|---|---|---|---|---|
-| 1.0 (cluster_18) | 1.39% | 0.693 | 0.084 | – |
-| 0.7 | 1.41% | 0.706 | 0.074 | +0.013 |
-| 0.5 | 1.43% | 0.714 | 0.068 | +0.008 |
-| 0.3 | 1.45% | 0.722 | 0.062 | +0.008 |
-| 0.2 | 1.46% | 0.725 | 0.060 | +0.003 |
-| **0.1** | **1.47%** | **0.728** | **0.057** | **+0.003** |
-
-**α 단조 개선 + 0.1 부근 saturation**. Sharpe 한계효용 점차 감소 (+0.013 → +0.008 → +0.008 → +0.003 → +0.003). α<0.1 추가 실험 의미 없음.
-
-### E. nocap × smoothing 조합 — smoothing 효과 ≈ 0
-
-| 케이스 | CAGR | Sharpe | Turnover |
-|---|---|---|---|
-| `baseline_nocap` (α=1.0) | 2.55% | 0.675 | 0.038 |
-| `baseline_nocap_0.5` | 2.57% | 0.678 | 0.032 |
-| `baseline_nocap_0.3` | 2.58% | 0.679 | 0.029 |
-
-baseline 은 cluster 없어 turnover 가 원래 낮음 (0.038) → smoothing 의 marginal 효과 미미. **clustering 이 smoothing 의 ROI 를 확보함**.
-
-### F. 두 archetype 확정
-
-| 목적 | 추천 케이스 | CAGR | Sharpe | MDD | Turnover |
-|---|---|---|---|---|---|
-| **Sharpe 최대 (verdict OK)** | `combo_18_0.1` | 1.47% | **0.728** | -2.86% | 0.057 |
-| **CAGR 최대 (verdict OK)** | `baseline_nocap_0.3` | **2.58%** | 0.679 | -8.80% | 0.029 |
-
-두 케이스가 trade-off 의 양 끝. Sharpe 우선이면 combo, CAGR 우선이면 nocap.
-규제 요건상 `style_cap=0.25` 유지 강제이면 → **`combo_18_0.1`** 자동 채택.
-
 ## 5. 실행 메타
 
 - 워커 수: 2
-- 총 소요 시간 (순차 합): 95439.4s
+- 총 소요 시간 (순차 합): 106157.0s
 
 | 케이스 | 상태 | Runtime (s) |
 |---|---|---|
@@ -213,3 +167,6 @@ baseline 은 cluster 없어 turnover 가 원래 낮음 (0.038) → smoothing 의
 | `combo_nocap_0.3` | OK | 3655.6 |
 | `combo_nocap_0.1` | OK | 3663.6 |
 | `cluster_10` | OK | 3569.0 |
+| `cluster_n50_keep1` | OK | 3589.1 |
+| `cluster_n30_keep1_top30` | OK | 3599.1 |
+| `cluster_n18_keep1_top18` | OK | 3529.3 |
