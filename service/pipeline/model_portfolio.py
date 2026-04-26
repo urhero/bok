@@ -340,14 +340,34 @@ class ModelPortfolioPipeline:
 
         meta = meta.sort_values("cagr", ascending=False).reset_index(drop=True)
 
-        # 메타 저장
+        # 메타 저장 (clustering 적용 전 전체 universe 메타)
         if test_file:
             suffix = f"_{Path(test_file).stem}"
             meta.to_csv(OUTPUT_DIR / f"meta_data_test{suffix}.csv", index=False)
         else:
             meta.to_csv(OUTPUT_DIR / "meta_data.csv", index=False)
 
-        meta = meta[:self.pipeline_params["top_factor_count"]]
+        top_n = min(self.pipeline_params["top_factor_count"], len(meta))
+
+        # Sprint 1-B: Hierarchical Clustering 기반 Top-N dedup (선택적)
+        # use_cluster_dedup=False (default) 일 때 기존 동작 (단순 cagr 상위 N) 유지
+        if self.pipeline_params.get("use_cluster_dedup", False):
+            from service.backtest.factor_selection import cluster_and_dedup_top_n
+            score_series = meta.set_index("factorAbbreviation")["cagr"]
+            selected = cluster_and_dedup_top_n(
+                monthly_rets,
+                score_series,
+                n_clusters=int(self.pipeline_params.get("n_clusters", 18)),
+                per_cluster_keep=int(self.pipeline_params.get("per_cluster_keep", 3)),
+                top_n=top_n,
+            )
+            meta = meta.set_index("factorAbbreviation").loc[selected].reset_index()
+            logger.info("cluster_dedup applied: %d factors selected from %d via %d clusters",
+                        len(selected), len(score_series),
+                        int(self.pipeline_params.get("n_clusters", 18)))
+        else:
+            meta = meta[:top_n]
+
         order = meta["factorAbbreviation"].tolist()
         ret_df = ret_df[order]
         negative_corr = calculate_downside_correlation(ret_df, min_obs=self.pipeline_params["min_downside_obs"]).loc[order, order]
