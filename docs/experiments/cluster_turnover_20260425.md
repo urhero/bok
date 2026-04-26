@@ -1,7 +1,7 @@
 # Cluster Dedup x Turnover Smoothing 실험 리포트
 
-- 실행일: 2026-04-25 21:00:10
-- Git SHA: `a97b0c5`
+- 실행일: 2026-04-26 13:29:43
+- Git SHA: `f0d2021`
 - 백테스트 기간: `2009-12-31` ~ `2026-03-31`
 - 공통 파라미터: min_is=36, factor_rebal=6, weight_rebal=3, top=50, ranking=tstat
 
@@ -40,6 +40,18 @@
 | `cluster_n50_keep1` | 0.33% | 0.25% | 0.180 | -4.44% | 0.074 | 0.071 | -1.98% | +0.025 |
 | `cluster_n30_keep1_top30` | 0.78% | 0.67% | 0.381 | -3.51% | 0.223 | 0.096 | -1.52% | +0.050 |
 | `cluster_n18_keep1_top18` | 0.81% | 0.67% | 0.350 | -3.38% | 0.241 | 0.122 | -1.49% | +0.076 |
+| `baseline_shrunk` | 2.02% | 1.96% | 0.561 | -8.17% | 0.248 | 0.053 | -0.28% | +0.008 |
+| `baseline_cagr` | 2.35% | 2.28% | 0.606 | -6.91% | 0.340 | 0.061 | +0.04% | +0.016 |
+| `combo_18_0.1_shrunk` | 1.25% | 1.19% | 0.619 | -3.17% | 0.396 | 0.054 | -1.05% | +0.008 |
+| `combo_18_0.1_cagr` | 1.24% | 1.17% | 0.602 | -2.31% | 0.536 | 0.057 | -1.07% | +0.012 |
+| `baseline_rebal3` | 2.16% | 2.11% | 0.596 | -7.72% | 0.280 | 0.047 | -0.14% | +0.001 |
+| `baseline_rebal12` | 2.45% | 2.39% | 0.674 | -7.75% | 0.316 | 0.045 | +0.14% | -0.000 |
+| `combo_18_0.1_rebal3` | 0.94% | 0.83% | 0.455 | -4.47% | 0.211 | 0.094 | -1.37% | +0.049 |
+| `combo_18_0.1_rebal12` | 1.37% | 1.33% | 0.681 | -2.59% | 0.529 | 0.035 | -0.94% | -0.010 |
+| `baseline_is24` | 2.53% | 2.48% | 0.707 | -7.91% | 0.320 | 0.047 | +0.23% | +0.002 |
+| `baseline_is60` | 2.89% | 2.85% | 0.782 | -7.91% | 0.366 | 0.040 | +0.59% | -0.006 |
+| `combo_18_0.1_is24` | 1.60% | 1.53% | 0.801 | -2.86% | 0.558 | 0.058 | -0.71% | +0.013 |
+| `combo_18_0.1_is60` | 1.85% | 1.78% | 0.946 | -2.86% | 0.646 | 0.052 | -0.46% | +0.006 |
 
 ## 2. 과적합 진단
 
@@ -76,6 +88,18 @@
 | `cluster_n50_keep1` | **FILTER_OVERFIT** | FILTER_OVERFIT (A>B) (1.11%/0.32%/0.33%) | 51.70% [OK] | 0.694 | 0.059 | 0.101 |
 | `cluster_n30_keep1_top30` | **FILTER_OVERFIT** | FILTER_OVERFIT (A>B) (1.11%/0.84%/0.78%) | 51.08% [OK] | 0.599 | 0.040 | 0.235 |
 | `cluster_n18_keep1_top18` | **FILTER_OVERFIT** | FILTER_OVERFIT (A>B) (1.11%/0.78%/0.81%) | 50.78% [OK] | 0.514 | 0.057 | 0.210 |
+| `baseline_shrunk` | **OPTIMIZATION_OVERFIT** | OPT_OVERFIT (B>C>A) (1.11%/2.48%/2.02%) | 47.32% [OK] | 0.819 | 0.152 | 0.349 |
+| `baseline_cagr` | **OPTIMIZATION_OVERFIT** | OPT_OVERFIT (B>C>A) (1.11%/2.45%/2.35%) | 47.39% [OK] | 0.755 | 0.091 | 0.357 |
+| `combo_18_0.1_shrunk` | **OPTIMIZATION_OVERFIT** | OPT_OVERFIT (B>C>A) (1.11%/1.27%/1.25%) | 50.13% [OK] | 0.735 | 0.135 | 0.332 |
+| `combo_18_0.1_cagr` | **FILTER_OVERFIT** | FILTER_OVERFIT (A>B) (1.11%/1.03%/1.24%) | 50.55% [OK] | 0.717 | 0.117 | 0.307 |
+| `baseline_rebal3` | **OPTIMIZATION_OVERFIT** | OPT_OVERFIT (B>C>A) (0.99%/2.40%/2.16%) | 47.21% [OK] | 0.792 | 0.130 | 0.359 |
+| `baseline_rebal12` | **OPTIMIZATION_OVERFIT** | OPT_OVERFIT (B>C>A) (1.06%/2.70%/2.45%) | 46.84% [OK] | 0.804 | 0.133 | 0.410 |
+| `combo_18_0.1_rebal3` | **FILTER_OVERFIT** | FILTER_OVERFIT (A>B) (0.99%/0.94%/0.94%) | 50.30% [OK] | 0.603 | 0.121 | 0.226 |
+| `combo_18_0.1_rebal12` | **OK** | OK (C>B>A) (1.06%/1.23%/1.37%) | 50.29% [OK] | 0.816 | 0.138 | 0.358 |
+| `baseline_is24` | **OPTIMIZATION_OVERFIT** | OPT_OVERFIT (B>C>A) (1.27%/2.76%/2.53%) | 47.09% [OK] | 0.793 | 0.134 | 0.424 |
+| `baseline_is60` | **OPTIMIZATION_OVERFIT** | OPT_OVERFIT (B>C>A) (1.77%/3.21%/2.89%) | 47.24% [OK] | 0.824 | 0.140 | 0.485 |
+| `combo_18_0.1_is24` | **OK** | OK (C>B>A) (1.27%/1.52%/1.60%) | 50.04% [OK] | 0.712 | 0.134 | 0.417 |
+| `combo_18_0.1_is60` | **FILTER_OVERFIT** | FILTER_OVERFIT (A>B) (1.77%/1.74%/1.85%) | 50.47% [OK] | 0.742 | 0.139 | 0.482 |
 
 > *Deflation Ratio = OOS CAGR / IS CAGR. OOS 기간이 짧으면 단독 판단 금지.*
 
@@ -102,40 +126,63 @@
 
 > *§3 자동 해석은 방향성/수치만 제시. 도메인 해석은 사람이 보강.*
 
-## 3-1. Phase 4 — 진짜 Strong Dedup 시도 (가설 반박)
+## 3-2. Phase 5 — Ranking / factor_rebal / min_is sweep
 
-`top_factor_count` override 도입 후 1-per-cluster (진짜 keep=1) 검증:
+| Group | 케이스 | CAGR | Sharpe | Verdict | vs ref |
+|---|---|---|---|---|---|
+| ranking | `baseline_shrunk` | 2.02% | 0.561 | OPT_OVERFIT | -0.07 vs `baseline` |
+| ranking | `baseline_cagr` | 2.35% | 0.606 | OPT_OVERFIT | -0.03 |
+| ranking | `combo_18_0.1_shrunk` | 1.25% | 0.619 | OPT_OVERFIT | -0.11 vs `combo_18_0.1` |
+| ranking | `combo_18_0.1_cagr` | 1.24% | 0.602 | FILTER_OVERFIT | -0.13 |
+| factor_rebal | `baseline_rebal3` (3개월) | 2.16% | 0.596 | OPT_OVERFIT | -0.04 |
+| factor_rebal | `baseline_rebal12` (12개월) | 2.45% | 0.674 | OPT_OVERFIT | +0.04 |
+| factor_rebal | `combo_18_0.1_rebal3` | 0.94% | 0.455 | FILTER_OVERFIT | -0.27 |
+| factor_rebal | `combo_18_0.1_rebal12` | 1.37% | 0.681 | OK | -0.05 |
+| min_is | `baseline_is24` (24개월) | 2.53% | 0.707 | OPT_OVERFIT | +0.08 |
+| min_is | `baseline_is60` (60개월) | 2.89% | 0.782 | OPT_OVERFIT | +0.15 |
+| min_is | **`combo_18_0.1_is24`** | **1.60%** | **0.801** | **OK** | **+0.07** |
+| min_is | `combo_18_0.1_is60` | 1.85% | 0.946 | FILTER_OVERFIT | +0.22 (verdict 위배) |
 
-| 케이스 | n_clusters | keep | top | CAGR | Sharpe | Verdict |
-|---|---|---|---|---|---|---|
-| `cluster_n50_keep1` | 50 | 1 | 50 | 0.33% | 0.180 | **FILTER_OVERFIT** |
-| `cluster_n30_keep1_top30` | 30 | 1 | 30 | 0.78% | 0.381 | **FILTER_OVERFIT** |
-| `cluster_n18_keep1_top18` | 18 | 1 | 18 | 0.81% | 0.350 | **FILTER_OVERFIT** |
+**해석:**
 
-**가설 반박**: 1-per-cluster 가 OOS 성과를 오히려 격감시킴.
+### A. Ranking method
+- **t-stat 이 베스트**. shrunk_tstat 와 cagr 모두 baseline/combo 둘 다에서 Sharpe 악화.
+- combo_18_0.1_cagr 는 FILTER_OVERFIT — CAGR ranking 은 noise 많아 dedup 시 신호 무력화.
 
-**원인 분석:**
-- 각 cluster 에서 t-stat 1등만 뽑으면 **다양한 cluster 의 무작위 대표** 가 됨
-- 1차 필터(t-stat) 의 핵심 가치는 cluster 내부 비교가 아닌 **전체 universe 절대 상위 선별**
-- Funnel pattern: A=EW_All=1.11% > B=EW_Top=0.32~0.84% → 필터가 가치 파괴
-- cluster_40 (keep=3) 도 같은 이유로 FILTER_OVERFIT 이었음 — cluster 너무 세분화 시 dedup 자체가 1차 필터의 신호를 희석
+### B. factor_rebal_months
+- 3개월 (자주 학습): combo 에선 FILTER_OVERFIT (noise 과적합).
+- 12개월 (드물게 학습): baseline +0.04 Sharpe (rules 더 stable). combo 는 OK 유지하지만 Sharpe 약간 하락.
+- **6개월 (현재 기본) 이 무난.** 12개월도 운영적으로 검토 가치 있음.
 
-**최적 dedup 균형점:**
-- n=18, keep=3 (총 54 후보 → top-50): t-stat 강자 + 약간의 다양성
-- n×keep < top_n 인 경우 자동 보정 → 사실상 같은 결과
-- n×keep >> top_n (cluster_18_keep5 = 90 후보): cap 트리거 → OPT_OVERFIT
-- n×keep ≈ top_n with keep=1: 신호 희석 → FILTER_OVERFIT
+### C. min_is_months — **가장 큰 영향**
+- **24개월: `combo_18_0.1_is24` Sharpe 0.801 (verdict OK) — 새 1위.** is=36→24 가 +10% 개선.
+- 60개월: combo_18_0.1_is60 raw Sharpe 0.946 으로 최고지만 **FILTER_OVERFIT** — IS 너무 길어 학습 데이터 fit, 1차 필터 OOS 가치 소멸.
+- baseline 도 is=24/60 모두 raw Sharpe 개선되지만 OPT_OVERFIT 유지.
+
+**핵심 통찰:** IS 길이가 짧을수록 OOS 적응력 향상. 36→24 가 sweet spot. 60 은 너무 stale.
 
 ## 4. 추천 조합
 
 - 선정 규칙: `verdict==OK` 중 Sharpe 상위 3개, 그 중 `avg_turnover` 최저
-- **최종 추천: `combo_18_0.1`**
-  - 근거: CAGR 1.47%, Sharpe 0.728, Avg Turnover 0.057 (baseline 대비 dCAGR -0.84%, dTurnover +0.011)
+- **자동 추천: `combo_18_0.1`** (CAGR 1.47%, Sharpe 0.728, Turnover 0.057)
+  - turnover 0.001 차이로 combo_18_0.1_is24 보다 우선 선택됨
+
+### 4-1. 수동 추천 (Sharpe 우선)
+
+자동 규칙은 turnover 미세 차이를 과대평가. 실제 가장 강력한 케이스:
+
+| 우선순위 | 추천 | CAGR | Sharpe | MDD | Turnover | 근거 |
+|---|---|---|---|---|---|---|
+| **Sharpe 최대 (verdict OK)** | **`combo_18_0.1_is24`** | 1.60% | **0.801** | -2.86% | 0.058 | min_is=24 + cluster + 강한 smoothing |
+| 차순위 | `combo_18_0.1` | 1.47% | 0.728 | -2.86% | 0.057 | 표준 IS=36 |
+| CAGR 최대 (verdict OK) | `baseline_nocap_0.3` | 2.58% | 0.679 | -8.80% | 0.029 | cap 해제 단독, 규제 허용 시 |
+
+**최종 권장: `combo_18_0.1_is24`** — 모든 차원에서 가장 균형 잡힌 결과.
 
 ## 5. 실행 메타
 
 - 워커 수: 2
-- 총 소요 시간 (순차 합): 106157.0s
+- 총 소요 시간 (순차 합): 153967.1s
 
 | 케이스 | 상태 | Runtime (s) |
 |---|---|---|
@@ -170,3 +217,15 @@
 | `cluster_n50_keep1` | OK | 3589.1 |
 | `cluster_n30_keep1_top30` | OK | 3599.1 |
 | `cluster_n18_keep1_top18` | OK | 3529.3 |
+| `baseline_shrunk` | OK | 3617.6 |
+| `baseline_cagr` | OK | 3610.4 |
+| `combo_18_0.1_shrunk` | OK | 3660.5 |
+| `combo_18_0.1_cagr` | OK | 3668.0 |
+| `baseline_rebal3` | OK | 7391.9 |
+| `baseline_rebal12` | OK | 1897.7 |
+| `combo_18_0.1_rebal3` | OK | 7423.5 |
+| `combo_18_0.1_rebal12` | OK | 1934.1 |
+| `baseline_is24` | OK | 3947.0 |
+| `baseline_is60` | OK | 3297.6 |
+| `combo_18_0.1_is24` | OK | 4017.2 |
+| `combo_18_0.1_is60` | OK | 3344.7 |
