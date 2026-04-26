@@ -47,18 +47,25 @@
 
 ## 3. 권장 변경 사항
 
-### ⚠️ Production Gap — 코드 변경 필요!
+### ✅ Production Gap 해결 (commit `5abb9a1`)
 
-**현재 상태:** `cluster_and_dedup_top_n()` 함수가 `walk_forward_engine.py` (백테스트) 에서만 호출됨. `model_portfolio.py` (production `mp` 명령) 의 `_build_return_matrix()` 라인 350 (`meta = meta[:top_factor_count]`) 은 단순 t-stat 상위 N 만 선택, **clustering 미적용**.
+**이전 문제:** `cluster_and_dedup_top_n()` 이 backtest engine 에서만 호출, production `mp` 미적용.
 
-검증: `use_cluster_dedup=True` 설정 후 `mp test` 실행 시 baseline 결과와 byte-identical (diff 0).
+**적용된 변경:** `service/pipeline/model_portfolio.py:_build_return_matrix()` 에 clustering 로직 이식.
 
-**필요한 변경:**
-1. `service/pipeline/model_portfolio.py:_build_return_matrix()` 에 clustering 로직 이식 (walk_forward_engine.py:436-443 패턴 참조)
-2. 회귀 테스트 추가 (`use_cluster_dedup=False` → diff 0 보장)
-3. CLAUDE.md A+B 검증 절차 수행
+**검증 결과:**
+- `use_cluster_dedup=False` (default): 변경 전후 byte-identical (regression 통과)
+- `use_cluster_dedup=True`: production 데이터에서 효과 확인
+  - 51개 → 40개 weight>0 팩터로 dedup
+  - 모멘텀/변동성 변형 (PM5D, RskAdjRS, 14DayRSI 등) 다수 제거
+  - CapEx/Inventory/Dispersion 류 신규 선택
+  - 종목 수준 turnover ~80.6% (적용 시 첫 회 큰 변동 발생 예상)
+- pytest 209/209 통과
 
-이 코드 변경 전까지 **production 적용 불가**. backtest 결과는 검증된 셈.
+**Production 적용 절차:**
+1. `config.py`: `"use_cluster_dedup": False` → `True`
+2. `mp` 실행 → 종목 수준 비중이 최초 1회 크게 변동 (예상 turnover ~80%)
+3. Bloomberg Optimizer dry-run으로 TE/제약 사전 확인 후 운영 적용
 
 ### Backtest CLI 적용 (코드 변경 없이 가능)
 ```bash
