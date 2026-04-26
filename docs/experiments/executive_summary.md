@@ -47,23 +47,28 @@
 
 ## 3. 권장 변경 사항
 
-### 즉시 적용 가능 (코드 변경 없음, `PIPELINE_PARAMS` 수정만)
-```python
-"use_cluster_dedup": True,        # False -> True
-"n_clusters": 18,                 # (그대로)
-"per_cluster_keep": 3,            # (그대로)
-# turnover_smoothing_alpha 는 CLI/엔진 인자라 mp 경로엔 적용 X — backtest 만
-```
+### ⚠️ Production Gap — 코드 변경 필요!
 
-### Backtest CLI 적용
+**현재 상태:** `cluster_and_dedup_top_n()` 함수가 `walk_forward_engine.py` (백테스트) 에서만 호출됨. `model_portfolio.py` (production `mp` 명령) 의 `_build_return_matrix()` 라인 350 (`meta = meta[:top_factor_count]`) 은 단순 t-stat 상위 N 만 선택, **clustering 미적용**.
+
+검증: `use_cluster_dedup=True` 설정 후 `mp test` 실행 시 baseline 결과와 byte-identical (diff 0).
+
+**필요한 변경:**
+1. `service/pipeline/model_portfolio.py:_build_return_matrix()` 에 clustering 로직 이식 (walk_forward_engine.py:436-443 패턴 참조)
+2. 회귀 테스트 추가 (`use_cluster_dedup=False` → diff 0 보장)
+3. CLAUDE.md A+B 검증 절차 수행
+
+이 코드 변경 전까지 **production 적용 불가**. backtest 결과는 검증된 셈.
+
+### Backtest CLI 적용 (코드 변경 없이 가능)
 ```bash
+# config.py 의 use_cluster_dedup=True 로 일시 변경 후
 python main.py backtest 2009-12-31 2026-03-31 --turnover-alpha 0.1
 ```
 
-### 프로덕션 MP 영향
-- `mp` 명령은 단일 시점 weights 산출이라 `turnover_smoothing_alpha` 미적용
-- **clustering 적용은 `mp` 에도 즉시 효과** (top-50 선정 단계 변경)
-- 첫 적용 시 `total_aggregated_weights` 가 변경됨 → CSV diff 필요 (CLAUDE.md A 검증)
+### turnover_smoothing_alpha 도 production 미적용
+- `mp` 명령은 단일 시점 weights 산출 → 시계열 EMA 블렌딩 개념 자체가 부적합
+- production 적용하려면 별도 가중치 history 관리 시스템 필요
 
 ---
 
