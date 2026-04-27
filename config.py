@@ -48,4 +48,6 @@ PIPELINE_PARAMS = {
     "n_clusters": 18,                  # 클러스터 수 (use_cluster_dedup=True일 때)
     "per_cluster_keep": 3,             # 클러스터당 유지 팩터 수
     "newey_west_lag": 3,               # Newey-West 보정 lag (meta_data.csv 진단용)
+    "turnover_smoothing_alpha": 1.0,   # mp 명령 EMA 블렌딩 비율 (1.0=off, 0.1 권장).
+                                       # output/mp_weight_history/ 사용 (첫 실행은 prev 없어 자동 skip).
 }

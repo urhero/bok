@@ -42,6 +42,11 @@ from service.pipeline.weight_construction import (
     calculate_vectorized_return,
     construct_long_short_df,
 )
+from service.pipeline.weight_history import (
+    blend_ema,
+    load_prev_factor_weights,
+    save_factor_weights,
+)
 from service.download.parquet_io import load_factor_parquet
 from utils.validation import validate_return_matrix, validate_output_weights
 
@@ -53,6 +58,7 @@ DATA_DIR = _PROJECT_ROOT / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR = _PROJECT_ROOT / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+HISTORY_DIR = OUTPUT_DIR / "mp_weight_history"
 
 
 def aggregate_factor_returns(
@@ -161,6 +167,26 @@ class ModelPortfolioPipeline:
             mode=self.pipeline_params["optimization_mode"],
             style_cap=self.pipeline_params["style_cap"],
         )
+
+        # [6.5] EMA 기반 turnover smoothing (alpha < 1.0 일 때만 적용).
+        # 첫 실행은 prev 없으므로 raw 그대로. 이후 매 실행마다 history 누적.
+        # test_file 모드는 smoothing 비활성화 (test 데이터로 prev history 오염 방지).
+        alpha = float(self.pipeline_params.get("turnover_smoothing_alpha", 1.0))
+        if alpha < 1.0 and not test_file:
+            weights_tbl = sim_result[1]
+            raw_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
+            prev_weights = load_prev_factor_weights(HISTORY_DIR, end_date)
+            if prev_weights is None:
+                logger.info("EMA blending skipped (no prev weights — first run)")
+            else:
+                logger.info("EMA blending applied (alpha=%.2f)", alpha)
+            blended = blend_ema(raw_weights, prev_weights, alpha)
+            # weights_tbl 의 fitted_weight 갱신 (factor 행 보존, 신규 factor 는 무시)
+            weights_tbl["fitted_weight"] = weights_tbl["factor"].map(blended).fillna(0.0)
+            sim_result = (sim_result[0], weights_tbl)
+            # 다음 실행을 위해 (블렌딩 결과) 저장
+            save_factor_weights(HISTORY_DIR, end_date, blended)
+
         self.weights = sim_result[1]
 
         # [7] MP 구성 + CSV 출력 — README [7]
