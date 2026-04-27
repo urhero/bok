@@ -73,9 +73,21 @@
 python main.py backtest 2009-12-31 2026-03-31 --turnover-alpha 0.1
 ```
 
-### turnover_smoothing_alpha 도 production 미적용
-- `mp` 명령은 단일 시점 weights 산출 → 시계열 EMA 블렌딩 개념 자체가 부적합
-- production 적용하려면 별도 가중치 history 관리 시스템 필요
+### ✅ EMA 기반 turnover smoothing 도 production 적용 완료 (commit `1984c0a`)
+
+신규 모듈 `service/pipeline/weight_history.py` + `output/mp_weight_history/` 디렉토리:
+- 매 `mp` 실행 시 factor weights 를 `factor_weights_{end_date}.csv` 로 저장
+- 다음 실행 시 직전 history 로딩 → EMA 블렌딩 (`alpha × new + (1-α) × prev`)
+- 첫 실행: prev 없으므로 자동 skip → raw 그대로
+- test 모드: prev history 오염 방지 위해 항상 skip
+
+설정 (`config.py`):
+```python
+"turnover_smoothing_alpha": 0.1,   # 1.0=off, 0.1=권장 (백테스트 saturation 지점)
+"use_cluster_dedup": True,         # cluster + EMA 둘 다 적용 = combo_18_0.1
+```
+
+검증: alpha=1.0 default → byte-identical regression. alpha=0.1 + fake prev → 산수 정확.
 
 ---
 
