@@ -263,12 +263,14 @@ class WalkForwardEngine:
         weight_rebal_months: int = 3,
         turnover_smoothing_alpha: float = 1.0,
         top_factors: int = 50,
+        pipeline_params_override: dict | None = None,
     ):
         self.min_is_months = min_is_months
         self.factor_rebal_months = factor_rebal_months
         self.weight_rebal_months = weight_rebal_months
         self.turnover_smoothing_alpha = turnover_smoothing_alpha
         self.top_factors = top_factors
+        self.pipeline_params_override = pipeline_params_override
 
     def run(
         self,
@@ -290,10 +292,14 @@ class WalkForwardEngine:
         logger.info("Walk-Forward backtest starting: %s ~ %s", start_date, end_date)
 
         # pipeline_params 커스텀 (config의 optimization_mode 유지)
+        # 순서: PIPELINE_PARAMS 기본 -> top_factor_count 를 CLI(self.top_factors) 로 덮어씀
+        # -> override 적용 (override 가 최우선; top_factor_count 도 override 가능)
         pp = dict(PIPELINE_PARAMS)
+        pp["top_factor_count"] = self.top_factors
+        if self.pipeline_params_override:
+            pp.update(self.pipeline_params_override)
         if pp["optimization_mode"] == "hardcoded":
             pp["optimization_mode"] = "equal_weight"  # hardcoded는 backtest에서 사용 불가
-        pp["top_factor_count"] = self.top_factors
 
         # 1. 데이터 1회 로딩 — pipeline 인스턴스를 통해 [1] 실행
         from service.pipeline.model_portfolio import DATA_DIR

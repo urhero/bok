@@ -209,8 +209,12 @@ def cluster_and_dedup_top_n(
     # 전체 score 기준 Top-N
     final = survivors.sort_values("score", ascending=False).head(top_n)
 
-    logger.debug(
-        "cluster_dedup: %d factors -> %d clusters -> %d survivors -> Top-%d",
-        len(factors), n_clusters_eff, len(survivors), len(final),
+    # cluster 크기 분포 (큰 순)
+    cluster_sizes = (
+        cluster_df.groupby("cluster").size().sort_values(ascending=False).tolist()
+    )
+    logger.info(
+        "cluster_dedup: %d factors -> %d clusters (sizes desc: %s) -> %d survivors -> final %d",
+        len(factors), n_clusters_eff, cluster_sizes, len(survivors), len(final),
     )
     return final["factor"].tolist()

@@ -206,3 +206,9 @@ node_modules/
 # Claude Code temporary files
 tmpclaude-*
 nul
+
+# 실험 산출물 (크기 큼, per-run 재현성 있음 — config.json 으로 재현 가능)
+output/experiments/
+
+# Production mp 의 EMA 블렌딩용 factor weight history (production 환경에서만 누적)
+output/mp_weight_history/
