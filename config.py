@@ -44,8 +44,10 @@ PIPELINE_PARAMS = {
     "min_downside_obs": 20,            # 하락 상관관계 최소 관측 수
     "optimization_mode": "equal_weight", # "hardcoded": 고정 가중치, "equal_weight": 동일가중 (권장)
     "factor_ranking_method": "tstat",  # "shrunk_tstat" / "tstat"(현 기본) / "cagr"
-    "use_cluster_dedup": False,        # Sprint 1-B: Top-N 중복 제거 (실험 기본 off)
+    "use_cluster_dedup": True,         # Sprint 1-B: Top-N Hierarchical Clustering 중복 제거 (production 적용)
     "n_clusters": 18,                  # 클러스터 수 (use_cluster_dedup=True일 때)
     "per_cluster_keep": 3,             # 클러스터당 유지 팩터 수
     "newey_west_lag": 3,               # Newey-West 보정 lag (meta_data.csv 진단용)
+    "turnover_smoothing_alpha": 1.0,   # mp 명령 EMA 블렌딩 비율 (1.0=off, 0.1 권장).
+                                       # output/mp_weight_history/ 사용 (첫 실행은 prev 없어 자동 skip).
 }

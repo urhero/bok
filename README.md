@@ -271,6 +271,8 @@ result.to_csv("output/wf.csv")      # 결과 저장
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
 | `min_downside_obs` | 20 | 하락 상관관계 최소 관측 수 | `correlation.py` |
 
+> **실험 결과:** [docs/experiments/cluster_turnover_20260425.md](docs/experiments/cluster_turnover_20260425.md) 참조 (43 케이스 광역 sweep). 1장 요약은 [executive_summary.md](docs/experiments/executive_summary.md). 핵심 발견: ① `OPTIMIZATION_OVERFIT` 실체 = style_cap 의 OOS 비용, ② n_clusters sweet spot 18~30, ③ Clustering 후 style_cap 효과 거의 없음, ④ smoothing α 0.1 saturation, ⑤ ranking method 는 t-stat 이 베스트, ⑥ min_is_months 는 모델에 영향 없음, ⑦ **baseline 은 2023~ Sharpe 0.27 / 21개월째 -6% 미회복 — 위험**, ⑧ **combo_18_0.1 은 같은 기간 Sharpe 0.99 / 회복 완료** (3.7배 차이). **최종 권장: `combo_18_0.1`**.
+
 ## 보안 설정
 
 - **`.env`**: DB 비밀번호, 서버 주소 등 민감 정보 (git 미추적)
