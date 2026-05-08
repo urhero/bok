@@ -669,7 +669,7 @@ Top-50이 아닌, **실제로 비중이 할당된 최종 팩터**에만 적용.
 
 ### 6.5.1 mp 가중치 history (`output/mp_weight_history/`)
 
-`mp` 명령 실행 시 회차별 factor 가중치와 style 요약을 저장한다. `service/pipeline/weight_history.py` 의 함수 4 종이 담당.
+`mp` 명령 실행 시 회차별 factor 가중치와 style 요약을 저장한다. `service/pipeline/weight_history.py` 의 저장 함수 3 종 + 공유 헬퍼 1 종이 담당.
 
 | 파일 | 함수 | 저장 조건 | 역할 |
 |------|------|----------|------|
