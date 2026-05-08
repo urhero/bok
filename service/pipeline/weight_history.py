@@ -89,6 +89,46 @@ def save_factor_weights(
     return out_path
 
 
+def _build_factor_style_df(
+    raw_weights: dict[str, float],
+    prev_weights: dict[str, float] | None,
+    new_weights: dict[str, float],
+    style_map: dict[str, str],
+) -> pd.DataFrame:
+    """factor union DataFrame 을 만든다 (save 함수들이 공유).
+
+    Args:
+        raw_weights: 이번 회차 optimizer 산출 가중치.
+        prev_weights: 직전 회차 배포 가중치 (None 이면 prev_weight 컬럼 NaN).
+        new_weights: 실제 배포될 최종 가중치 (보통 blend_ema 결과).
+        style_map: {factor_abbr: style_name}. 매핑 실패 시 "(unmapped)".
+
+    Returns:
+        columns = [factor, style, raw_weight, prev_weight, new_weight, weight_within_style]
+        정렬: (style asc, new_weight desc).
+    """
+    factors = sorted(set(raw_weights) | set(new_weights) | set(prev_weights or {}))
+
+    df = pd.DataFrame({
+        "factor": factors,
+        "style": [style_map.get(f, "(unmapped)") for f in factors],
+        "raw_weight": [float(raw_weights.get(f, 0.0)) for f in factors],
+        "prev_weight": (
+            [float(prev_weights.get(f, 0.0)) for f in factors]
+            if prev_weights is not None
+            else [float("nan")] * len(factors)
+        ),
+        "new_weight": [float(new_weights.get(f, 0.0)) for f in factors],
+    })
+
+    style_totals = df.groupby("style")["new_weight"].transform("sum")
+    df["weight_within_style"] = df["new_weight"] / style_totals.where(style_totals != 0, other=1.0)
+    df.loc[style_totals == 0, "weight_within_style"] = 0.0
+
+    df = df.sort_values(["style", "new_weight"], ascending=[True, False]).reset_index(drop=True)
+    return df
+
+
 def blend_ema(
     new_weights: dict[str, float],
     prev_weights: dict[str, float] | None,
