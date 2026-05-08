@@ -1,5 +1,5 @@
-factorAbbreviation,factorName,styleName,cagr,rank_style,rank_total
-SalesAcc,Sales Acceleration,Historical Growth,1.017770890613435,1.0,1.0
-InvToAsset,Asset Adjusted Capital Investments,Earnings Quality,0.4680899778071521,1.0,2.0
-InvTurn,Inventory Turnover,Earnings Quality,0.10438518761510185,2.0,3.0
-BP,Book to Price,Valuation,-0.04967777955355468,1.0,4.0
+factorAbbreviation,factorName,styleName,cagr,rank_style,rank_total,tstat,newey_west_tstat
+SalesAcc,Sales Acceleration,Historical Growth,1.017770890613435,1.0,1.0,0.9894197454261473,0.9372922089540637
+InvToAsset,Asset Adjusted Capital Investments,Earnings Quality,0.4680899778071521,1.0,2.0,1.7782765422687028,17.786214890580773
+InvTurn,Inventory Turnover,Earnings Quality,0.10438518761510185,2.0,3.0,0.5333653733547582,0.8062770419681554
+BP,Book to Price,Valuation,-0.04967777955355468,1.0,4.0,-0.2772269638538023,-0.2956293956548233
