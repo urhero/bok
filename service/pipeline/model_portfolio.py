@@ -196,14 +196,15 @@ class ModelPortfolioPipeline:
             weights_tbl["fitted_weight"] = weights_tbl["factor"].map(new_weights).fillna(0.0)
             sim_result = (sim_result[0], weights_tbl)
 
-            # style_map: factor_info.csv 전체 (587) 사용 -> prev 에만 있는 factor 도 매핑 가능
+            # full_style_map: factor_info.csv 전체 (587) 사용 -> prev 에만 있는 factor 도 매핑 가능.
+            # outer style_map (line 162) 은 self.meta 기반 38 factor Series 라 별도 이름 사용.
             factor_info = pd.read_csv(self.factor_info_path)
-            style_map = dict(zip(factor_info["factorAbbreviation"], factor_info["styleName"]))
+            full_style_map = dict(zip(factor_info["factorAbbreviation"], factor_info["styleName"]))
 
             if alpha < 1.0:
                 save_factor_weights(HISTORY_DIR, end_date, new_weights)  # EMA prev 입력용
-            save_factor_styles(HISTORY_DIR, end_date, raw_weights, prev_weights, new_weights, style_map)
-            save_style_totals(HISTORY_DIR, end_date, raw_weights, prev_weights, new_weights, style_map)
+            save_factor_styles(HISTORY_DIR, end_date, raw_weights, prev_weights, new_weights, full_style_map)
+            save_style_totals(HISTORY_DIR, end_date, raw_weights, prev_weights, new_weights, full_style_map)
 
         self.weights = sim_result[1]
 
