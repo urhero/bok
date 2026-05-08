@@ -162,6 +162,56 @@ def save_factor_styles(
     return out_path
 
 
+def save_style_totals(
+    history_dir: Path,
+    end_date: str | pd.Timestamp,
+    raw_weights: dict[str, float],
+    prev_weights: dict[str, float] | None,
+    new_weights: dict[str, float],
+    style_map: dict[str, str],
+) -> Path:
+    """style 단위 합계 + factor 개수/목록을 CSV 로 저장.
+
+    Args:
+        history_dir, end_date, raw_weights, prev_weights, new_weights, style_map:
+            save_factor_styles 와 동일.
+
+    Returns:
+        저장된 파일 경로.
+    """
+    history_dir = Path(history_dir)
+    history_dir.mkdir(parents=True, exist_ok=True)
+
+    factor_df = _build_factor_style_df(raw_weights, prev_weights, new_weights, style_map)
+
+    # factor_df 는 이미 (style asc, new_weight desc) 정렬됨 -> factors 문자열 순서 유지
+    grouped = factor_df.groupby("style", sort=False)
+    rows = []
+    for style, sub in grouped:
+        active = sub[sub["new_weight"] > 0]
+        rows.append({
+            "style": style,
+            "raw_weight": sub["raw_weight"].sum(),
+            "prev_weight": (
+                sub["prev_weight"].sum() if not sub["prev_weight"].isna().all() else float("nan")
+            ),
+            "new_weight": sub["new_weight"].sum(),
+            "delta": (
+                sub["new_weight"].sum() - sub["prev_weight"].sum()
+                if not sub["prev_weight"].isna().all() else float("nan")
+            ),
+            "factor_count": int(len(active)),
+            "factors": ";".join(active["factor"].tolist()),
+        })
+    df = pd.DataFrame(rows).sort_values("new_weight", ascending=False).reset_index(drop=True)
+
+    ddt_str = pd.Timestamp(end_date).strftime("%Y-%m-%d")
+    out_path = history_dir / f"style_totals_{ddt_str}.csv"
+    df.to_csv(out_path, index=False)
+    logger.info("weight_history: style_totals saved %s (%d styles)", out_path.name, len(df))
+    return out_path
+
+
 def blend_ema(
     new_weights: dict[str, float],
     prev_weights: dict[str, float] | None,

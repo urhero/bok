@@ -14,6 +14,7 @@ from service.pipeline.weight_history import (
     load_prev_factor_weights,
     save_factor_styles,
     save_factor_weights,
+    save_style_totals,
 )
 
 
@@ -215,6 +216,68 @@ def test_save_factor_styles_prev_none_writes_empty():
         )
         df = pd.read_csv(history / "factor_styles_2026-04-30.csv")
         assert df["prev_weight"].isna().all()
+
+
+# ── save_style_totals ─────────────────────────────────────────────────────
+
+def test_save_style_totals_basic():
+    """스타일 합계 + factor_count + factors 문자열 검증."""
+    with tempfile.TemporaryDirectory() as tmp:
+        history = Path(tmp)
+        raw = {"A": 0.4, "B": 0.3, "C": 0.3}
+        prev = {"A": 0.5, "B": 0.3, "C": 0.2}
+        new = {"A": 0.41, "B": 0.30, "C": 0.29}
+        style_map = {"A": "Value", "B": "Value", "C": "Momentum"}
+
+        out_path = save_style_totals(history, "2026-04-30", raw, prev, new, style_map)
+
+        df = pd.read_csv(out_path)
+        assert list(df.columns) == [
+            "style", "raw_weight", "prev_weight", "new_weight", "delta",
+            "factor_count", "factors",
+        ]
+        # new_weight desc 정렬: Value(0.71) > Momentum(0.29)
+        assert list(df["style"]) == ["Value", "Momentum"]
+        # Value: A=0.41, B=0.30 -> "A;B"
+        value_row = df[df["style"] == "Value"].iloc[0]
+        assert abs(value_row["new_weight"] - 0.71) < 1e-9
+        assert abs(value_row["raw_weight"] - 0.7) < 1e-9
+        assert abs(value_row["prev_weight"] - 0.8) < 1e-9
+        assert abs(value_row["delta"] - (0.71 - 0.8)) < 1e-9
+        assert value_row["factor_count"] == 2
+        assert value_row["factors"] == "A;B"
+
+
+def test_save_style_totals_prev_none():
+    """prev=None 이면 prev_weight, delta 빈값."""
+    with tempfile.TemporaryDirectory() as tmp:
+        history = Path(tmp)
+        save_style_totals(
+            history, "2026-04-30",
+            raw_weights={"A": 1.0}, prev_weights=None, new_weights={"A": 1.0},
+            style_map={"A": "Value"},
+        )
+        df = pd.read_csv(history / "style_totals_2026-04-30.csv")
+        assert df["prev_weight"].isna().all()
+        assert df["delta"].isna().all()
+        assert df.iloc[0]["factor_count"] == 1
+        assert df.iloc[0]["factors"] == "A"
+
+
+def test_save_style_totals_excludes_zero_weight_from_count():
+    """new_weight=0 factor 는 factor_count 에서 제외, factors 문자열에서도 제외."""
+    with tempfile.TemporaryDirectory() as tmp:
+        history = Path(tmp)
+        raw = {"A": 1.0, "B": 0.0}                   # B 신규 0
+        prev = {"A": 0.0, "B": 1.0}
+        new = {"A": 1.0, "B": 0.0}                   # B는 new=0
+        style_map = {"A": "Value", "B": "Value"}
+
+        save_style_totals(history, "2026-04-30", raw, prev, new, style_map)
+        df = pd.read_csv(history / "style_totals_2026-04-30.csv")
+        row = df[df["style"] == "Value"].iloc[0]
+        assert row["factor_count"] == 1
+        assert row["factors"] == "A"
 
 
 # ── blend_ema ─────────────────────────────────────────────────────────────
