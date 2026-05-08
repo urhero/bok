@@ -12,6 +12,7 @@ from service.pipeline.weight_history import (
     _build_factor_style_df,
     blend_ema,
     load_prev_factor_weights,
+    save_factor_styles,
     save_factor_weights,
 )
 
@@ -176,6 +177,44 @@ def test_build_df_within_style_zero_total():
     df = _build_factor_style_df(raw, prev, new, style_map)
 
     assert (df["weight_within_style"] == 0.0).all()
+
+
+# ── save_factor_styles ────────────────────────────────────────────────────
+
+def test_save_factor_styles_creates_file():
+    """파일 생성 + 헤더 + 정렬 확인."""
+    with tempfile.TemporaryDirectory() as tmp:
+        history = Path(tmp)
+        raw = {"A": 0.5, "B": 0.5}
+        prev = {"A": 0.6, "B": 0.4}
+        new = {"A": 0.51, "B": 0.49}
+        style_map = {"A": "Value", "B": "Momentum"}
+
+        out_path = save_factor_styles(history, "2026-04-30", raw, prev, new, style_map)
+
+        assert out_path == history / "factor_styles_2026-04-30.csv"
+        assert out_path.exists()
+
+        df = pd.read_csv(out_path)
+        assert list(df.columns) == [
+            "factor", "style", "raw_weight", "prev_weight", "new_weight", "weight_within_style",
+        ]
+        # Momentum < Value 정렬
+        assert list(df["style"]) == ["Momentum", "Value"]
+        assert list(df["factor"]) == ["B", "A"]
+
+
+def test_save_factor_styles_prev_none_writes_empty():
+    """prev=None 인 경우 prev_weight 컬럼은 빈값 (read_csv 시 NaN)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        history = Path(tmp)
+        save_factor_styles(
+            history, "2026-04-30",
+            raw_weights={"A": 1.0}, prev_weights=None, new_weights={"A": 1.0},
+            style_map={"A": "Value"},
+        )
+        df = pd.read_csv(history / "factor_styles_2026-04-30.csv")
+        assert df["prev_weight"].isna().all()
 
 
 # ── blend_ema ─────────────────────────────────────────────────────────────

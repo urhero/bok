@@ -129,6 +129,39 @@ def _build_factor_style_df(
     return df
 
 
+def save_factor_styles(
+    history_dir: Path,
+    end_date: str | pd.Timestamp,
+    raw_weights: dict[str, float],
+    prev_weights: dict[str, float] | None,
+    new_weights: dict[str, float],
+    style_map: dict[str, str],
+) -> Path:
+    """factor x style 분해 + raw/prev/new 가중치를 CSV 로 저장.
+
+    Args:
+        history_dir: 저장 디렉토리 (없으면 생성).
+        end_date: 현재 mp 실행의 end_date.
+        raw_weights: optimizer 산출 가중치 (smoothing 전).
+        prev_weights: 직전 회차 배포 가중치, 또는 None.
+        new_weights: 실제 배포 가중치 (= alpha*raw + (1-alpha)*prev, 또는 raw).
+        style_map: {factor_abbr: style_name}.
+
+    Returns:
+        저장된 파일 경로.
+    """
+    history_dir = Path(history_dir)
+    history_dir.mkdir(parents=True, exist_ok=True)
+
+    df = _build_factor_style_df(raw_weights, prev_weights, new_weights, style_map)
+
+    ddt_str = pd.Timestamp(end_date).strftime("%Y-%m-%d")
+    out_path = history_dir / f"factor_styles_{ddt_str}.csv"
+    df.to_csv(out_path, index=False)
+    logger.info("weight_history: factor_styles saved %s (%d rows)", out_path.name, len(df))
+    return out_path
+
+
 def blend_ema(
     new_weights: dict[str, float],
     prev_weights: dict[str, float] | None,
