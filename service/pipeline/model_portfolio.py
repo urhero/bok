@@ -45,7 +45,9 @@ from service.pipeline.weight_construction import (
 from service.pipeline.weight_history import (
     blend_ema,
     load_prev_factor_weights,
+    save_factor_styles,
     save_factor_weights,
+    save_style_totals,
 )
 from service.download.parquet_io import load_factor_parquet
 from utils.validation import validate_return_matrix, validate_output_weights
@@ -168,24 +170,41 @@ class ModelPortfolioPipeline:
             style_cap=self.pipeline_params["style_cap"],
         )
 
-        # [6.5] EMA 기반 turnover smoothing (alpha < 1.0 일 때만 적용).
-        # 첫 실행은 prev 없으므로 raw 그대로. 이후 매 실행마다 history 누적.
-        # test_file 모드는 smoothing 비활성화 (test 데이터로 prev history 오염 방지).
+        # [6.5] EMA turnover smoothing + factor/style 요약 출력.
+        # raw  : 이번 회차 optimizer 산출 (smoothing 전)
+        # prev : 직전 회차 배포 가중치 (alpha<1.0 일 때만 로딩)
+        # new  : 실제 배포 가중치 (alpha=1.0 또는 prev=None 이면 raw 와 동일)
+        # test_file 모드는 history 디렉토리 오염 방지 위해 모든 저장 skip.
+        weights_tbl = sim_result[1]
+        raw_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
         alpha = float(self.pipeline_params.get("turnover_smoothing_alpha", 1.0))
-        if alpha < 1.0 and not test_file:
-            weights_tbl = sim_result[1]
-            raw_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
-            prev_weights = load_prev_factor_weights(HISTORY_DIR, end_date)
-            if prev_weights is None:
-                logger.info("EMA blending skipped (no prev weights — first run)")
+
+        if test_file:
+            new_weights = raw_weights
+            prev_weights = None
+        else:
+            prev_weights = load_prev_factor_weights(HISTORY_DIR, end_date) if alpha < 1.0 else None
+            new_weights = blend_ema(raw_weights, prev_weights, alpha)
+
+            if alpha >= 1.0:
+                logger.info("EMA smoothing off (alpha=1.0)")
+            elif prev_weights is None:
+                logger.info("EMA blending skipped (no prev weights - first run)")
             else:
                 logger.info("EMA blending applied (alpha=%.2f)", alpha)
-            blended = blend_ema(raw_weights, prev_weights, alpha)
-            # weights_tbl 의 fitted_weight 갱신 (factor 행 보존, 신규 factor 는 무시)
-            weights_tbl["fitted_weight"] = weights_tbl["factor"].map(blended).fillna(0.0)
+
+            weights_tbl["fitted_weight"] = weights_tbl["factor"].map(new_weights).fillna(0.0)
             sim_result = (sim_result[0], weights_tbl)
-            # 다음 실행을 위해 (블렌딩 결과) 저장
-            save_factor_weights(HISTORY_DIR, end_date, blended)
+
+            # full_style_map: factor_info.csv 전체 (587) 사용 -> prev 에만 있는 factor 도 매핑 가능.
+            # outer style_map (line 162) 은 self.meta 기반 38 factor Series 라 별도 이름 사용.
+            factor_info = pd.read_csv(self.factor_info_path)
+            full_style_map = dict(zip(factor_info["factorAbbreviation"], factor_info["styleName"]))
+
+            if alpha < 1.0:
+                save_factor_weights(HISTORY_DIR, end_date, new_weights)  # EMA prev 입력용
+            save_factor_styles(HISTORY_DIR, end_date, raw_weights, prev_weights, new_weights, full_style_map)
+            save_style_totals(HISTORY_DIR, end_date, raw_weights, prev_weights, new_weights, full_style_map)
 
         self.weights = sim_result[1]
 

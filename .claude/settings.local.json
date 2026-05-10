@@ -26,7 +26,8 @@
       "Bash(git add:*)",
       "Bash(find /c/Users/IKM/bok -type f -name \"*.py\" -exec grep -l \"\\\\.sql\\\\|execute\\\\|query\" {} \\\\;)",
       "Bash(ls -lh /c/Users/IKM/bok/data/*.parquet)",
-      "Bash(C:/Users/IKM/.virtualenvs/bok-ZkEKkwfv/Scripts/python.exe main.py download 2009-12-01 2026-03-31)"
+      "Bash(C:/Users/IKM/.virtualenvs/bok-ZkEKkwfv/Scripts/python.exe main.py download 2009-12-01 2026-03-31)",
+      "Bash(python main.py download 2026-04-30 2026-04-30 --incremental)"
     ]
   }
 }

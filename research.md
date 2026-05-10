@@ -667,6 +667,27 @@ Top-50이 아닌, **실제로 비중이 할당된 최종 팩터**에만 적용.
 - **MIN_REQUIRED_FACTORS = 5**: 유효 팩터가 5개 미만이면 Tier 2 스킵, 이전 가중치 유지
 - **EMA 가중치 블렌딩**: `turnover_smoothing_alpha` (0~1)로 가중치 변화 스무딩. 과적합 진단 시 1.0(스무딩 없음) 사용
 
+### 6.5.1 mp 가중치 history (`output/mp_weight_history/`)
+
+`mp` 명령 실행 시 회차별 factor 가중치와 style 요약을 저장한다. `service/pipeline/weight_history.py` 의 저장 함수 3 종 + 공유 헬퍼 1 종이 담당.
+
+| 파일 | 함수 | 저장 조건 | 역할 |
+|------|------|----------|------|
+| `factor_weights_{date}.csv` | `save_factor_weights` | `alpha < 1.0 and not test_file` | factor / weight 2 컬럼. 다음 회차 EMA prev 입력용 (`load_prev_factor_weights` 가 strict `< current_end_date` 비교로 직전 가장 최근 파일 로딩). |
+| `factor_styles_{date}.csv` | `save_factor_styles` | `not test_file` | factor × style + raw/prev/new + weight_within_style. factor union (raw / prev / new 합집합) 기준. style 매핑 실패 시 "(unmapped)". |
+| `style_totals_{date}.csv` | `save_style_totals` | `not test_file` | style 단위 raw/prev/new 합계 + delta + factor_count + factors (`;` 구분 문자열). |
+
+**raw / prev / new 의미**
+- `raw` : 이번 회차 optimizer 산출 (smoothing 전, Top-N 동일가중 + style_cap)
+- `prev`: 직전 회차 배포 가중치 (history 디렉토리에서 `factor_weights_{prev_date}.csv` 로딩, alpha<1.0 일 때만)
+- `new` : 실제 배포 가중치 = `alpha*raw + (1-alpha)*prev` (alpha=1.0 또는 prev 없으면 raw)
+
+**공유 헬퍼**: `_build_factor_style_df` 가 factor union, style 매핑, weight_within_style 정규화 (스타일 합 0 이면 0) 의 공통 로직을 담당. `save_factor_styles` 와 `save_style_totals` 가 모두 이 헬퍼를 사용.
+
+**style_map 출처**: `model_portfolio.py` 가 `data/factor_info.csv` 전체 (587 factor) 를 사용해 dict 구성. `self.meta` (38 kept factor) 를 안 쓰는 이유는 prev 에만 있는 factor (이번 회차 탈락) 도 매핑해야 하기 때문.
+
+**test_file 모드 정책**: `python main.py mp test test_data.csv` 실행 시 history 디렉토리에 어떤 파일도 저장하지 않음 (test 데이터로 prev history 오염 방지).
+
 ### 6.6 CLI 커맨드
 
 ```

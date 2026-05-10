@@ -210,5 +210,5 @@ nul
 # 실험 산출물 (크기 큼, per-run 재현성 있음 — config.json 으로 재현 가능)
 output/experiments/
 
-# Production mp 의 EMA 블렌딩용 factor weight history (production 환경에서만 누적)
-output/mp_weight_history/
+# Production mp 의 factor / style 가중치 history 는 회차별 산출물로 추적
+# (factor_weights = 다음 회차 EMA prev 입력, factor_styles / style_totals = 분석용)

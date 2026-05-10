@@ -126,9 +126,13 @@
 ### (c) 결과물 산출
 - 종목 × 팩터 × 스타일 구조의 최종 가중치 패널 → CSV 출력
   - `total_aggregated_weights_{end_date}_test.csv` — 종목×팩터 가중치
-  - `total_aggregated_weights_style_{end_date}_test.csv` — 스타일별 집계
+  - `total_aggregated_weights_style_{end_date}_test.csv` — 스타일별 집계 (종목 단위)
   - `pivoted_total_agg_wgt_{end_date}.csv` — 피벗 형태 (Optimizer 연동용)
   - `meta_data.csv` — 팩터 성과 요약
+- factor 가중치 + style 요약 → `output/mp_weight_history/`
+  - `factor_weights_{end_date}.csv` — factor 단위 배포 가중치 (다음 회차 EMA prev 입력용, alpha<1.0 일 때만 저장)
+  - `factor_styles_{end_date}.csv` — factor × style + raw/prev/new 가중치 분해
+  - `style_totals_{end_date}.csv` — style 단위 raw/prev/new 합계 + delta + factor 목록
 
 ### 프로덕션 활용
 - 본 코드는 **Model Portfolio(MP) 산출까지 담당**
