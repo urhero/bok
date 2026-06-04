@@ -171,9 +171,10 @@ class ModelPortfolioPipeline:
         )
 
         # [6.5] EMA turnover smoothing + factor/style 요약 출력.
-        # raw  : 이번 회차 optimizer 산출 (smoothing 전)
-        # prev : 직전 회차 배포 가중치 (alpha<1.0 일 때만 로딩)
-        # new  : 실제 배포 가중치 (alpha=1.0 또는 prev=None 이면 raw 와 동일)
+        # raw      : 이번 회차 optimizer 산출 (smoothing 전, 합 1.0)
+        # prev     : 직전 회차 메모리 (alpha<1.0 일 때만 로딩)
+        # memory   : blend->prune->renorm 결과 (다음 회차 prev 로 저장, 합 1.0)
+        # deployed : 현재 선정분만 renorm 한 실제 배포물 (Bloomberg 입력, 합 1.0)
         # test_file 모드는 history 디렉토리 오염 방지 위해 모든 저장 skip.
         weights_tbl = sim_result[1]
         raw_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
@@ -187,6 +188,11 @@ class ModelPortfolioPipeline:
             prev_weights = load_prev_factor_weights(HISTORY_DIR, end_date) if alpha < 1.0 else None
             memory = update_smoothing_memory(raw_weights, prev_weights, alpha, min_weight)
             deployed = deploy_weights(memory, list(raw_weights.keys()))
+            if not deployed:
+                raise RuntimeError(
+                    "deploy_weights가 빈 결과 반환 - raw_weights가 비었거나 전부 0. "
+                    "MP 배포 가중치를 계산할 수 없음."
+                )
 
             if alpha >= 1.0:
                 logger.info("EMA smoothing off (alpha=1.0)")
