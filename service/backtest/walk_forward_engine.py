@@ -38,6 +38,7 @@ from service.pipeline.model_portfolio import (
     aggregate_factor_returns,
 )
 from service.pipeline.optimization import optimize_constrained_weights
+from service.pipeline.smoothing import deploy_weights, update_smoothing_memory
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +254,7 @@ class WalkForwardEngine:
         factor_rebal_months: Tier 1 리밸런싱 주기 (기본 6).
         weight_rebal_months: Tier 2 리밸런싱 주기 (기본 3).
         turnover_smoothing_alpha: EMA 가중치 블렌딩 비율 (기본 1.0 = 스무딩 없음).
+        turnover_min_weight: 메모리 prune 임계값 (기본 0.01).
         top_factors: 상위 팩터 수 (기본 50).
     """
 
@@ -262,6 +264,7 @@ class WalkForwardEngine:
         factor_rebal_months: int = 6,
         weight_rebal_months: int = 3,
         turnover_smoothing_alpha: float = 1.0,
+        turnover_min_weight: float = 0.01,
         top_factors: int = 50,
         pipeline_params_override: dict | None = None,
     ):
@@ -269,6 +272,7 @@ class WalkForwardEngine:
         self.factor_rebal_months = factor_rebal_months
         self.weight_rebal_months = weight_rebal_months
         self.turnover_smoothing_alpha = turnover_smoothing_alpha
+        self.turnover_min_weight = turnover_min_weight
         self.top_factors = top_factors
         self.pipeline_params_override = pipeline_params_override
 
@@ -474,18 +478,11 @@ class WalkForwardEngine:
                                 is_cum = (1 + is_weighted_ret).cumprod().iloc[-1]
                                 cached_is_cew_cagr = is_cum ** (12 / is_months) - 1
 
-                            # EMA 가중치 블렌딩
-                            if self.turnover_smoothing_alpha >= 1.0 or cached_weights is None:
-                                cached_weights = raw_new_weights
-                            else:
-                                alpha = self.turnover_smoothing_alpha
-                                all_factors = set(raw_new_weights) | set(cached_weights)
-                                blended = {
-                                    f: raw_new_weights.get(f, 0) * alpha + cached_weights.get(f, 0) * (1 - alpha)
-                                    for f in all_factors
-                                }
-                                total = sum(blended.values())
-                                cached_weights = {f: w / total for f, w in blended.items()} if total > 0 else raw_new_weights
+                            # EMA 블렌딩 + pruning (production mp 와 공유 로직)
+                            cached_weights = update_smoothing_memory(
+                                raw_new_weights, cached_weights,
+                                self.turnover_smoothing_alpha, self.turnover_min_weight,
+                            )
 
                             cached_selected_factors = list(raw_new_weights.keys())
 
@@ -506,11 +503,8 @@ class WalkForwardEngine:
             # 전체 팩터 OOS 수익률 (Funnel Value-Add + Percentile Tracking용)
             oos_all_factor_returns = precomputed_ret_df.loc[oos_date]
 
-            # 가용 팩터에 맞춰 가중치 정규화
-            avail_weights = {f: cached_weights[f] for f in available_factors if f in cached_weights}
-            total_w = sum(avail_weights.values())
-            if total_w > 0:
-                avail_weights = {f: w / total_w for f, w in avail_weights.items()}
+            # 가용 팩터에 맞춰 가중치 정규화 (production mp 와 공유 로직)
+            avail_weights = deploy_weights(cached_weights, available_factors)
 
             oos_return = sum(oos_factor_returns[f] * avail_weights.get(f, 0) for f in available_factors)
             oos_ew_return = oos_factor_returns.mean()

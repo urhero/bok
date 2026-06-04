@@ -61,6 +61,8 @@ def main(argv: list[str] | None = None) -> int:
                                   help="Number of top factors to select (default: 50)")
     parser_backtest.add_argument("--turnover-alpha", type=float, default=1.0,
                                   help="EMA weight blending ratio (default: 1.0 = no smoothing)")
+    parser_backtest.add_argument("--turnover-min-weight", type=float, default=0.01,
+                                  help="EMA memory prune threshold (default: 0.01)")
 
     args = parser.parse_args(argv)
 
@@ -178,6 +180,7 @@ def _run_backtest(args):
         factor_rebal_months=args.factor_rebal_months,
         weight_rebal_months=args.weight_rebal_months,
         turnover_smoothing_alpha=args.turnover_alpha,
+        turnover_min_weight=args.turnover_min_weight,
         top_factors=args.top_factors,
     )
 

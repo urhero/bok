@@ -50,4 +50,6 @@ PIPELINE_PARAMS = {
     "newey_west_lag": 3,               # Newey-West 보정 lag (meta_data.csv 진단용)
     "turnover_smoothing_alpha": 0.1,   # mp 명령 EMA 블렌딩 비율 (1.0=off, 0.1 권장).
                                        # output/mp_weight_history/ 사용 (첫 실행은 prev 없어 자동 skip).
+    "turnover_min_weight": 0.01,       # mp/backtest EMA 메모리 prune 임계값.
+                                       # blend 비중 < 이 값 AND 현재 미선정 factor 제거 후 renorm.
 }
