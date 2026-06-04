@@ -505,6 +505,9 @@ class WalkForwardEngine:
 
             # 가용 팩터에 맞춰 가중치 정규화 (production mp 와 공유 로직)
             avail_weights = deploy_weights(cached_weights, available_factors)
+            if not avail_weights:
+                logger.warning("OOS %s: deploy_weights 빈 결과 (available_factors=%d) - 0%% 수익월로 처리",
+                               oos_date, len(available_factors))
 
             oos_return = sum(oos_factor_returns[f] * avail_weights.get(f, 0) for f in available_factors)
             oos_ew_return = oos_factor_returns.mean()
