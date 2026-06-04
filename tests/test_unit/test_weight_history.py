@@ -180,6 +180,36 @@ def test_build_df_within_style_zero_total():
     assert (df["weight_within_style"] == 0.0).all()
 
 
+def test_build_df_deployed_weight_column():
+    """deployed_weights 제공 시 deployed_weight 컬럼이 new_weight 뒤에 추가."""
+    raw = {"A": 0.5, "B": 0.5}
+    prev = {"A": 0.5, "C": 0.5}
+    new = {"A": 0.5, "B": 0.05, "C": 0.45}       # 메모리 (C 는 레거시)
+    deployed = {"A": 0.9091, "B": 0.0909}        # 현재선정(A,B) renorm, 합 1.0
+    style_map = {"A": "Value", "B": "Value", "C": "Momentum"}
+
+    df = _build_factor_style_df(raw, prev, new, style_map, deployed_weights=deployed)
+
+    assert list(df.columns) == [
+        "factor", "style", "raw_weight", "prev_weight", "new_weight",
+        "deployed_weight", "weight_within_style",
+    ]
+    # C 는 배포 안 됨 -> deployed_weight 0
+    assert df.loc[df["factor"] == "C", "deployed_weight"].iloc[0] == 0.0
+    assert abs(df.loc[df["factor"] == "A", "deployed_weight"].iloc[0] - 0.9091) < 1e-9
+
+
+def test_build_df_no_deployed_keeps_legacy_columns():
+    """deployed_weights 미제공 시 컬럼 구성 불변 (하위호환)."""
+    raw = {"A": 0.6, "B": 0.4}
+    new = {"A": 0.6, "B": 0.4}
+    style_map = {"A": "Value", "B": "Momentum"}
+
+    df = _build_factor_style_df(raw, None, new, style_map)
+
+    assert "deployed_weight" not in df.columns
+
+
 # ── save_factor_styles ────────────────────────────────────────────────────
 
 def test_save_factor_styles_creates_file():
@@ -216,6 +246,23 @@ def test_save_factor_styles_prev_none_writes_empty():
         )
         df = pd.read_csv(history / "factor_styles_2026-04-30.csv")
         assert df["prev_weight"].isna().all()
+
+
+def test_save_factor_styles_with_deployed():
+    """deployed_weights 제공 시 CSV 에 deployed_weight 컬럼 포함."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        history = Path(tmp)
+        save_factor_styles(
+            history, "2026-05-31",
+            raw_weights={"A": 0.5, "B": 0.5},
+            prev_weights={"A": 0.5, "C": 0.5},
+            new_weights={"A": 0.5, "B": 0.05, "C": 0.45},
+            style_map={"A": "Value", "B": "Value", "C": "Momentum"},
+            deployed_weights={"A": 0.9091, "B": 0.0909},
+        )
+        df = pd.read_csv(history / "factor_styles_2026-05-31.csv")
+        assert "deployed_weight" in df.columns
 
 
 # ── save_style_totals ─────────────────────────────────────────────────────
