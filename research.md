@@ -665,7 +665,7 @@ Top-50이 아닌, **실제로 비중이 할당된 최종 팩터**에만 적용.
 ### 6.5 방어 로직
 
 - **MIN_REQUIRED_FACTORS = 5**: 유효 팩터가 5개 미만이면 Tier 2 스킵, 이전 가중치 유지
-- **EMA 가중치 블렌딩**: `turnover_smoothing_alpha` (0~1)로 가중치 변화 스무딩. 과적합 진단 시 1.0(스무딩 없음) 사용
+- **EMA 가중치 블렌딩 + pruning**: `turnover_smoothing_alpha` (0~1)로 가중치 변화 스무딩. 과적합 진단 시 1.0(스무딩 없음) 사용. 메모리는 blend->prune(비중<`turnover_min_weight` AND 현재 미선정 factor 제거)->renorm, 실제 배포는 현재 선정분만 renorm(합 1.0). production `mp` 와 백테스트가 `service/pipeline/smoothing.py` 공통 함수(`update_smoothing_memory`, `deploy_weights`)를 공유하여 로직 일치(parity)
 
 ### 6.5.1 mp 가중치 history (`output/mp_weight_history/`)
 
@@ -673,16 +673,17 @@ Top-50이 아닌, **실제로 비중이 할당된 최종 팩터**에만 적용.
 
 | 파일 | 함수 | 저장 조건 | 역할 |
 |------|------|----------|------|
-| `factor_weights_{date}.csv` | `save_factor_weights` | `alpha < 1.0 and not test_file` | factor / weight 2 컬럼. 다음 회차 EMA prev 입력용 (`load_prev_factor_weights` 가 strict `< current_end_date` 비교로 직전 가장 최근 파일 로딩). |
-| `factor_styles_{date}.csv` | `save_factor_styles` | `not test_file` | factor × style + raw/prev/new + weight_within_style. factor union (raw / prev / new 합집합) 기준. style 매핑 실패 시 "(unmapped)". |
-| `style_totals_{date}.csv` | `save_style_totals` | `not test_file` | style 단위 raw/prev/new 합계 + delta + factor_count + factors (`;` 구분 문자열). |
+| `factor_weights_{date}.csv` | `save_factor_weights` | `alpha < 1.0 and not test_file` | factor / weight 2 컬럼 = pruned 메모리. 다음 회차 EMA prev 입력용 (`load_prev_factor_weights` 가 strict `< current_end_date` 비교로 직전 가장 최근 파일 로딩). |
+| `factor_styles_{date}.csv` | `save_factor_styles` | `not test_file` | factor × style + raw/prev/new/deployed + weight_within_style. factor union 기준. style 매핑 실패 시 "(unmapped)". |
+| `style_totals_{date}.csv` | `save_style_totals` | `not test_file` | style 단위 raw/prev/new/deployed 합계 + delta + factor_count + factors (`;` 구분 문자열). |
 
-**raw / prev / new 의미**
+**raw / prev / new(=메모리) / deployed 의미**
 - `raw` : 이번 회차 optimizer 산출 (smoothing 전, Top-N 동일가중 + style_cap)
-- `prev`: 직전 회차 배포 가중치 (history 디렉토리에서 `factor_weights_{prev_date}.csv` 로딩, alpha<1.0 일 때만)
-- `new` : 실제 배포 가중치 = `alpha*raw + (1-alpha)*prev` (alpha=1.0 또는 prev 없으면 raw)
+- `prev`: 직전 회차 메모리 (history 디렉토리에서 `factor_weights_{prev_date}.csv` 로딩, alpha<1.0 일 때만)
+- `new` (= 메모리): `alpha*raw + (1-alpha)*prev` union 블렌딩 후, 비중<`turnover_min_weight` AND 현재 미선정 factor 를 제거(prune)하고 100% 재정규화. `factor_weights_{date}.csv` 로 저장되어 다음 회차 prev 가 됨 (alpha=1.0 또는 prev 없으면 raw)
+- `deployed` : 실제 배포 가중치 (Bloomberg 입력). 메모리에서 **현재 선정 factor 만 추출 후 100% 재정규화**(합 1.0). 메모리 전용(과거 잔여) factor 는 배포 0. production 의 현 버그(배포 합<1.0)를 수정한 결과
 
-**공유 헬퍼**: `_build_factor_style_df` 가 factor union, style 매핑, weight_within_style 정규화 (스타일 합 0 이면 0) 의 공통 로직을 담당. `save_factor_styles` 와 `save_style_totals` 가 모두 이 헬퍼를 사용.
+**공유 헬퍼**: `_build_factor_style_df` 가 factor union, style 매핑, weight_within_style 정규화 (스타일 합 0 이면 0) 의 공통 로직을 담당. `save_factor_styles` 와 `save_style_totals` 가 모두 이 헬퍼를 사용. optional `deployed_weights` 인자 제공 시 `deployed_weight` 컬럼(factor 단위) + style 단위 deployed 합계 추가.
 
 **style_map 출처**: `model_portfolio.py` 가 `data/factor_info.csv` 전체 (587 factor) 를 사용해 dict 구성. `self.meta` (38 kept factor) 를 안 쓰는 이유는 prev 에만 있는 factor (이번 회차 탈락) 도 매핑해야 하기 때문.
 
@@ -697,6 +698,7 @@ python main.py backtest <start> <end> [옵션]
   --weight-rebal-months  Tier 2 리밸런싱 주기 (기본: 3)
   --top-factors          상위 팩터 수 (기본: 50)
   --turnover-alpha       EMA 블렌딩 비율 (기본: 1.0)
+  --turnover-min-weight  메모리 prune 임계값 (기본: 0.01)
 
 python main.py mp <start> <end> --benchmark
   → MP vs. 동일가중(1/N) 비교 리포트
