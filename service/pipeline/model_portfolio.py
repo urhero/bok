@@ -42,8 +42,8 @@ from service.pipeline.weight_construction import (
     calculate_vectorized_return,
     construct_long_short_df,
 )
+from service.pipeline.smoothing import deploy_weights, update_smoothing_memory
 from service.pipeline.weight_history import (
-    blend_ema,
     load_prev_factor_weights,
     save_factor_styles,
     save_factor_weights,
@@ -178,33 +178,38 @@ class ModelPortfolioPipeline:
         weights_tbl = sim_result[1]
         raw_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
         alpha = float(self.pipeline_params.get("turnover_smoothing_alpha", 1.0))
+        min_weight = float(self.pipeline_params.get("turnover_min_weight", 0.01))
 
         if test_file:
-            new_weights = raw_weights
+            # 테스트 모드: smoothing/history 저장 skip. raw 가 곧 배포 (이미 합 1.0).
             prev_weights = None
         else:
             prev_weights = load_prev_factor_weights(HISTORY_DIR, end_date) if alpha < 1.0 else None
-            new_weights = blend_ema(raw_weights, prev_weights, alpha)
+            memory = update_smoothing_memory(raw_weights, prev_weights, alpha, min_weight)
+            deployed = deploy_weights(memory, list(raw_weights.keys()))
 
             if alpha >= 1.0:
                 logger.info("EMA smoothing off (alpha=1.0)")
             elif prev_weights is None:
                 logger.info("EMA blending skipped (no prev weights - first run)")
             else:
-                logger.info("EMA blending applied (alpha=%.2f)", alpha)
+                logger.info("EMA blending applied (alpha=%.2f), memory=%d / deployed=%d factors",
+                            alpha, len(memory), len(deployed))
 
-            weights_tbl["fitted_weight"] = weights_tbl["factor"].map(new_weights).fillna(0.0)
+            # 배포: 현재 선정분만 100% 정규화 -> Bloomberg 입력물 (gross 1.0)
+            weights_tbl["fitted_weight"] = weights_tbl["factor"].map(deployed).fillna(0.0)
             sim_result = (sim_result[0], weights_tbl)
 
-            # full_style_map: factor_info.csv 전체 (587) 사용 -> prev 에만 있는 factor 도 매핑 가능.
-            # outer style_map (line 162) 은 self.meta 기반 38 factor Series 라 별도 이름 사용.
+            # full_style_map: factor_info.csv 전체 사용 -> prev 에만 있는 factor 도 매핑 가능.
             factor_info = pd.read_csv(self.factor_info_path)
             full_style_map = dict(zip(factor_info["factorAbbreviation"], factor_info["styleName"]))
 
             if alpha < 1.0:
-                save_factor_weights(HISTORY_DIR, end_date, new_weights)  # EMA prev 입력용
-            save_factor_styles(HISTORY_DIR, end_date, raw_weights, prev_weights, new_weights, full_style_map)
-            save_style_totals(HISTORY_DIR, end_date, raw_weights, prev_weights, new_weights, full_style_map)
+                save_factor_weights(HISTORY_DIR, end_date, memory)  # 다음 회차 prev (pruned memory)
+            save_factor_styles(HISTORY_DIR, end_date, raw_weights, prev_weights, memory, full_style_map,
+                               deployed_weights=deployed)
+            save_style_totals(HISTORY_DIR, end_date, raw_weights, prev_weights, memory, full_style_map,
+                              deployed_weights=deployed)
 
         self.weights = sim_result[1]
 
