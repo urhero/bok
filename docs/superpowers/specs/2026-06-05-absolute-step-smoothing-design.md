@@ -162,11 +162,12 @@ return new                                        # 합 1.0
 - 5월 탈락 factor가 ~1.63%로 배포 포함 확인.
 - 유지 factor 변동이 작은지(데드밴드 작동) 확인.
 
-### D. **OOS 백테스트 — 기존 결과들과 비교 (사용자 요청)**
-`combo_18_0.1` 신규(절대스텝) 실행 후, **기존 커밋된 결과와 비교**:
-1. **직전 EMA+renorm 버전** (현재 main-ikm 커밋, Sharpe 0.8026 / CAGR 1.66% / MDD -2.86% / Calmar 0.58) — 주 비교 대상.
-2. (선택) **무스무딩(`--turnover-step` 매우 크게=즉시 목표)** 대비, 스무딩 효과 맥락.
-- 비교 항목: OOS Sharpe/CAGR/MDD/Calmar/Funnel + **배포 turnover**(아래).
+### D. **OOS 백테스트 — 3-way 비교 (사용자 요청)**
+`combo_18_0.1`로 다음 3개를 비교 (항목: OOS Sharpe/CAGR/MDD/Calmar/Funnel + **배포 turnover**(E)):
+1. **무스무딩** — `--turnover-step 1.0 --turnover-deadband 0` (매월 목표 그대로 배포 = 스무딩 없음, 최대 turnover). 신규 코드로 실행. *step 1.0(=100%p) + deadband 0 이면 모든 factor가 한 번에 목표 도달 → deploy=target.*
+2. **절대스텝(신규)** — `--turnover-step 0.01 --turnover-deadband 0.003` (기본). 신규 코드로 실행.
+3. **직전 EMA+renorm** — main-ikm 커밋 결과 (Sharpe 0.8026 / CAGR 1.66% / MDD -2.86% / Calmar 0.58) **기록값 참조** (EMA 코드 제거되므로 재실행 불가).
+→ **무스무딩 대비 절대스텝이 turnover를 얼마나 줄이는지** + OOS 성과 유지/개선 여부 확인. 결과는 `docs/`에 비교 표로 기록.
 
 ### E. **배포 turnover 측정 (핵심 — 진짜 목표 확인)**
 신규 설계에선 `result.weight_history` = 배포 가중치(메모리 구분 없음)이므로 `compute_avg_turnover`가 **실거래 turnover**를 올바르게 측정. 절대스텝 vs EMA버전 turnover를 **수치 비교**하여 실제 감소를 확인. (필요시 backtest 결과에 turnover 컬럼/지표 노출 추가.)
