@@ -59,10 +59,10 @@ def main(argv: list[str] | None = None) -> int:
                                   help="Tier 2 rebalancing frequency (default: 3)")
     parser_backtest.add_argument("--top-factors", type=int, default=50,
                                   help="Number of top factors to select (default: 50)")
-    parser_backtest.add_argument("--turnover-alpha", type=float, default=1.0,
-                                  help="EMA weight blending ratio (default: 1.0 = no smoothing)")
-    parser_backtest.add_argument("--turnover-min-weight", type=float, default=0.01,
-                                  help="EMA memory prune threshold (default: 0.01)")
+    parser_backtest.add_argument("--turnover-step", type=float, default=0.01,
+                                  help="Absolute step per month (default: 0.01 = 1%%p)")
+    parser_backtest.add_argument("--turnover-deadband", type=float, default=0.003,
+                                  help="No-trade band (default: 0.003 = 0.3%%p)")
 
     args = parser.parse_args(argv)
 
@@ -179,8 +179,8 @@ def _run_backtest(args):
         min_is_months=args.min_is_months,
         factor_rebal_months=args.factor_rebal_months,
         weight_rebal_months=args.weight_rebal_months,
-        turnover_smoothing_alpha=args.turnover_alpha,
-        turnover_min_weight=args.turnover_min_weight,
+        turnover_step=args.turnover_step,
+        turnover_deadband=args.turnover_deadband,
         top_factors=args.top_factors,
     )
 
