@@ -38,7 +38,7 @@ from service.pipeline.model_portfolio import (
     aggregate_factor_returns,
 )
 from service.pipeline.optimization import optimize_constrained_weights
-from service.pipeline.smoothing import deploy_weights, update_smoothing_memory
+from service.pipeline.smoothing import deploy_weights, step_smooth
 
 logger = logging.getLogger(__name__)
 
@@ -253,8 +253,8 @@ class WalkForwardEngine:
         min_is_months: 최소 IS 기간 (기본 36).
         factor_rebal_months: Tier 1 리밸런싱 주기 (기본 6).
         weight_rebal_months: Tier 2 리밸런싱 주기 (기본 3).
-        turnover_smoothing_alpha: EMA 가중치 블렌딩 비율 (기본 1.0 = 스무딩 없음).
-        turnover_min_weight: 메모리 prune 임계값 (기본 0.01).
+        turnover_step: 절대스텝 최대 이동폭 (기본 0.01).
+        turnover_deadband: 변화 무시 임계값 (기본 0.003).
         top_factors: 상위 팩터 수 (기본 50).
     """
 
@@ -263,16 +263,16 @@ class WalkForwardEngine:
         min_is_months: int = 36,
         factor_rebal_months: int = 6,
         weight_rebal_months: int = 3,
-        turnover_smoothing_alpha: float = 1.0,
-        turnover_min_weight: float = 0.01,
+        turnover_step: float = 0.01,
+        turnover_deadband: float = 0.003,
         top_factors: int = 50,
         pipeline_params_override: dict | None = None,
     ):
         self.min_is_months = min_is_months
         self.factor_rebal_months = factor_rebal_months
         self.weight_rebal_months = weight_rebal_months
-        self.turnover_smoothing_alpha = turnover_smoothing_alpha
-        self.turnover_min_weight = turnover_min_weight
+        self.turnover_step = turnover_step
+        self.turnover_deadband = turnover_deadband
         self.top_factors = top_factors
         self.pipeline_params_override = pipeline_params_override
 
@@ -478,10 +478,11 @@ class WalkForwardEngine:
                                 is_cum = (1 + is_weighted_ret).cumprod().iloc[-1]
                                 cached_is_cew_cagr = is_cum ** (12 / is_months) - 1
 
-                            # EMA 블렌딩 + pruning (production mp 와 공유 로직)
-                            cached_weights = update_smoothing_memory(
+                            # 절대스텝 스무딩 (production mp 와 공유). months=가중치 리밸런스 주기.
+                            cached_weights = step_smooth(
                                 raw_new_weights, cached_weights,
-                                self.turnover_smoothing_alpha, self.turnover_min_weight,
+                                self.turnover_step, self.turnover_deadband,
+                                months=self.weight_rebal_months,
                             )
 
                             cached_selected_factors = list(raw_new_weights.keys())
@@ -494,7 +495,7 @@ class WalkForwardEngine:
                 logger.warning("OOS date %s not in precomputed_ret_df, skipping", oos_date)
                 continue
 
-            available_factors = [f for f in cached_selected_factors if f in precomputed_ret_df.columns]
+            available_factors = [f for f in cached_weights if f in precomputed_ret_df.columns]
             if not available_factors:
                 continue
 
