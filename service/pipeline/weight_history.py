@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """Production mp 명령의 factor weight history 관리.
 
-EMA 기반 turnover smoothing 을 production 에서도 적용하기 위해
+Absolute-step smoothing 을 production 에서도 적용하기 위해
 이전 mp 실행의 factor weights 를 별도 디렉토리에 저장 / 로딩한다.
 
 설계 원리:
-- 첫 mp 실행: prev 없음 -> raw weights 그대로 (EMA skip)
-- 두번째 이상 실행: 직전 가장 최근 history 로딩 -> EMA 블렌딩
-- history 저장은 EMA 적용 결과 (recursive smoothing)
+- 첫 mp 실행: prev 없음 -> raw weights 그대로 (smoothing skip)
+- 두번째 이상 실행: 직전 가장 최근 history 로딩 -> absolute-step 블렌딩
+- history 저장은 smoothing 적용 결과
 """
 from __future__ import annotations
 
@@ -21,19 +21,20 @@ logger = logging.getLogger(__name__)
 
 def load_prev_factor_weights(
     history_dir: Path, current_end_date: str | pd.Timestamp,
-) -> dict[str, float] | None:
-    """가장 최근 (current_end_date 미만의) factor weights 를 dict 로 반환.
+) -> tuple[dict[str, float] | None, str | None]:
+    """가장 최근 (current_end_date 미만의) factor weights 와 해당 날짜 문자열을 반환.
 
     Args:
         history_dir: factor weight history 디렉토리.
         current_end_date: 현재 mp 실행의 end_date (이 시점 이전 history 만 검색).
 
     Returns:
-        {factor_abbr: weight} dict, 또는 history 없을 시 None.
+        ({factor_abbr: weight}, date_str) 튜플.
+        history 없을 시 (None, None).
     """
     history_dir = Path(history_dir)
     if not history_dir.exists():
-        return None
+        return None, None
 
     cutoff = pd.Timestamp(current_end_date)
     candidates: list[tuple[pd.Timestamp, Path]] = []
@@ -48,17 +49,18 @@ def load_prev_factor_weights(
             candidates.append((d, f))
 
     if not candidates:
-        return None
+        return None, None
 
     candidates.sort()
     latest_date, latest_path = candidates[-1]
     df = pd.read_csv(latest_path)
     weights = dict(zip(df["factor"].astype(str), df["weight"].astype(float)))
+    ddt_str = latest_path.stem.replace("factor_weights_", "")
     logger.info(
         "weight_history: prev 로딩 (%s, %d factors)",
         latest_path.name, len(weights),
     )
-    return weights
+    return weights, ddt_str
 
 
 def save_factor_weights(
@@ -101,7 +103,7 @@ def _build_factor_style_df(
     Args:
         raw_weights: 이번 회차 optimizer 산출 가중치.
         prev_weights: 직전 회차 배포 가중치 (None 이면 prev_weight 컬럼 NaN).
-        new_weights: 실제 배포될 최종 가중치 (보통 blend_ema 결과).
+        new_weights: 실제 배포될 최종 가중치 (smoothing 적용 결과).
         style_map: {factor_abbr: style_name}. 매핑 실패 시 "(unmapped)".
         deployed_weights: 현재 선정 종목 기준 renorm 된 실제 배포 가중치 (None 이면 컬럼 미추가).
 
@@ -151,7 +153,7 @@ def save_factor_styles(
         end_date: 현재 mp 실행의 end_date.
         raw_weights: optimizer 산출 가중치 (smoothing 전).
         prev_weights: 직전 회차 배포 가중치, 또는 None.
-        new_weights: 실제 배포 가중치 (= alpha*raw + (1-alpha)*prev, 또는 raw).
+        new_weights: 실제 배포 가중치 (smoothing 적용 결과, 또는 raw).
         style_map: {factor_abbr: style_name}.
         deployed_weights: 현재 선정 종목 기준 renorm 된 실제 배포 가중치 (None 이면 컬럼 미추가).
 
@@ -225,31 +227,3 @@ def save_style_totals(
     return out_path
 
 
-def blend_ema(
-    new_weights: dict[str, float],
-    prev_weights: dict[str, float] | None,
-    alpha: float,
-) -> dict[str, float]:
-    """EMA 블렌딩: alpha * new + (1-alpha) * prev.
-
-    prev 가 None 이거나 alpha >= 1.0 이면 new 를 그대로 반환 (no-op).
-    new 와 prev 의 factor union 기준으로 블렌딩 (한쪽에만 있는 factor 는 0 으로 간주).
-
-    Args:
-        new_weights: 현재 산출된 raw factor weights.
-        prev_weights: 직전 mp 실행의 final weights, 또는 None (첫 실행).
-        alpha: 신규 weight 반영 비율 (0 < alpha <= 1.0).
-
-    Returns:
-        블렌딩 후 weights dict.
-    """
-    if prev_weights is None or alpha >= 1.0:
-        return dict(new_weights)
-
-    all_factors = set(new_weights) | set(prev_weights)
-    blended = {}
-    for f in all_factors:
-        new_w = float(new_weights.get(f, 0.0))
-        prev_w = float(prev_weights.get(f, 0.0))
-        blended[f] = alpha * new_w + (1.0 - alpha) * prev_w
-    return blended

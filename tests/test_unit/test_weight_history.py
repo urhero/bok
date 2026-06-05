@@ -10,7 +10,6 @@ import pytest
 
 from service.pipeline.weight_history import (
     _build_factor_style_df,
-    blend_ema,
     load_prev_factor_weights,
     save_factor_styles,
     save_factor_weights,
@@ -21,17 +20,17 @@ from service.pipeline.weight_history import (
 # ── load_prev_factor_weights ──────────────────────────────────────────────
 
 def test_load_returns_none_when_dir_missing():
-    """디렉토리가 없으면 None 반환 (첫 실행 시나리오)."""
+    """디렉토리가 없으면 (None, None) 반환 (첫 실행 시나리오)."""
     with tempfile.TemporaryDirectory() as tmp:
         history = Path(tmp) / "missing"
-        assert load_prev_factor_weights(history, "2026-03-31") is None
+        assert load_prev_factor_weights(history, "2026-03-31") == (None, None)
 
 
 def test_load_returns_none_when_dir_empty():
-    """디렉토리가 비어 있으면 None."""
+    """디렉토리가 비어 있으면 (None, None)."""
     with tempfile.TemporaryDirectory() as tmp:
         history = Path(tmp)
-        assert load_prev_factor_weights(history, "2026-03-31") is None
+        assert load_prev_factor_weights(history, "2026-03-31") == (None, None)
 
 
 def test_load_returns_most_recent_prev_only():
@@ -42,8 +41,8 @@ def test_load_returns_most_recent_prev_only():
         save_factor_weights(history, "2025-12-31", {"A": 0.1, "B": 0.2})
         save_factor_weights(history, "2026-03-31", {"A": 0.15, "B": 0.25})
         # current=2026-06-30 -> 2026-03-31 이 최근 prev
-        result = load_prev_factor_weights(history, "2026-06-30")
-        assert result == {"A": 0.15, "B": 0.25}
+        loaded, _ = load_prev_factor_weights(history, "2026-06-30")
+        assert loaded == {"A": 0.15, "B": 0.25}
 
 
 def test_load_excludes_current_and_future():
@@ -54,17 +53,35 @@ def test_load_excludes_current_and_future():
         save_factor_weights(history, "2026-03-31", {"A": 0.15})  # current
         save_factor_weights(history, "2026-06-30", {"A": 0.2})   # future
         # current=2026-03-31 -> 2025-12-31 만 후보
-        result = load_prev_factor_weights(history, "2026-03-31")
-        assert result == {"A": 0.1}
+        loaded, _ = load_prev_factor_weights(history, "2026-03-31")
+        assert loaded == {"A": 0.1}
 
 
 def test_load_returns_none_when_only_future_files():
-    """current 이전 파일이 하나도 없으면 None."""
+    """current 이전 파일이 하나도 없으면 (None, None)."""
     with tempfile.TemporaryDirectory() as tmp:
         history = Path(tmp)
         save_factor_weights(history, "2026-06-30", {"A": 0.2})
         result = load_prev_factor_weights(history, "2026-03-31")
-        assert result is None
+        assert result == (None, None)
+
+
+def test_load_returns_weights_and_date():
+    """load_prev_factor_weights 는 (weights, date) 튜플 반환."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        history = Path(tmp)
+        save_factor_weights(history, "2026-01-31", {"A": 0.6, "B": 0.4})
+        weights, prev_date = load_prev_factor_weights(history, "2026-02-28")
+        assert weights == {"A": 0.6, "B": 0.4}
+        assert prev_date == "2026-01-31"
+
+
+def test_load_none_returns_none_tuple():
+    """없으면 (None, None)."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        assert load_prev_factor_weights(Path(tmp) / "x", "2026-02-28") == (None, None)
 
 
 # ── save_factor_weights ───────────────────────────────────────────────────
@@ -95,7 +112,7 @@ def test_save_then_load_roundtrip():
         history = Path(tmp)
         original = {"FactorX": 0.05, "FactorY": -0.03, "FactorZ": 0.12}
         save_factor_weights(history, "2026-01-31", original)
-        loaded = load_prev_factor_weights(history, "2026-02-28")
+        loaded, _ = load_prev_factor_weights(history, "2026-02-28")
         assert loaded == original
 
 
@@ -325,63 +342,3 @@ def test_save_style_totals_excludes_zero_weight_from_count():
         row = df[df["style"] == "Value"].iloc[0]
         assert row["factor_count"] == 1
         assert row["factors"] == "A"
-
-
-# ── blend_ema ─────────────────────────────────────────────────────────────
-
-def test_blend_returns_new_when_prev_is_none():
-    """prev=None 이면 new 그대로 (첫 실행)."""
-    new = {"A": 0.1, "B": 0.2}
-    result = blend_ema(new, None, alpha=0.1)
-    assert result == new
-
-
-def test_blend_returns_new_when_alpha_1():
-    """alpha=1.0 이면 prev 무시 (smoothing off)."""
-    new = {"A": 0.1, "B": 0.2}
-    prev = {"A": 0.5, "B": 0.5}
-    result = blend_ema(new, prev, alpha=1.0)
-    assert result == new
-
-
-def test_blend_alpha_half():
-    """alpha=0.5 -> 50/50 평균."""
-    new = {"A": 0.4, "B": 0.0}
-    prev = {"A": 0.0, "B": 0.4}
-    result = blend_ema(new, prev, alpha=0.5)
-    assert abs(result["A"] - 0.2) < 1e-9
-    assert abs(result["B"] - 0.2) < 1e-9
-
-
-def test_blend_alpha_01_strong_smoothing():
-    """alpha=0.1 -> 10% new + 90% prev."""
-    new = {"A": 1.0}
-    prev = {"A": 0.0}
-    result = blend_ema(new, prev, alpha=0.1)
-    assert abs(result["A"] - 0.1) < 1e-9
-
-
-def test_blend_factor_union_handles_disjoint():
-    """new / prev 에 한쪽만 있는 factor 는 0 으로 간주."""
-    new = {"A": 0.5}                 # B 없음
-    prev = {"B": 0.5}                # A 없음
-    result = blend_ema(new, prev, alpha=0.5)
-    # A: 0.5 * 0.5 + 0.5 * 0 = 0.25
-    # B: 0.5 * 0   + 0.5 * 0.5 = 0.25
-    assert abs(result["A"] - 0.25) < 1e-9
-    assert abs(result["B"] - 0.25) < 1e-9
-
-
-def test_blend_recursive_decay():
-    """3번 연속 블렌딩 시 첫 prev 영향이 0.9^3=0.729 만큼 남음."""
-    # 시작: prev = {A: 0}
-    prev = {"A": 0.0}
-    # Run 1: new = 1.0, alpha=0.1 -> 0.1
-    prev = blend_ema({"A": 1.0}, prev, 0.1)
-    assert abs(prev["A"] - 0.1) < 1e-9
-    # Run 2: new = 1.0 -> 0.1*1.0 + 0.9*0.1 = 0.19
-    prev = blend_ema({"A": 1.0}, prev, 0.1)
-    assert abs(prev["A"] - 0.19) < 1e-9
-    # Run 3: new = 1.0 -> 0.1*1.0 + 0.9*0.19 = 0.271
-    prev = blend_ema({"A": 1.0}, prev, 0.1)
-    assert abs(prev["A"] - 0.271) < 1e-9
