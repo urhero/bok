@@ -42,7 +42,7 @@ from service.pipeline.weight_construction import (
     calculate_vectorized_return,
     construct_long_short_df,
 )
-from service.pipeline.smoothing import deploy_weights, update_smoothing_memory
+from service.pipeline.smoothing import step_smooth
 from service.pipeline.weight_history import (
     load_prev_factor_weights,
     save_factor_styles,
@@ -61,6 +61,13 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR = _PROJECT_ROOT / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 HISTORY_DIR = OUTPUT_DIR / "mp_weight_history"
+
+
+def _months_between(prev_date: str, end_date: str) -> int:
+    """두 YYYY-MM-DD 문자열 간 개월 수 (최소 1)."""
+    p, e = pd.Timestamp(prev_date), pd.Timestamp(end_date)
+    months = (e.year - p.year) * 12 + (e.month - p.month)
+    return max(1, months)
 
 
 def aggregate_factor_returns(
@@ -170,54 +177,40 @@ class ModelPortfolioPipeline:
             style_cap=self.pipeline_params["style_cap"],
         )
 
-        # [6.5] EMA turnover smoothing + factor/style 요약 출력.
-        # raw      : 이번 회차 optimizer 산출 (smoothing 전, 합 1.0)
-        # prev     : 직전 회차 메모리 (alpha<1.0 일 때만 로딩)
-        # memory   : blend->prune->renorm 결과 (다음 회차 prev 로 저장, 합 1.0)
-        # deployed : 현재 선정분만 renorm 한 실제 배포물 (Bloomberg 입력, 합 1.0)
-        # test_file 모드는 history 디렉토리 오염 방지 위해 모든 저장 skip.
         weights_tbl = sim_result[1]
-        raw_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
-        alpha = float(self.pipeline_params.get("turnover_smoothing_alpha", 1.0))
-        min_weight = float(self.pipeline_params.get("turnover_min_weight", 0.01))
+        target_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
+        step = float(self.pipeline_params.get("turnover_step", 0.01))
+        deadband = float(self.pipeline_params.get("turnover_deadband", 0.003))
+
+        # full_style_map: factor_info.csv 전체 -> 탈락(선정 외) factor 도 style 매핑
+        factor_info = pd.read_csv(self.factor_info_path)
+        full_style_map = dict(zip(factor_info["factorAbbreviation"], factor_info["styleName"]))
 
         if test_file:
-            # 테스트 모드: smoothing/history 저장 skip. raw 가 곧 배포 (이미 합 1.0).
-            prev_weights = None
+            deployed = target_weights                       # 테스트 모드: target 그대로, history 저장 skip
         else:
-            prev_weights = load_prev_factor_weights(HISTORY_DIR, end_date) if alpha < 1.0 else None
-            memory = update_smoothing_memory(raw_weights, prev_weights, alpha, min_weight)
-            deployed = deploy_weights(memory, list(raw_weights.keys()))
-            if not deployed:
-                raise RuntimeError(
-                    "deploy_weights가 빈 결과 반환 - raw_weights가 비었거나 전부 0. "
-                    "MP 배포 가중치를 계산할 수 없음."
-                )
+            prev_weights, prev_date = load_prev_factor_weights(HISTORY_DIR, end_date)
+            months = _months_between(prev_date, end_date) if prev_date else 1
+            deployed = step_smooth(target_weights, prev_weights, step, deadband, months)
 
-            if alpha >= 1.0:
-                logger.info("EMA smoothing off (alpha=1.0)")
-            elif prev_weights is None:
-                logger.info("EMA blending skipped (no prev weights - first run)")
+            if prev_weights is None:
+                logger.info("step_smooth: first run (no prev) - target deployed")
             else:
-                logger.info("EMA blending applied (alpha=%.2f), memory=%d / deployed=%d factors",
-                            alpha, len(memory), len(deployed))
+                logger.info("step_smooth applied (step=%.4f, deadband=%.4f, months=%d): "
+                            "%d deployed (current=%d)", step, deadband, months,
+                            len(deployed), len(target_weights))
+            save_factor_weights(HISTORY_DIR, end_date, deployed)               # 다음 회차 prev
+            save_factor_styles(HISTORY_DIR, end_date, target_weights, prev_weights,
+                               deployed, full_style_map, deployed_weights=deployed)
+            save_style_totals(HISTORY_DIR, end_date, target_weights, prev_weights,
+                              deployed, full_style_map, deployed_weights=deployed)
 
-            # 배포: 현재 선정분만 100% 정규화 -> Bloomberg 입력물 (gross 1.0)
-            weights_tbl["fitted_weight"] = weights_tbl["factor"].map(deployed).fillna(0.0)
-            sim_result = (sim_result[0], weights_tbl)
-
-            # full_style_map: factor_info.csv 전체 사용 -> prev 에만 있는 factor 도 매핑 가능.
-            factor_info = pd.read_csv(self.factor_info_path)
-            full_style_map = dict(zip(factor_info["factorAbbreviation"], factor_info["styleName"]))
-
-            if alpha < 1.0:
-                save_factor_weights(HISTORY_DIR, end_date, memory)  # 다음 회차 prev (pruned memory)
-            save_factor_styles(HISTORY_DIR, end_date, raw_weights, prev_weights, memory, full_style_map,
-                               deployed_weights=deployed)
-            save_style_totals(HISTORY_DIR, end_date, raw_weights, prev_weights, memory, full_style_map,
-                              deployed_weights=deployed)
-
-        self.weights = sim_result[1]
+        # 배포 weights_tbl 재구성: 탈락 factor 포함 (style 은 full_style_map)
+        self.weights = pd.DataFrame([
+            {"factor": f, "fitted_weight": w, "styleName": full_style_map.get(f, "(unmapped)")}
+            for f, w in deployed.items()
+        ])
+        sim_result = (sim_result[0], self.weights)
 
         # [7] MP 구성 + CSV 출력 — README [7]
         self._construct_and_export(
