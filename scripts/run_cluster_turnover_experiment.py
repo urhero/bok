@@ -381,7 +381,9 @@ def run_single_case(
             factor_rebal_months=case.get("factor_rebal_months", common["factor_rebal_months"]),
             weight_rebal_months=common["weight_rebal_months"],
             top_factors=common["top_factors"],
-            turnover_smoothing_alpha=case["alpha"],
+            # NOTE: EMA alpha 제거(절대스텝 전환). 스윕값을 turnover_step 으로 전달해
+            # TypeError 방지. 제대로 된 step/deadband 스윕은 별도 rework 필요(experiment obsolete).
+            turnover_step=case["alpha"],
             pipeline_params_override=case["override"],
         )
         result = engine.run(

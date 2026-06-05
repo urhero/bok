@@ -49,6 +49,8 @@ def build_factor_weight_frames(
             filtered_data[factor_idx]["ddt"] == end_date_ts, ["ddt", "ticker", "isin", "gvkeyiid", "label"]
         ].copy()
         if df.empty:
+            logger.warning("Factor %s has no stock data at %s, skipping (book gross may dip below 1.0)",
+                           factor_abbr, end_date_ts.date())
             continue
         count_per_group = df.groupby("label")["label"].transform("count")
 
