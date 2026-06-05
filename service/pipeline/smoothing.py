@@ -35,7 +35,7 @@ def step_smooth(
     if prev is None:
         return dict(target)
 
-    max_step = step * months
+    max_step = step * max(1, months)
     current = set(target)
     union = set(target) | set(prev)
 
@@ -46,8 +46,8 @@ def step_smooth(
         t = target.get(f, 0.0)
         p = prev.get(f, 0.0)
         gap = t - p
-        if f in current and abs(gap) < deadband:
-            held[f] = p                                   # 완전 고정
+        if f in current and p > 1e-12 and abs(gap) < deadband:
+            held[f] = p                                   # 완전 고정 (연속 factor 만)
         elif f not in current:                            # 탈락 (target=0)
             nw = p - min(max_step, p)                     # 0쪽으로, deadband 무시
             if nw > 1e-12:

@@ -113,3 +113,21 @@ def test_deploy_renormalizes_subset():
 def test_deploy_empty():
     assert deploy_weights({"A": 1.0}, []) == {}
     assert deploy_weights({}, ["A"]) == {}
+
+
+def test_new_entry_below_deadband_enters_with_room():
+    """신규 factor 의 target<deadband 여도, 탈락이 푼 room 으로 진입 (held 0 고착 아님)."""
+    target = {"A": 0.998, "D": 0.002}   # current={A,D}, D 신규(p=0), target<deadband
+    prev = {"A": 0.996, "C": 0.004}     # C 탈락(room 제공)
+    new = step_smooth(target, prev, step=0.01, deadband=0.003)
+    assert new.get("D", 0.0) > 0.0      # 0에 고착되지 않고 진입
+    assert "C" not in new               # 탈락 청산
+    assert _close(sum(new.values()), 1.0)
+
+
+def test_months_zero_treated_as_one():
+    """months=0 이면 max_step=step (동결 방지)."""
+    target = {"A": 0.50, "B": 0.50}
+    prev = {"A": 0.30, "B": 0.70}
+    new = step_smooth(target, prev, step=0.01, deadband=0.003, months=0)
+    assert _close(new["A"], 0.31) and _close(new["B"], 0.69)
