@@ -177,6 +177,7 @@ class ModelPortfolioPipeline:
             style_cap=self.pipeline_params["style_cap"],
         )
 
+        # [6.5] 절대스텝 스무딩 -> 배포 가중치 (메모리/배포 구분 없음, 탈락 factor 점진 청산)
         weights_tbl = sim_result[1]
         target_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
         step = float(self.pipeline_params.get("turnover_step", 0.01))
@@ -201,9 +202,9 @@ class ModelPortfolioPipeline:
                             len(deployed), len(target_weights))
             save_factor_weights(HISTORY_DIR, end_date, deployed)               # 다음 회차 prev
             save_factor_styles(HISTORY_DIR, end_date, target_weights, prev_weights,
-                               deployed, full_style_map, deployed_weights=deployed)
+                               deployed, full_style_map)
             save_style_totals(HISTORY_DIR, end_date, target_weights, prev_weights,
-                              deployed, full_style_map, deployed_weights=deployed)
+                              deployed, full_style_map)
 
         # 배포 weights_tbl 재구성: 탈락 factor 포함 (style 은 full_style_map)
         self.weights = pd.DataFrame([
