@@ -70,19 +70,24 @@ for f in union:
         delta = max(-max_step, min(max_step, gap)) # 목표쪽 이동, max_step 캡
         movers[f] = p + delta
 
-# --- 2) 정규화 (direction-safe): 탈락분은 최종 고정, 나머지로 잔여 채움 ---
-exit_sum = sum(exits_final.values())
-residual = 1.0 - exit_sum                        # held+movers 가 채워야 할 합
-base_sum = sum(held.values()) + sum(movers.values())
-scale = residual / base_sum if base_sum > 0 else 0.0
-new = dict(exits_final)
-for f, w in {**held, **movers}.items():
-    new[f] = w * scale                           # held 도 미세 흡수 (보통 <0.05%p)
+# --- 2) 정규화: held 완전 고정 + exits 최종 고정, movers 만 잔여 흡수 ---
+held_sum  = sum(held.values())
+exit_sum  = sum(exits_final.values())
+required  = 1.0 - held_sum - exit_sum            # movers 가 채워야 할 합
+mover_sum = sum(movers.values())
+new = {**held, **exits_final}                    # held·exits 는 그대로 (조정 안 함)
+if mover_sum > 0:
+    scale = required / mover_sum
+    for f, w in movers.items():
+        new[f] = w * scale                       # movers 만 ~1%p 내외로 조정해 합 100%
+elif required > 1e-9:                            # 드문: 흡수할 mover 가 전혀 없음
+    hscale = (held_sum + required) / held_sum    # 이때만 held 가 잔여 미세 흡수
+    for f in held: new[f] = held[f] * hscale
 return new                                        # 합 1.0
 ```
 
 **규칙 요약:**
-- **유지 & |gap| < 0.3%p** → 직전 유지(거래 0). 단 2)의 미세 흡수 renorm으로 아주 작게 조정될 수 있음(정상월 <0.05%p).
+- **유지 & |gap| < 0.3%p** → 직전 유지(**완전 고정, 거래 0**). 잔여는 movers 가 흡수하므로 정상월엔 건드리지 않음. (예외: 흡수할 mover 가 전혀 없는 드문 순유출 월에만 held 가 미세 흡수.)
 - **유지/신규 & |gap| ≥ 0.3%p** → 목표 쪽 min(max_step, |gap|) 이동.
 - **탈락(목표=0)** → 데드밴드 무시, max_step만큼 0쪽 이동(0 되면 제거). **renorm에서 제외해 절대 증가하지 않음**(회원님 요구: 탈락은 무조건 감소).
 - **합 1.0**: 탈락분 고정 후, 나머지(held+movers)를 잔여(1−탈락분)에 맞춰 비례 정규화 → "1% 내외로 합계 100%"(정규화 B), 방향 역전 없음.
@@ -137,7 +142,8 @@ return new                                        # 합 1.0
 | 첫 회차 (prev=None) | 목표 그대로 배포 |
 | 유지 factor, gap<0.3%p | 고정(미세 흡수 renorm만) |
 | 탈락 factor가 1%p 이하로 남음 | 다음 회차 0 도달 후 제거 |
-| 순유출 월(탈락>신규, 흡수처 부족) | 탈락분 고정, 잔여를 held+movers가 흡수(held가 정상보다 크게 움직일 수 있음 — 드묾) |
+| 정상 월 | **held 완전 고정**, movers(신규/연속이동분)만 ~1%p 내외 조정해 합 100% |
+| 흡수할 mover 없음(소규모 탈락이 다수 유지 factor에 분산 → 전부 deadband) | 이때만 held 가 잔여 미세 흡수 (드묾) |
 | 탈락 factor가 당월 kept_abbrs에 없음 | 배포 제외 + warning (종목 구성 불가) |
 | months>1 (백테스트) | max_step = step×months |
 
