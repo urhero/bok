@@ -253,8 +253,8 @@ class WalkForwardEngine:
         min_is_months: 최소 IS 기간 (기본 36).
         factor_rebal_months: Tier 1 리밸런싱 주기 (기본 6).
         weight_rebal_months: Tier 2 리밸런싱 주기 (기본 3).
-        turnover_step: 절대스텝 최대 이동폭 (기본 0.01).
-        turnover_deadband: 변화 무시 임계값 (기본 0.003).
+        turnover_step: 절대스텝 최대 이동폭 (기본 1.0=무스무딩; 스무딩은 0.01).
+        turnover_deadband: 변화 무시 임계값 (기본 0.0; 스무딩 시 0.003).
         top_factors: 상위 팩터 수 (기본 50).
     """
 
@@ -263,8 +263,8 @@ class WalkForwardEngine:
         min_is_months: int = 36,
         factor_rebal_months: int = 6,
         weight_rebal_months: int = 3,
-        turnover_step: float = 0.01,
-        turnover_deadband: float = 0.003,
+        turnover_step: float = 1.0,
+        turnover_deadband: float = 0.0,
         top_factors: int = 50,
         pipeline_params_override: dict | None = None,
     ):

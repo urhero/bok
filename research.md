@@ -665,7 +665,7 @@ Top-50이 아닌, **실제로 비중이 할당된 최종 팩터**에만 적용.
 ### 6.5 방어 로직
 
 - **MIN_REQUIRED_FACTORS = 5**: 유효 팩터가 5개 미만이면 Tier 2 스킵, 이전 가중치 유지
-- **절대스텝 밴드형 스무딩**: 배포 가중치에 **직접** 적용. 매 회차 각 factor가 목표 쪽으로 **최대 `turnover_step`(기본 1%p)/월** 이동, |변화|<`turnover_deadband`(0.3%p)면 고정(거래 0). 탈락 factor(목표=0)는 0쪽으로 점진 청산(~3개월), 그동안 배포에 포함. 메모리/배포 구분 없음 — 배포 비중 자체가 스무딩 상태(다음 회차 prev). production `mp`(월간 1%p)·백테스트(`months`=weight_rebal_months)가 `service/pipeline/smoothing.py`의 `step_smooth`를 공유. (과거 EMA 방식은 renorm으로 유지 factor가 출렁여 실거래 turnover를 못 줄였기에 교체됨.)
+- **Turnover 스무딩 (디폴트 OFF)**: 디폴트는 **무스무딩**(`turnover_step=1.0`, `turnover_deadband=0.0`) — 목표 비중을 그대로 배포(합 1.0, 탈락 factor 즉시 제거). 옵션으로 **절대스텝 밴드형 스무딩**(`turnover_step=0.01`)을 켜면 배포 가중치에 **직접** 적용: 매 회차 각 factor가 목표 쪽으로 **최대 `turnover_step`(예 1%p)/월** 이동, |변화|<`turnover_deadband`(예 0.3%p)면 고정(거래 0), 탈락 factor(목표=0)는 0쪽으로 점진 청산(~3개월, 그동안 배포에 포함). 메모리/배포 구분 없음 — 배포 비중 자체가 스무딩 상태(다음 회차 prev). production `mp`(월간)·백테스트(`months`=weight_rebal_months)가 `service/pipeline/smoothing.py`의 `step_smooth`를 공유. (스무딩 ON 시 월간 cadence turnover ~32% 감소하나, 무비용 가정 OOS 에선 Sharpe 가 소폭 낮아 디폴트는 OFF. 과거 EMA 방식은 renorm 으로 유지 factor 가 출렁여 실거래 turnover 를 못 줄였기에 교체됨.)
 
 ### 6.5.1 mp 가중치 history (`output/mp_weight_history/`)
 
@@ -680,7 +680,7 @@ Top-50이 아닌, **실제로 비중이 할당된 최종 팩터**에만 적용.
 **raw / prev / new(=배포) 의미** (절대스텝, 메모리 구분 없음)
 - `raw` : 이번 회차 optimizer 산출 = **목표** (Top-N 동일가중 + style_cap, 합 1.0)
 - `prev`: 직전 회차 **배포** 가중치 (`factor_weights_{prev_date}.csv` 로딩)
-- `new` (= 배포): `step_smooth(raw, prev, step, deadband, months)` 결과 (합 1.0). 유지 factor는 |raw−prev|<deadband면 **완전 고정**, 그 외 목표쪽 최대 step 이동, 탈락(raw=0)은 0쪽 점진 청산. `factor_weights_{date}.csv` 로 저장돼 다음 회차 prev. **탈락 factor도 청산되며 배포에 포함**(Bloomberg 입력은 이 `new`).
+- `new` (= 배포): `step_smooth(raw, prev, step, deadband, months)` 결과 (합 1.0). 유지 factor는 |raw−prev|<deadband면 **완전 고정**, 그 외 목표쪽 최대 step 이동, 탈락(raw=0)은 0쪽 점진 청산. `factor_weights_{date}.csv` 로 저장돼 다음 회차 prev. **탈락 factor도 청산되며 배포에 포함**(Bloomberg 입력은 이 `new`). **디폴트(`step=1.0, deadband=0.0`)에서는 `new`=`raw`** (목표 그대로 배포, 탈락 factor 즉시 제거).
 
 **공유 헬퍼**: `_build_factor_style_df` 가 factor union, style 매핑, weight_within_style 정규화 (스타일 합 0 이면 0) 의 공통 로직을 담당. `save_factor_styles` 와 `save_style_totals` 가 모두 이 헬퍼를 사용. (`deployed_weights` optional 인자는 함수에 남아있으나 절대스텝 전환 후 `new`=배포라 미사용.)
 
@@ -696,8 +696,8 @@ python main.py backtest <start> <end> [옵션]
   --factor-rebal-months  Tier 1 리밸런싱 주기 (기본: 6)
   --weight-rebal-months  Tier 2 리밸런싱 주기 (기본: 3)
   --top-factors          상위 팩터 수 (기본: 50)
-  --turnover-step        절대 스텝/월 (기본: 0.01 = 1%p)
-  --turnover-deadband    no-trade 밴드 (기본: 0.003 = 0.3%p)
+  --turnover-step        절대 스텝/월 (기본: 1.0 = 무스무딩; 스무딩 시 0.01 = 1%p)
+  --turnover-deadband    no-trade 밴드 (기본: 0.0; 스무딩 시 0.003 = 0.3%p)
 
 python main.py mp <start> <end> --benchmark
   → MP vs. 동일가중(1/N) 비교 리포트

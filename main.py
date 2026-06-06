@@ -59,10 +59,10 @@ def main(argv: list[str] | None = None) -> int:
                                   help="Tier 2 rebalancing frequency (default: 3)")
     parser_backtest.add_argument("--top-factors", type=int, default=50,
                                   help="Number of top factors to select (default: 50)")
-    parser_backtest.add_argument("--turnover-step", type=float, default=0.01,
-                                  help="Absolute step per month (default: 0.01 = 1%%p)")
-    parser_backtest.add_argument("--turnover-deadband", type=float, default=0.003,
-                                  help="No-trade band (default: 0.003 = 0.3%%p)")
+    parser_backtest.add_argument("--turnover-step", type=float, default=1.0,
+                                  help="Absolute step/month (default: 1.0 = no smoothing; 0.01 = 1%%p smoothing)")
+    parser_backtest.add_argument("--turnover-deadband", type=float, default=0.0,
+                                  help="No-trade band (default: 0.0; 0.003 = 0.3%%p when smoothing)")
 
     args = parser.parse_args(argv)
 

@@ -48,6 +48,6 @@ PIPELINE_PARAMS = {
     "n_clusters": 18,                  # 클러스터 수 (use_cluster_dedup=True일 때)
     "per_cluster_keep": 3,             # 클러스터당 유지 팩터 수
     "newey_west_lag": 3,               # Newey-West 보정 lag (meta_data.csv 진단용)
-    "turnover_step": 0.01,             # 절대스텝 스무딩: 월 최대 이동폭 (1%p)
-    "turnover_deadband": 0.003,        # 데드밴드: 유지 factor 변동<이 값이면 고정 (0.3%p)
+    "turnover_step": 1.0,              # 1.0 = 무스무딩(목표 그대로 배포, 디폴트). 절대스텝 스무딩은 0.01(1%p/월)
+    "turnover_deadband": 0.0,          # 데드밴드 (무스무딩이면 0; 스무딩 시 0.003=0.3%p 권장)
 }

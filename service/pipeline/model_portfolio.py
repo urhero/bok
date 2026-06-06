@@ -180,8 +180,8 @@ class ModelPortfolioPipeline:
         # [6.5] 절대스텝 스무딩 -> 배포 가중치 (메모리/배포 구분 없음, 탈락 factor 점진 청산)
         weights_tbl = sim_result[1]
         target_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
-        step = float(self.pipeline_params.get("turnover_step", 0.01))
-        deadband = float(self.pipeline_params.get("turnover_deadband", 0.003))
+        step = float(self.pipeline_params.get("turnover_step", 1.0))
+        deadband = float(self.pipeline_params.get("turnover_deadband", 0.0))
 
         # full_style_map: factor_info.csv 전체 -> 탈락(선정 외) factor 도 style 매핑
         factor_info = pd.read_csv(self.factor_info_path)
