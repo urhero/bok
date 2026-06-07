@@ -665,7 +665,7 @@ Top-50이 아닌, **실제로 비중이 할당된 최종 팩터**에만 적용.
 ### 6.5 방어 로직
 
 - **MIN_REQUIRED_FACTORS = 5**: 유효 팩터가 5개 미만이면 Tier 2 스킵, 이전 가중치 유지
-- **Turnover 스무딩 (디폴트 OFF)**: 디폴트는 **무스무딩**(`turnover_step=1.0`, `turnover_deadband=0.0`) — 목표 비중을 그대로 배포(합 1.0, 탈락 factor 즉시 제거). 옵션으로 **절대스텝 밴드형 스무딩**(`turnover_step=0.01`)을 켜면 배포 가중치에 **직접** 적용: 매 회차 각 factor가 목표 쪽으로 **최대 `turnover_step`(예 1%p)/월** 이동, |변화|<`turnover_deadband`(예 0.3%p)면 고정(거래 0), 탈락 factor(목표=0)는 0쪽으로 점진 청산(~3개월, 그동안 배포에 포함). 메모리/배포 구분 없음 — 배포 비중 자체가 스무딩 상태(다음 회차 prev). production `mp`(월간)·백테스트(`months`=weight_rebal_months)가 `service/pipeline/smoothing.py`의 `step_smooth`를 공유. (스무딩 ON 시 월간 cadence turnover ~32% 감소하나, 무비용 가정 OOS 에선 Sharpe 가 소폭 낮아 디폴트는 OFF. 과거 EMA 방식은 renorm 으로 유지 factor 가 출렁여 실거래 turnover 를 못 줄였기에 교체됨.)
+- **Turnover 스무딩 (디폴트 OFF)**: 디폴트는 **무스무딩**(`turnover_step=1.0`, `turnover_deadband=0.0`) — 목표 비중을 그대로 배포(합 1.0, 탈락 factor 즉시 제거). 옵션으로 **절대스텝 밴드형 스무딩**(`turnover_step=0.01`)을 켜면 배포 가중치에 **직접** 적용: 매 회차 각 factor가 목표 쪽으로 **최대 `turnover_step`(예 1%p)/월** 이동, |변화|<`turnover_deadband`(예 0.3%p)면 고정(거래 0), 탈락 factor(목표=0)는 0쪽으로 점진 청산(~3개월, 그동안 배포에 포함). 메모리/배포 구분 없음 — 배포 비중 자체가 스무딩 상태(다음 회차 prev). production `mp`(월간)·백테스트(`months`=weight_rebal_months)가 `service/pipeline/smoothing.py`의 `step_smooth`를 공유. (스무딩 ON 시 월간 cadence turnover ~32% 감소하나, 무비용 가정 OOS 에선 Sharpe 가 소폭 낮아 디폴트는 OFF. 성과 저하가 Price Momentum·Analyst Expectations 등 빠른 신호 스타일에 집중되는 기여도 분해는 [`docs/experiments/absolute_step_attribution_20260607.md`](docs/experiments/absolute_step_attribution_20260607.md) 참조. 과거 EMA 방식은 renorm 으로 유지 factor 가 출렁여 실거래 turnover 를 못 줄였기에 교체됨.)
 
 ### 6.5.1 mp 가중치 history (`output/mp_weight_history/`)
 
