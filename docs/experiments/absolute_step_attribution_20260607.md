@@ -16,7 +16,7 @@
 
 - 검증: 월별 재계산 기여도 합 == 엔진 `oos_return` (최대 오차 `0.0`, 양 config 모두). 재계산 CAGR == 엔진 CAGR 16자리 일치.
 - 분해: 각 팩터의 `(w_step - w_nosmooth) x ret` 을 **연속(타이밍 lag)** vs **탈락(청산 지연)** 으로 분류. 두 버킷 합 = 총 산술 차이 (완전 분해).
-- 스크립트: `_bt_attribution2.py` (per-month 덤프 `output/attribution2_dump_*.pkl`, 표 `output/attribution2_*.csv/json`).
+- 스크립트: `scripts/analyze_smoothing_attribution.py` (두 엔진 실런 -> per-month 덤프 + 팩터/스타일 표를 `output/attribution2_*` 로 생성, 재실행 가능).
 
 > 참고: 초기 단일런 재구성(`_bt_attribution.py`, 절대스텝 경로를 step_smooth 로 오프라인 복원)은 ~0.046%p 오차로 두 채널을 과대추정했다. 본 노트 수치는 두 엔진 실런 기반.
 
