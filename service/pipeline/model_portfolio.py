@@ -434,12 +434,17 @@ class ModelPortfolioPipeline:
         if weight_raw is None:
             return
 
+        # 결정적 출력: 종목 행 순서를 고정해 downstream groupby 합산(부동소수점) 순서까지 안정화.
+        # (월별 재생성 시 값은 동일하나 행순서/말단자릿수만 달라져 git diff 가 전체 파일로 잡히는 문제 방지)
+        weight_raw = weight_raw.sort_values(["factor", "ticker", "gvkeyiid"]).reset_index(drop=True)
+
         agg_w = aggregate_mp_weights(weight_raw, end_date_ts)
         weight_raw = calculate_style_weights(weight_raw)
         agg_w["style_ls_weight"] = agg_w["mp_ls_weight"]
 
         # 결합 및 출력
         final_weights = pd.concat([weight_raw, agg_w], axis=0, ignore_index=True)
+        final_weights = final_weights.sort_values(["style", "factor", "ticker", "gvkeyiid"]).reset_index(drop=True)
         final_style_weight = final_weights.groupby(["ddt", "ticker", "isin", "gvkeyiid", "style"])[
             ["ls_weight", "style_ls_weight", "factor_weight"]
         ].sum()
@@ -454,6 +459,10 @@ class ModelPortfolioPipeline:
         matched_weights = sim_result[1][sim_result[1]["factor"].isin(factors_in_data)]
         final_weights.loc[mp_mask, "factor_weight"] = matched_weights["fitted_weight"].sum()
         final_weights = final_weights.replace(0, np.nan)
+        # 결정적 출력: factor_weight(피벗 컬럼 키)의 말단 부동소수점 표기 변동 제거.
+        # MP factor_weight = 37개 가중치 합 ~= 1.0 인데 합산 순서에 따라 0.999..98 / 1.000..02 로
+        # 흔들려 피벗 헤더가 실행마다 달라짐 -> 12자리 반올림으로 고정 (값 영향 무시 가능).
+        final_weights["factor_weight"] = final_weights["factor_weight"].round(12)
 
         pivoted_final = final_weights.pivot_table(
             index=["ddt", "ticker", "isin", "gvkeyiid"],
