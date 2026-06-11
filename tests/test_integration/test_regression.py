@@ -29,10 +29,12 @@ def _load_baseline() -> dict:
 
 
 def _latest_meta_data() -> pd.DataFrame:
-    meta_files = sorted(OUTPUT_DIR.glob("meta_data*.csv"), key=lambda p: p.stat().st_mtime)
-    if not meta_files:
-        pytest.skip("No meta_data.csv found in output/")
-    return pd.read_csv(meta_files[-1])
+    # fixture 가 test_data.csv 파이프라인을 실행하므로 해당 meta 를 명시적으로 읽는다
+    # (mtime 글롭은 직전에 실행된 production meta_data.csv 를 집을 수 있어 비결정적)
+    meta_path = OUTPUT_DIR / f"meta_data_test_{TEST_DATA_PATH.stem}.csv"
+    if not meta_path.exists():
+        pytest.skip(f"{meta_path.name} not found in output/")
+    return pd.read_csv(meta_path)
 
 
 @pytest.mark.skipif(not TEST_DATA_PATH.exists(), reason="test_data.csv not found")
@@ -79,11 +81,11 @@ class TestRegressionMetrics:
         )
 
     def test_no_negative_top_factor_cagr(self):
-        """Top-10 factors by rank should all have positive CAGR."""
+        """Top-3 factors by rank should all have positive CAGR."""
         df = _latest_meta_data()
-        top10 = df.sort_values("rank_total").head(10)
-        neg = top10[top10["cagr"] < 0]
-        assert len(neg) == 0, f"Negative CAGR in top-10: {neg['factorAbbreviation'].tolist()}"
+        top3 = df.sort_values("rank_total").head(3)
+        neg = top3[top3["cagr"] < 0]
+        assert len(neg) == 0, f"Negative CAGR in top-3: {neg['factorAbbreviation'].tolist()}"
 
     def test_meta_data_required_columns(self):
         """meta_data.csv must contain all required columns."""

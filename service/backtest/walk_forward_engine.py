@@ -24,8 +24,7 @@ from config import PARAM, PIPELINE_PARAMS
 from service.backtest.data_slicer import get_oos_dates, slice_data_by_date
 from service.backtest.factor_selection import (
     cluster_and_dedup_top_n,
-    compute_shrunk_tstat,
-    compute_tstat,
+    compute_rank_score,
 )
 from service.backtest.result_stitcher import WalkForwardResult
 from service.pipeline.correlation import calculate_downside_correlation
@@ -414,12 +413,8 @@ class WalkForwardEngine:
                             for abbr, style in zip(kept_abbrs, kept_styles):
                                 style_map_full[abbr] = style
 
-                        if ranking_method == "shrunk_tstat":
-                            rank_score = compute_shrunk_tstat(monthly_rets, style_map_full)
-                        elif ranking_method == "tstat":
-                            rank_score = compute_tstat(monthly_rets)
-                        else:
-                            rank_score = cagr_series
+                        # production mp (_evaluate_universe) 와 동일 로직 공유
+                        rank_score = compute_rank_score(monthly_rets, ranking_method, style_map_full)
 
                         meta_df = pd.DataFrame({
                             "factorAbbreviation": ret_df_is.columns,

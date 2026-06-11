@@ -2,6 +2,8 @@
 """Sprint 1 factor_selection 모듈 단위 테스트."""
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,6 +11,7 @@ import pytest
 from service.backtest.factor_selection import (
     cluster_and_dedup_top_n,
     compute_newey_west_tstat,
+    compute_rank_score,
     compute_shrunk_tstat,
     compute_tstat,
 )
@@ -109,6 +112,56 @@ class TestNeweyWestTstat:
         nw = compute_newey_west_tstat(rets, lag=6)["AR"]
         # 강한 positive autocorr -> NW SE 확대 -> |t_nw| < |t_plain|
         assert abs(nw) < abs(plain)
+
+
+class TestComputeRankScore:
+    """compute_rank_score: production mp 와 walk-forward 가 공유하는 랭킹 점수 디스패처."""
+
+    def test_tstat_method_matches_compute_tstat(self):
+        rets = _make_returns(n_months=48, n_factors=6, seed=5)
+        score = compute_rank_score(rets, method="tstat")
+        expected = compute_tstat(rets)
+        pd.testing.assert_series_equal(score, expected)
+
+    def test_shrunk_tstat_method_matches_compute_shrunk_tstat(self):
+        rets = _make_returns(n_months=48, n_factors=6, seed=5)
+        style_map = {c: f"S{i % 2}" for i, c in enumerate(rets.columns)}
+        score = compute_rank_score(rets, method="shrunk_tstat", style_map=style_map)
+        expected = compute_shrunk_tstat(rets, style_map)
+        pd.testing.assert_series_equal(score, expected)
+
+    def test_cagr_method_matches_engine_formula(self):
+        """CAGR 점수가 엔진의 cumprod 기반 공식과 부동소수점까지 일치해야 한다.
+
+        엔진(_evaluate_universe / walk-forward Tier 2)은 첫 행을 0으로 둔
+        ret_df 에서 (1+ret).cumprod().iloc[-1] ** (12/months) - 1 로 계산한다.
+        monthly_rets = ret_df.iloc[1:] 이므로 두 공식은 동일해야 한다.
+        """
+        monthly = _make_returns(n_months=36, n_factors=5, seed=9)
+        # 엔진 방식 재현: 첫 행 0 기준점 포함 행렬
+        ret_df = pd.concat(
+            [pd.DataFrame([[0.0] * 5], columns=monthly.columns), monthly],
+            ignore_index=True,
+        )
+        months = len(ret_df) - 1
+        engine_cagr = (1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1
+
+        score = compute_rank_score(monthly, method="cagr")
+        pd.testing.assert_series_equal(score, engine_cagr, check_names=False)
+
+    def test_unknown_method_falls_back_to_cagr(self, caplog):
+        rets = _make_returns(n_months=24, n_factors=3, seed=2)
+        with caplog.at_level(logging.WARNING):
+            score = compute_rank_score(rets, method="nonsense")
+        expected = compute_rank_score(rets, method="cagr")
+        pd.testing.assert_series_equal(score, expected)
+        assert any("nonsense" in r.message for r in caplog.records)
+
+    def test_empty_returns_zero_series(self):
+        rets = pd.DataFrame(columns=["A", "B"], dtype=float)
+        score = compute_rank_score(rets, method="cagr")
+        assert (score == 0.0).all()
+        assert set(score.index) == {"A", "B"}
 
 
 class TestClusterAndDedupTopN:

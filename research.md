@@ -231,11 +231,13 @@ ret_df.loc[ret_df.index[0]] = 0.0
 # 3. 0이 10개 초과인 팩터 제거 (데이터 불충분)
 valid = ret_df.columns[(ret_df == 0).sum() <= 10]
 
-# 4. CAGR 계산 및 정렬
+# 4. CAGR(참조 컬럼) + rank_score 계산 — factor_ranking_method (기본 tstat)
+#    walk-forward Tier 2 와 동일한 factor_selection.compute_rank_score() 공유
 meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
+meta["rank_score"] = compute_rank_score(monthly_rets, ranking_method, style_map)
 
-# 5. 상위 50개만 선정
-meta = meta[:50]
+# 5. rank_score 상위 50개 선정 (use_cluster_dedup=True 면 클러스터 dedup 경유)
+meta = meta[:top_n]
 
 # 6. 하락 상관관계 행렬 계산
 downside_corr = calculate_downside_correlation(ret_df)

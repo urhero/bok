@@ -89,7 +89,8 @@
 - 핵심 함수: `model_portfolio.aggregate_factor_returns()`
 
 ### (b) 팩터 유니버스 최종 선정 (200+ -> Top-50)
-- 랭킹 방식: **t-stat 기반** (기본), `shrunk_tstat` / `cagr` 선택 가능
+- 랭킹 방식: **t-stat 기반** (기본), `shrunk_tstat` / `cagr` 선택 가능 (`factor_ranking_method`)
+- production `mp`와 walk-forward 백테스트가 `factor_selection.compute_rank_score()`를 공유 — 검증된 config과 배포 전략이 항상 일치
 - 상위 50개를 후보군으로 선정 → 하락 상관관계 계산
 - 최종 비중 할당은 [6]에서 결정
 
@@ -165,7 +166,7 @@
 | `[1]` 데이터 로딩 | PIT 기반 종목·팩터 데이터 확보 | `_load_data`, `_prepare_metadata` |
 | `[2]` 5분위 분석 | 팩터별 분위 포트폴리오 구성 | `calculate_factor_stats_batch` |
 | `[3]` 섹터 필터 + 라벨링 | 비효과 섹터 제거, L/N/S 분류 | `filter_and_label_factors` |
-| `[4]` 팩터 유니버스 선정 | 롱-숏 수익률 + CAGR 랭킹 | `_evaluate_universe` |
+| `[4]` 팩터 유니버스 선정 | 롱-숏 수익률 + rank_score 랭킹 (기본 t-stat) | `_evaluate_universe` |
 | `[6]` 비중 결정 | 스타일 캡 하 가중치 계산 | `optimize_constrained_weights` |
 | `[7]` MP 구성 + 출력 | 종목별 최종 비중, CSV 저장 | `_construct_and_export` |
 | `[8]` Walk-Forward 백테스트 | OOS 과적합 진단 | `WalkForwardEngine.run` |
@@ -264,7 +265,7 @@ result.to_csv("output/wf.csv")      # 결과 저장
 | `style_cap` | 0.25 | 스타일 캡 (프로덕션 규제 요건) | `optimization.py` |
 | `transaction_cost_bps` | 30.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
 | `top_factor_count` | 50 | rank_score 기준 상위 팩터 선정 수 | `model_portfolio.py` |
-| `factor_ranking_method` | "tstat" | 팩터 랭킹 방식 (`shrunk_tstat` / `tstat` / `cagr`) | `walk_forward_engine.py` |
+| `factor_ranking_method` | "tstat" | 팩터 랭킹 방식 (`shrunk_tstat` / `tstat` / `cagr`) | `model_portfolio.py`, `walk_forward_engine.py` (`compute_rank_score` 공유) |
 | `use_cluster_dedup` | False | Top-N Hierarchical Clustering 중복 제거 (Sprint 1-B) | `walk_forward_engine.py` |
 | `n_clusters` | 18 | 클러스터 수 (`use_cluster_dedup=True`일 때) | `factor_selection.py` |
 | `per_cluster_keep` | 3 | 클러스터당 유지 팩터 수 | `factor_selection.py` |

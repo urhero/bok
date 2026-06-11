@@ -43,7 +43,7 @@ PIPELINE_PARAMS = {
     "backtest_end": "2026-03-31",      # 백테스트 종료일
     "min_downside_obs": 20,            # 하락 상관관계 최소 관측 수
     "optimization_mode": "equal_weight", # "hardcoded": 고정 가중치, "equal_weight": 동일가중 (권장)
-    "factor_ranking_method": "tstat",  # "shrunk_tstat" / "tstat"(현 기본) / "cagr"
+    "factor_ranking_method": "tstat",  # "shrunk_tstat" / "tstat"(현 기본) / "cagr" — mp+backtest 공통 선정 기준
     "use_cluster_dedup": True,         # Sprint 1-B: Top-N Hierarchical Clustering 중복 제거 (production 적용)
     "n_clusters": 18,                  # 클러스터 수 (use_cluster_dedup=True일 때)
     "per_cluster_keep": 3,             # 클러스터당 유지 팩터 수

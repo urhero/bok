@@ -346,7 +346,7 @@ class ModelPortfolioPipeline:
         logger.info("Report generated.")
 
     def _evaluate_universe(self, kept_abbrs, kept_names, kept_styles, filtered_data, test_file):
-        """팩터 유니버스를 평가하고 상위 50개를 선정한다."""
+        """팩터 유니버스를 평가하고 rank_score(factor_ranking_method) 상위 50개를 선정한다."""
         logger.info("Building monthly return matrix")
         ret_df = aggregate_factor_returns(
             filtered_data, kept_abbrs,
@@ -374,11 +374,13 @@ class ModelPortfolioPipeline:
 
         months = len(ret_df) - 1
         meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
-        meta["rank_style"] = meta.groupby("styleName")["cagr"].rank(ascending=False)
-        meta["rank_total"] = meta["cagr"].rank(ascending=False)
 
-        # Sprint 1-C: Newey-West 보정 t-stat 진단 컬럼 (랭킹 교체 X, 관찰용)
-        from service.backtest.factor_selection import compute_newey_west_tstat, compute_tstat
+        # Sprint 1-C: Newey-West 보정 t-stat 진단 컬럼 (관찰용)
+        from service.backtest.factor_selection import (
+            compute_newey_west_tstat,
+            compute_rank_score,
+            compute_tstat,
+        )
 
         monthly_rets = ret_df.iloc[1:][meta["factorAbbreviation"].tolist()]
         nw_lag = int(self.pipeline_params.get("newey_west_lag", 3))
@@ -388,7 +390,18 @@ class ModelPortfolioPipeline:
             .reindex(meta["factorAbbreviation"]).values
         )
 
-        meta = meta.sort_values("cagr", ascending=False).reset_index(drop=True)
+        # 팩터 선정 점수: factor_ranking_method (walk-forward 와 동일 로직 공유,
+        # 백테스트로 검증된 config 와 production 선정 기준을 일치시킴)
+        ranking_method = self.pipeline_params.get("factor_ranking_method", "cagr")
+        style_map_full = dict(zip(meta["factorAbbreviation"], meta["styleName"]))
+        meta["rank_score"] = (
+            compute_rank_score(monthly_rets, ranking_method, style_map_full)
+            .reindex(meta["factorAbbreviation"]).values
+        )
+        meta["rank_style"] = meta.groupby("styleName")["rank_score"].rank(ascending=False)
+        meta["rank_total"] = meta["rank_score"].rank(ascending=False)
+
+        meta = meta.sort_values("rank_score", ascending=False).reset_index(drop=True)
 
         # 메타 저장 (clustering 적용 전 전체 universe 메타)
         if test_file:
@@ -400,10 +413,10 @@ class ModelPortfolioPipeline:
         top_n = min(self.pipeline_params["top_factor_count"], len(meta))
 
         # Sprint 1-B: Hierarchical Clustering 기반 Top-N dedup (선택적)
-        # use_cluster_dedup=False (default) 일 때 기존 동작 (단순 cagr 상위 N) 유지
+        # use_cluster_dedup=False 일 때는 단순 rank_score 상위 N
         if self.pipeline_params.get("use_cluster_dedup", False):
             from service.backtest.factor_selection import cluster_and_dedup_top_n
-            score_series = meta.set_index("factorAbbreviation")["cagr"]
+            score_series = meta.set_index("factorAbbreviation")["rank_score"]
             selected = cluster_and_dedup_top_n(
                 monthly_rets,
                 score_series,

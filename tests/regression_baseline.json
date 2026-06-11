@@ -1,25 +1,23 @@
 {
-  "_description": "Regression baseline from test_data.csv pipeline run",
-  "_generated": "2026-03-30",
+  "_description": "Regression baseline from test_data.csv pipeline run (factor_ranking_method=tstat)",
+  "_generated": "2026-06-12",
   "_tolerance": "CAGR within 0.5pp; top-3 factor abbreviations must match",
   "top_factor": {
-    "abbreviation": "PM6M",
-    "cagr": 0.137839
+    "abbreviation": "InvToAsset",
+    "cagr": 0.4680899778071521
   },
   "top5_factors": [
-    "PM6M",
+    "InvToAsset",
     "SalesAcc",
-    "52WSlope",
-    "RevMagFY1C",
-    "HL52W"
+    "InvTurn",
+    "BP"
   ],
   "top5_cagrs": [
-    0.137839,
-    0.122697,
-    0.10627,
-    0.098774,
-    0.095866
+    0.4680899778071521,
+    1.017770890613435,
+    0.10438518761510185,
+    -0.04967777955355468
   ],
-  "total_ranked_factors": 241,
+  "total_ranked_factors": 4,
   "cagr_tolerance": 0.005
 }

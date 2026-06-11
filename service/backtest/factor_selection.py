@@ -132,6 +132,40 @@ def compute_newey_west_tstat(
     return pd.Series(result)
 
 
+def compute_rank_score(
+    monthly_rets: pd.DataFrame,
+    method: str = "cagr",
+    style_map: Mapping[str, str] | None = None,
+) -> pd.Series:
+    """factor_ranking_method 에 따른 팩터 랭킹 점수를 계산한다.
+
+    production mp (_evaluate_universe) 와 walk-forward Tier 2 가 공유하는
+    단일 진입점. 두 경로의 랭킹 로직이 갈라지는 것을 방지한다.
+
+    Args:
+        monthly_rets: 팩터별 월간 L-S 수익률 (rows=month, cols=factor).
+            기준점 0 행은 제외하고 전달 (ret_df.iloc[1:]).
+        method: "tstat" / "shrunk_tstat" / "cagr". 그 외 값은 경고 후 cagr.
+        style_map: factorAbbreviation -> styleName (shrunk_tstat 에만 필요).
+
+    Returns:
+        팩터별 점수 Series (높을수록 상위).
+    """
+    if method == "shrunk_tstat":
+        return compute_shrunk_tstat(monthly_rets, style_map or {})
+    if method == "tstat":
+        return compute_tstat(monthly_rets)
+    if method != "cagr":
+        logger.warning("Unknown factor_ranking_method %r - falling back to 'cagr'", method)
+
+    months = len(monthly_rets)
+    if months == 0:
+        return pd.Series(0.0, index=monthly_rets.columns)
+    # (1+ret_df).cumprod().iloc[-1] 와 동일 (첫 행 0 기준점은 x1.0 이므로)
+    cum = (1 + monthly_rets).prod()
+    return cum ** (12 / months) - 1
+
+
 def cluster_and_dedup_top_n(
     monthly_rets: pd.DataFrame,
     rank_score: pd.Series,
