@@ -23,6 +23,7 @@ from rich.progress import track
 from config import PARAM, PIPELINE_PARAMS
 from service.backtest.data_slicer import get_oos_dates, slice_data_by_date
 from service.backtest.factor_selection import (
+    apply_selection_hysteresis,
     cluster_and_dedup_top_n,
     compute_rank_score,
 )
@@ -255,6 +256,10 @@ class WalkForwardEngine:
         turnover_step: 절대스텝 최대 이동폭 (기본 1.0=무스무딩; 스무딩은 0.01).
         turnover_deadband: 변화 무시 임계값 (기본 0.0; 스무딩 시 0.003).
         top_factors: 상위 팩터 수 (기본 50).
+        selection_hysteresis: 선정 히스테리시스 margin (rank_score 단위,
+            기본 0.0=off). 챌린저가 기존 보유 팩터를 이 격차 이상 이겨야 교체.
+        style_step_overrides: {styleName: step} — 해당 스타일 factor 만 step
+            차등 (예 {"Price Momentum": 1.0}). 기본 None=전 스타일 공통 step.
     """
 
     def __init__(
@@ -265,6 +270,8 @@ class WalkForwardEngine:
         turnover_step: float = 1.0,
         turnover_deadband: float = 0.0,
         top_factors: int = 50,
+        selection_hysteresis: float = 0.0,
+        style_step_overrides: dict[str, float] | None = None,
         pipeline_params_override: dict | None = None,
     ):
         self.min_is_months = min_is_months
@@ -273,6 +280,8 @@ class WalkForwardEngine:
         self.turnover_step = turnover_step
         self.turnover_deadband = turnover_deadband
         self.top_factors = top_factors
+        self.selection_hysteresis = selection_hysteresis
+        self.style_step_overrides = style_step_overrides
         self.pipeline_params_override = pipeline_params_override
 
     def run(
@@ -362,17 +371,18 @@ class WalkForwardEngine:
                 precomputed_ret_df.loc[precomputed_ret_df.index[0]] = 0.0
                 precomputed_ret_df = precomputed_ret_df.sort_index()
 
-                # 이전 가중치 무효화 (새 규칙이므로)
-                cached_weights = None
+                # 새 규칙 -> 메타/Top50 무효화. 가중치/선정은 carry:
+                # 실제 포트폴리오는 Tier 1 에서 리셋되지 않으므로 (production parity)
+                # 스무딩 prev/히스테리시스 incumbency 상태를 유지한다.
+                # Tier 2 는 아래 is_rule_rebal 조건으로 강제 재실행 -> stale weights 없음.
                 cached_meta = None
-                cached_selected_factors = None
                 cached_top50_factors = None
 
             if precomputed_ret_df is None or precomputed_ret_df.empty:
                 continue
 
             # ── Tier 2: 팩터 선정 + 가중치 최적화 ──
-            if cached_weights is None or i % self.weight_rebal_months == 0:
+            if cached_weights is None or is_rule_rebal or i % self.weight_rebal_months == 0:
                 is_weight_rebal = True
 
                 # IS 구간 슬라이스 (aggregate 재실행 불필요)
@@ -445,6 +455,18 @@ class WalkForwardEngine:
                         else:
                             meta_top = meta_df.head(top_n)
                             selected = meta_top["factorAbbreviation"].tolist()
+
+                        # 선정 히스테리시스: 직전 보유 팩터를 margin 미만 격차의
+                        # 챌린저로부터 보호 (노이즈성 교체 churn 절감)
+                        if self.selection_hysteresis > 0 and cached_selected_factors:
+                            score_full = meta_df.set_index("factorAbbreviation")["rank_score"]
+                            adjusted = apply_selection_hysteresis(
+                                list(selected), score_full,
+                                set(cached_selected_factors), self.selection_hysteresis,
+                            )
+                            if set(adjusted) != set(selected):
+                                selected = adjusted
+                                meta_top = meta_df.set_index("factorAbbreviation").loc[selected].reset_index()
                         cached_top50_factors = list(selected)
                         ret_df_selected = ret_df_is[selected]
 
@@ -474,10 +496,19 @@ class WalkForwardEngine:
                                 cached_is_cew_cagr = is_cum ** (12 / is_months) - 1
 
                             # 절대스텝 스무딩 (production mp 와 공유). months=가중치 리밸런스 주기.
+                            # style_step_overrides 가 있으면 해당 스타일 factor 만 step 차등.
+                            factor_step_overrides = None
+                            if self.style_step_overrides:
+                                factor_step_overrides = {
+                                    f: self.style_step_overrides[s]
+                                    for f, s in style_map_full.items()
+                                    if s in self.style_step_overrides
+                                }
                             cached_weights = step_smooth(
                                 raw_new_weights, cached_weights,
                                 self.turnover_step, self.turnover_deadband,
                                 months=self.weight_rebal_months,
+                                step_overrides=factor_step_overrides,
                             )
 
                             cached_selected_factors = list(raw_new_weights.keys())

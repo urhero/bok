@@ -166,6 +166,65 @@ def compute_rank_score(
     return cum ** (12 / months) - 1
 
 
+def apply_selection_hysteresis(
+    selected: list[str],
+    scores: pd.Series,
+    prev_selected: set[str] | None,
+    margin: float,
+) -> list[str]:
+    """선정 히스테리시스: 챌린저가 기존 보유 팩터를 margin 이상 이겨야 교체.
+
+    이번 회차 선정(selected)에서 빠진 직전 보유 팩터(exit)와 새로 진입한
+    팩터(entry)를 짝지어, entry 점수가 exit 점수 + margin 에 못 미치면
+    교체를 되돌린다 (exit 유지, entry 제외). 점수 높은 exit 부터 구제하고
+    점수 낮은 entry 부터 희생하며, margin 충족 쌍에서 중단한다
+    (exits 내림차순 x entries 오름차순이라 이후 쌍은 격차가 더 큼).
+
+    목적: 노이즈성 랭킹 뒤집힘(rank flip-flop)으로 인한 선정 churn 절감.
+    비중 스무딩과 달리 진짜 신호 변화(큰 격차)는 즉시 반영된다.
+
+    Args:
+        selected: 이번 회차 선정 팩터 리스트.
+        scores: 전체 후보 팩터의 rank_score (부활 후보 포함되어야 함).
+        prev_selected: 직전 회차 선정 팩터 집합. None/빈 집합이면 no-op.
+        margin: 교체 요구 점수 격차 (rank_score 단위, 예: tstat 0.25). <=0 이면 no-op.
+
+    Returns:
+        조정된 선정 리스트 (rank_score 내림차순, 길이 = len(selected)).
+
+    Note:
+        부활한 exit 는 cluster dedup 제약을 우회할 수 있다
+        (제약 순수성보다 turnover 절감을 우선하는 의도된 trade-off).
+    """
+    if margin <= 0 or not prev_selected:
+        return list(selected)
+
+    sel_set = set(selected)
+    candidates = set(scores.index)
+    exits = sorted(
+        (f for f in prev_selected if f in candidates and f not in sel_set),
+        key=lambda f: float(scores[f]), reverse=True,
+    )
+    entries = sorted(
+        (f for f in selected if f not in prev_selected),
+        key=lambda f: float(scores[f]),
+    )
+
+    out = set(selected)
+    n_swapped = 0
+    for x, e in zip(exits, entries):
+        if float(scores[e]) - float(scores[x]) < margin:
+            out.discard(e)
+            out.add(x)
+            n_swapped += 1
+        else:
+            break
+
+    if n_swapped:
+        logger.info("selection_hysteresis: %d swap reverted (margin=%.3f)", n_swapped, margin)
+    return sorted(out, key=lambda f: float(scores[f]), reverse=True)
+
+
 def cluster_and_dedup_top_n(
     monthly_rets: pd.DataFrame,
     rank_score: pd.Series,

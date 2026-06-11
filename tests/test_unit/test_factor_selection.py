@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from service.backtest.factor_selection import (
+    apply_selection_hysteresis,
     cluster_and_dedup_top_n,
     compute_newey_west_tstat,
     compute_rank_score,
@@ -162,6 +163,57 @@ class TestComputeRankScore:
         score = compute_rank_score(rets, method="cagr")
         assert (score == 0.0).all()
         assert set(score.index) == {"A", "B"}
+
+
+class TestApplySelectionHysteresis:
+    """선정 히스테리시스: 챌린저가 기존 보유 팩터를 margin 이상 이겨야 교체."""
+
+    def _scores(self, d):
+        return pd.Series(d, dtype=float)
+
+    def test_margin_zero_is_noop(self):
+        scores = self._scores({"A": 3.0, "B": 2.0, "C": 1.5, "X": 1.4})
+        out = apply_selection_hysteresis(["A", "B", "C"], scores, {"A", "B", "X"}, margin=0.0)
+        assert out == ["A", "B", "C"]
+
+    def test_no_prev_is_noop(self):
+        scores = self._scores({"A": 3.0, "B": 2.0, "C": 1.5})
+        assert apply_selection_hysteresis(["A", "B", "C"], scores, None, margin=0.25) == ["A", "B", "C"]
+        assert apply_selection_hysteresis(["A", "B", "C"], scores, set(), margin=0.25) == ["A", "B", "C"]
+
+    def test_weak_challenger_swapped_back(self):
+        """챌린저 C(1.5)가 기존 X(1.4)를 margin(0.25) 못 이기면 X 유지."""
+        scores = self._scores({"A": 3.0, "B": 2.0, "C": 1.5, "X": 1.4})
+        out = apply_selection_hysteresis(["A", "B", "C"], scores, {"A", "B", "X"}, margin=0.25)
+        assert set(out) == {"A", "B", "X"}
+        assert out == sorted(out, key=lambda f: scores[f], reverse=True)
+
+    def test_strong_challenger_replaces(self):
+        """챌린저 C(2.0)가 기존 X(1.4)를 margin 이상 이기면 교체 진행."""
+        scores = self._scores({"A": 3.0, "B": 2.5, "C": 2.0, "X": 1.4})
+        out = apply_selection_hysteresis(["A", "B", "C"], scores, {"A", "B", "X"}, margin=0.25)
+        assert set(out) == {"A", "B", "C"}
+
+    def test_vanished_incumbent_cannot_revive(self):
+        """후보군(scores)에서 사라진 기존 팩터는 부활 불가."""
+        scores = self._scores({"A": 3.0, "B": 2.0, "C": 1.5})  # X 없음
+        out = apply_selection_hysteresis(["A", "B", "C"], scores, {"A", "B", "X"}, margin=10.0)
+        assert set(out) == {"A", "B", "C"}
+
+    def test_greedy_pairing_and_early_stop(self):
+        """최고점 exit 부터 구제, 최저점 entry 부터 희생. margin 충족 쌍에서 중단."""
+        scores = self._scores({"A": 5.0, "C": 2.1, "D": 1.05, "X": 2.0, "Y": 1.0})
+        # entries: C(2.1), D(1.05) / exits: X(2.0), Y(1.0)
+        # 쌍1: D(1.05) vs X(2.0) -> 1.05-2.0 < 0.25 -> swap (X 부활, D 탈락)
+        # 쌍2: C(2.1) vs Y(1.0) -> 2.1-1.0 >= 0.25 -> 중단 (C 유지)
+        out = apply_selection_hysteresis(["A", "C", "D"], scores, {"A", "X", "Y"}, margin=0.25)
+        assert set(out) == {"A", "C", "X"}
+
+    def test_count_and_uniqueness_preserved(self):
+        scores = self._scores({"A": 3.0, "B": 2.0, "C": 1.5, "X": 1.45, "Y": 1.44})
+        out = apply_selection_hysteresis(["A", "B", "C"], scores, {"X", "Y"}, margin=0.25)
+        assert len(out) == 3
+        assert len(set(out)) == 3
 
 
 class TestClusterAndDedupTopN:

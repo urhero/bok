@@ -131,3 +131,49 @@ def test_months_zero_treated_as_one():
     prev = {"A": 0.30, "B": 0.70}
     new = step_smooth(target, prev, step=0.01, deadband=0.003, months=0)
     assert _close(new["A"], 0.31) and _close(new["B"], 0.69)
+
+
+# ── step_smooth: step_overrides (스타일별 step 차등) ───────────────────────
+
+def test_step_overrides_fast_swap_instant():
+    """fast(override=1.0) 스타일 내부 교체는 즉시, slow 팩터는 무영향."""
+    target = {"F2": 0.2, "S": 0.8}            # F1 -> F2 교체, S 유지
+    prev = {"F1": 0.2, "S": 0.8}
+    new = step_smooth(target, prev, step=0.01, deadband=0.003,
+                      step_overrides={"F1": 1.0, "F2": 1.0})
+    assert "F1" not in new                     # 즉시 청산
+    assert _close(new["F2"], 0.2)              # 즉시 진입
+    assert _close(new["S"], 0.8)               # slow 팩터 완전 고정
+    assert _close(sum(new.values()), 1.0)
+
+
+def test_step_overrides_slow_budget_bounds_fast():
+    """slow 팩터의 스텝 한도는 hard bound — fast 는 풀린 예산만큼만 이동."""
+    target = {"A": 0.50, "B": 0.50}
+    prev = {"A": 0.30, "B": 0.70}
+    new = step_smooth(target, prev, step=0.01, deadband=0.003,
+                      step_overrides={"A": 1.0})
+    # B 는 최대 1%p 만 감소 (0.69 고정), A 는 그 잔여(0.31)만 흡수 가능
+    assert _close(new["B"], 0.69)
+    assert _close(new["A"], 0.31)
+
+
+def test_step_overrides_fast_exit_liquidates_slow_exit_steps():
+    """override=1.0 탈락은 즉시 0, base step 탈락은 step 만큼만 감소."""
+    target = {"A": 1.0}
+    prev = {"A": 0.90, "C": 0.05, "D": 0.05}   # C: fast 탈락, D: slow 탈락
+    new = step_smooth(target, prev, step=0.01, deadband=0.003,
+                      step_overrides={"C": 1.0})
+    assert "C" not in new                      # 즉시 청산
+    assert _close(new["D"], 0.04)              # 1%p 만 감소
+    assert _close(sum(new.values()), 1.0)
+
+
+def test_step_overrides_none_matches_scalar():
+    """step_overrides=None 은 스칼라 호출과 결과 동일 (회귀 방지)."""
+    target = {"A": 0.45, "B": 0.45, "D": 0.10}
+    prev = {"A": 0.45, "B": 0.45, "C": 0.10}
+    base = step_smooth(target, prev, step=0.01, deadband=0.003)
+    with_none = step_smooth(target, prev, step=0.01, deadband=0.003,
+                            step_overrides=None)
+    assert base == with_none
