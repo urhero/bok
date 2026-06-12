@@ -132,7 +132,7 @@
   - `pivoted_total_agg_wgt_{end_date}.csv` — 피벗 형태 (Optimizer 연동용)
   - `meta_data.csv` — 팩터 성과 요약
 - factor 가중치 + style 요약 → `output/mp_weight_history/`
-  - `factor_weights_{end_date}.csv` — factor 단위 배포 가중치 (다음 회차 EMA prev 입력용, alpha<1.0 일 때만 저장)
+  - `factor_weights_{end_date}.csv` — factor 단위 배포 가중치 (항상 저장; 다음 회차 step_smooth prev 입력용)
   - `factor_styles_{end_date}.csv` — factor × style + raw/prev/new 가중치 분해
   - `style_totals_{end_date}.csv` — style 단위 raw/prev/new 합계 + delta + factor 목록
 
@@ -267,7 +267,7 @@ result.to_csv("output/wf.csv")      # 결과 저장
 | `transaction_cost_bps` | 30.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
 | `top_factor_count` | 50 | rank_score 기준 상위 팩터 선정 수 | `model_portfolio.py` |
 | `factor_ranking_method` | "tstat" | 팩터 랭킹 방식 (`shrunk_tstat` / `tstat` / `cagr`) | `model_portfolio.py`, `walk_forward_engine.py` (`compute_rank_score` 공유) |
-| `use_cluster_dedup` | False | Top-N Hierarchical Clustering 중복 제거 (Sprint 1-B) | `walk_forward_engine.py` |
+| `use_cluster_dedup` | True | Top-N Hierarchical Clustering 중복 제거 (Sprint 1-B, production 적용) | `model_portfolio.py`, `walk_forward_engine.py` |
 | `n_clusters` | 18 | 클러스터 수 (`use_cluster_dedup=True`일 때) | `factor_selection.py` |
 | `per_cluster_keep` | 3 | 클러스터당 유지 팩터 수 | `factor_selection.py` |
 | `newey_west_lag` | 3 | Newey-West 보정 lag (meta_data 진단 컬럼) | `factor_selection.py` |
@@ -280,7 +280,7 @@ result.to_csv("output/wf.csv")      # 결과 저장
 | `turnover_step` | 1.0 | **무스무딩(디폴트)**: 목표 비중을 그대로 배포. 절대스텝 스무딩 시 0.01(1%p/월) | `smoothing.py`, `model_portfolio.py`, `walk_forward_engine.py` |
 | `turnover_deadband` | 0.0 | no-trade 밴드 (factor 변동<값이면 고정). 무스무딩이면 0, 스무딩 시 0.003(0.3%p) | `smoothing.py` |
 
-> **실험 결과:** [docs/experiments/cluster_turnover_20260425.md](docs/experiments/cluster_turnover_20260425.md) 참조 (43 케이스 광역 sweep). 1장 요약은 [executive_summary.md](docs/experiments/executive_summary.md). 핵심 발견: ① `OPTIMIZATION_OVERFIT` 실체 = style_cap 의 OOS 비용, ② n_clusters sweet spot 18~30, ③ Clustering 후 style_cap 효과 거의 없음, ④ smoothing α 0.1 saturation, ⑤ ranking method 는 t-stat 이 베스트, ⑥ min_is_months 는 모델에 영향 없음, ⑦ **baseline 은 2023~ Sharpe 0.27 / 21개월째 -6% 미회복 — 위험**, ⑧ **combo_18_0.1 은 같은 기간 Sharpe 0.99 / 회복 완료** (3.7배 차이). **최종 권장: `combo_18_0.1`**.
+> **실험 결과:** [docs/experiments/cluster_turnover_20260425.md](docs/experiments/cluster_turnover_20260425.md) 참조 (43 케이스 광역 sweep). 1장 요약은 [executive_summary.md](docs/experiments/executive_summary.md). 핵심 발견: ① `OPTIMIZATION_OVERFIT` 실체 = style_cap 의 OOS 비용, ② n_clusters sweet spot 18~30, ③ Clustering 후 style_cap 효과 거의 없음, ④ smoothing α 0.1 saturation, ⑤ ranking method 는 t-stat 이 베스트, ⑥ min_is_months 는 모델에 영향 없음, ⑦ **baseline 은 2023~ Sharpe 0.27 / 21개월째 -6% 미회복 — 위험**, ⑧ **combo_18_0.1 은 같은 기간 Sharpe 0.99 / 회복 완료** (3.7배 차이). 당시 권장이던 `combo_18_0.1` 중 **clustering(n=18)은 적용 유지**, smoothing α=0.1(EMA)은 이후 절대스텝 -> 무스무딩으로 대체되었고, 2026-06 비용-인지 실험으로 **선정 히스테리시스(0.5)가 최종 적용**됨 — [smoothing_cost_experiment_20260612.md](docs/experiments/smoothing_cost_experiment_20260612.md) 참조.
 
 ## 보안 설정
 

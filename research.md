@@ -424,9 +424,11 @@ main.py
 - **위치**: `config.py:PIPELINE_PARAMS["transaction_cost_bps"]` → `model_portfolio.aggregate_factor_returns()` → `weight_construction.py` 파라미터로 전달
 - **이유**: 중국 주식 시장 실거래 비용 추정치. 변경 시 모든 팩터의 순수익률과 순위가 변동
 
-#### 4.1.5 sort_order 방향 통일
-- **위치**: `factor_analysis.py:236-239`
-- **이유**: `sort_order=0`(낮을수록 좋음, 예: P/E ratio)인 팩터의 val_lagged에 -1을 곱하여 "높을수록 좋음"으로 통일. Q1이 항상 "좋은" 종목이 되도록 보장. 이 로직이 누락되면 해당 팩터의 L/S가 뒤집힘
+#### 4.1.5 sort_order(factorOrder) 방향 통일
+- **위치**: `factor_analysis.py` batch [4] 단계
+- **의미 (factor_info.csv 실데이터 기준)**: `factorOrder=0` = **높을수록 좋음** (ROE, ROIC, CashEV 등), `factorOrder=1` = **낮을수록 좋음** (부채비율 DA/LTDE, PM6M=Price Reversal 등)
+- **로직**: factorOrder=0 팩터의 val_lagged에 -1을 곱해 전 팩터를 "낮을수록 좋음"으로 통일 -> ascending rank 1(=Q1)이 항상 "좋은" 종목. 이 로직이 누락되면 해당 팩터의 L/S가 뒤집힘
+- (과거 이 절과 docstring 이 0/1 의미를 반대로 기재했었음 — 코드 동작은 처음부터 위와 같았다)
 
 ### 4.2 숨겨진 규칙 / 암묵적 계약
 
@@ -713,10 +715,11 @@ python main.py mp <start> <end> --benchmark
 **현재 기본 설정 (config.py):**
 - `optimization_mode = "equal_weight"` (동일가중, 권장)
 - `factor_ranking_method = "tstat"` (기본; Sprint 1-A `"shrunk_tstat"` 실험 옵션 추가됨)
-- `use_cluster_dedup = False` (Sprint 1-B 실험; True 시 Hierarchical Clustering 기반 Top-N 중복 제거)
+- `use_cluster_dedup = True` (Sprint 1-B, production 적용됨 — n_clusters=18, per_cluster_keep=3)
+- `selection_hysteresis = 0.5` (선정 히스테리시스, production 적용됨)
 - `backtest_start = "2009-12-31"`
 
-**Sprint 1 개선 (미활성 기본값, 실험 시 toggle):**
+**Sprint 1 개선 (1-B 는 production 적용, 1-A/1-C 는 실험/진단용):**
 - **1-A `shrunk_tstat`** — `service/backtest/factor_selection.py:compute_shrunk_tstat()`
   James-Stein 계열 shrinkage로 팩터 t-stat을 스타일 그룹 평균 쪽으로 `lambda` 만큼 축소.
   `lambda = var_within_style / (var_within_style + var_between_styles)` — 데이터 주도 결정.

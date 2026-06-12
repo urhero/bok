@@ -45,7 +45,10 @@ def calculate_factor_stats(
 
     Args:
         factor_abbr: 팩터 약어 (예: "SalesAcc", "ROIC")
-        sort_order: 정렬 방향 (1=높을수록 좋음, 0/-1=낮을수록 좋음)
+        sort_order: 정렬 방향 (factor_info.csv 의 factorOrder).
+            0 = 높을수록 좋음 (예: ROE, ROIC, CashEV) -> ascending=False 랭킹
+            1 = 낮을수록 좋음 (예: 부채비율 DA, PM6M=Price Reversal) -> ascending=True
+            두 경우 모두 rank 1(=Q1)이 "좋은" 종목.
         factor_data_df: 팩터 데이터 (gvkeyiid, ticker, ddt, sec, val, M_RETURN 필수)
         test_mode: True이면 최소 종목수(10개) 검증 생략
 
@@ -241,7 +244,8 @@ def calculate_factor_stats_batch(
     Args:
         merged_data: 전체 팩터 데이터 (factorAbbreviation, val, M_RETURN 컬럼 필수)
         factor_abbr_list: 팩터 약어 리스트
-        orders: 팩터별 정렬 방향 (1=ascending, 0=descending)
+        orders: 팩터별 정렬 방향 (factorOrder. 0=높을수록 좋음 -> 부호 플립,
+            1=낮을수록 좋음 -> 그대로. 통일 후 ascending rank 1 = Q1 = 좋은 종목)
         test_mode: True이면 최소 종목수 검증 생략
 
     Returns:
@@ -261,7 +265,8 @@ def calculate_factor_stats_batch(
     date_counts = df.groupby("factorAbbreviation")["ddt"].nunique()
     sufficient_factors = set(date_counts[date_counts > 2].index)
 
-    # [4] Sort order: descending 팩터의 val_lagged에 -1 곱하기 (배치)
+    # [4] Sort order 통일: factorOrder=0(높을수록 좋음) 팩터의 val_lagged 에 -1
+    #     -> 전 팩터가 "낮을수록 좋음"이 되어 ascending rank 1 = Q1 = 좋은 종목
     desc_factors = {fa for fa in valid_factors if not bool(order_map.get(fa, 1))}
     if desc_factors:
         desc_mask = df["factorAbbreviation"].isin(desc_factors)
