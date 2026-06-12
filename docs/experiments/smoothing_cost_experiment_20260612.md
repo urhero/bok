@@ -104,11 +104,9 @@
 - **비용 모델은 근사**: mult 1~2 범위를 제시했고 순위는 전 구간 불변이지만,
   실제 mult 는 Bloomberg 체결 데이터로 캘리브레이션 가능 (전환 월의 실측 종목
   턴오버 / 팩터 L1).
-- **production 미배선**: 히스테리시스는 현재 백테스트 엔진 전용. production 적용
-  결정 시 `_evaluate_universe` 에 prev 선정 로딩(weight history) + margin 파라미터
-  배선 필요.
-- 디폴트(`turnover_step=1.0`, 무스무딩)는 본 실험으로 **변경하지 않았다** —
-  전환은 의사결정 사항.
+- ~~production 미배선~~ -> **2026-06-12 production 적용 완료** (§7 후기 참조).
+- 디폴트 `turnover_step=1.0` (무스무딩) 은 유지 — 비중 스무딩 축은 개선이 작아
+  히스테리시스 단독 적용 (스타일별 step 은 엔진 실험 옵션으로 보존).
 
 ## 6. margin 민감도 grid
 
@@ -123,6 +121,30 @@
   아니다. 가장 약한 0.10 조차 턴오버의 대부분을 줄인다 (0.328 -> 0.130).
 - gross 가 0.75 까지 계속 오르는 점은 주목할 만하다: margin -> 무한대 극한은
   "최초 선정 + 강제 탈락만 반영하는 사실상 동결 포트폴리오"인데, 그것이
-  월간 재선정보다 나을 가능성을 시사한다 (선정 업데이트의 한계 가치 측정 —
-  후속 실험 후보). 현 시점 권장은 과최적화를 피해 중간값 0.5 (또는 0.25~0.75
-  아무 값이나 — 차이가 크지 않다).
+  월간 재선정보다 나을 가능성을 시사한다 (§8 동결 극한 grid 로 측정).
+  현 시점 권장은 과최적화를 피해 중간값 0.5 (또는 0.25~0.75 아무 값이나 —
+  차이가 크지 않다).
+
+## 7. 후기: production 적용 (2026-06-12)
+
+`selection_hysteresis=0.5` 를 production `mp` 에 배선·적용했다.
+
+- incumbents 출처: 직전 `factor_styles_{date}.csv` 의 **raw_weight > 0**
+  (= 직전 선정 집합). 배포 가중치 키가 아닌 raw 기준 — 스무딩 청산 중인
+  탈락 factor 가 incumbent 로 잘못 잡히는 것을 방지 (`load_prev_selection`).
+- margin=0 배선 검증: 단위테스트 266 + mp test/실데이터 **byte-identical**.
+- margin=0.5 첫 적용 (2026-05-31 재생성, incumbents=2026-04-30 선정 38개):
+  월간 선정 churn **21개 -> 13개** (4 swap 되돌림). 보호된 4개는 전부
+  챌린저보다 tstat 이 높았다 — Rev3MFY2C(5.04) vs 5DVolSig(0.20),
+  OCFEV(2.71) vs Alpha18M6MPChg(0.99), Alpha60M(2.43) vs SGAToSales(1.39),
+  PM1M(2.21) vs NCAP(1.45). margin 없이 탈락했던 원인은 점수가 아니라
+  **클러스터 자리싸움** (같은 클러스터에 더 강한 factor 3개) — 히스테리시스가
+  cluster reshuffle 로 버려지던 고득점 incumbent 를 지키는 효과도 있음을 확인.
+
+## 8. 동결 극한 grid (margin 1.0 / 1.5 / 999)
+
+| margin | gross CAGR | gross Sharpe | 턴오버(L1/월) | 선정churn(개/월) | net 30bp x2 CAGR | net Sharpe |
+|---|---|---|---|---|---|---|
+| 1.0 | (대기) | | | | | |
+| 1.5 | (대기) | | | | | |
+| 999 (동결) | (대기) | | | | | |

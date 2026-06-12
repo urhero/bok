@@ -50,4 +50,5 @@ PIPELINE_PARAMS = {
     "newey_west_lag": 3,               # Newey-West 보정 lag (meta_data.csv 진단용)
     "turnover_step": 1.0,              # 1.0 = 무스무딩(목표 그대로 배포, 디폴트). 절대스텝 스무딩은 0.01(1%p/월)
     "turnover_deadband": 0.0,          # 데드밴드 (무스무딩이면 0; 스무딩 시 0.003=0.3%p 권장)
+    "selection_hysteresis": 0.5,       # 선정 히스테리시스 margin (rank_score 단위). 0=off. 실험 근거: smoothing_cost_experiment_20260612.md
 }

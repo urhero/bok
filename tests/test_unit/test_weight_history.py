@@ -11,6 +11,7 @@ import pytest
 from service.pipeline.weight_history import (
     _build_factor_style_df,
     load_prev_factor_weights,
+    load_prev_selection,
     save_factor_styles,
     save_factor_weights,
     save_style_totals,
@@ -82,6 +83,49 @@ def test_load_none_returns_none_tuple():
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:
         assert load_prev_factor_weights(Path(tmp) / "x", "2026-02-28") == (None, None)
+
+
+# ── load_prev_selection (선정 히스테리시스용 직전 선정 집합) ───────────────
+
+def test_load_prev_selection_missing_dir():
+    """디렉토리가 없으면 (None, None) (첫 실행 시나리오)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        assert load_prev_selection(Path(tmp) / "missing", "2026-03-31") == (None, None)
+
+
+def test_load_prev_selection_returns_raw_positive_only():
+    """raw_weight > 0 인 factor 만 선정 집합으로 반환 (청산 중 exit 제외)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        history = Path(tmp)
+        # B 는 raw=0 (이번 회차 탈락, 청산 중) -> 선정 집합에 포함되면 안 됨
+        save_factor_styles(
+            history, "2026-01-31",
+            raw_weights={"A": 0.6, "C": 0.4},
+            prev_weights={"A": 0.5, "B": 0.1, "C": 0.4},
+            new_weights={"A": 0.55, "B": 0.05, "C": 0.4},
+            style_map={"A": "S1", "B": "S1", "C": "S2"},
+        )
+        selected, prev_date = load_prev_selection(history, "2026-02-28")
+        assert selected == {"A", "C"}
+        assert prev_date == "2026-01-31"
+
+
+def test_load_prev_selection_strict_cutoff():
+    """current_end_date 이상 파일은 제외, 미만 중 최근 선택."""
+    with tempfile.TemporaryDirectory() as tmp:
+        history = Path(tmp)
+        for d, raw in [("2025-12-31", {"A": 1.0}), ("2026-01-31", {"B": 1.0}),
+                       ("2026-02-28", {"C": 1.0})]:
+            save_factor_styles(history, d, raw_weights=raw, prev_weights=None,
+                               new_weights=raw, style_map={})
+        selected, prev_date = load_prev_selection(history, "2026-02-28")
+        assert selected == {"B"}
+        assert prev_date == "2026-01-31"
+
+
+def test_load_prev_selection_empty_dir():
+    with tempfile.TemporaryDirectory() as tmp:
+        assert load_prev_selection(Path(tmp), "2026-03-31") == (None, None)
 
 
 # ── save_factor_weights ───────────────────────────────────────────────────

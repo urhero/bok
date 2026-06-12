@@ -91,6 +91,7 @@
 ### (b) 팩터 유니버스 최종 선정 (200+ -> Top-50)
 - 랭킹 방식: **t-stat 기반** (기본), `shrunk_tstat` / `cagr` 선택 가능 (`factor_ranking_method`)
 - production `mp`와 walk-forward 백테스트가 `factor_selection.compute_rank_score()`를 공유 — 검증된 config과 배포 전략이 항상 일치
+- **선정 히스테리시스** (`selection_hysteresis=0.5`): 직전 회차 보유 팩터는 챌린저가 rank_score 격차 0.5 이상 이길 때만 교체 — 노이즈성 교체 차단으로 턴오버 -64%, OOS CAGR +0.6~0.7%p ([실험 근거](docs/experiments/smoothing_cost_experiment_20260612.md))
 - 상위 50개를 후보군으로 선정 → 하락 상관관계 계산
 - 최종 비중 할당은 [6]에서 결정
 
@@ -275,6 +276,7 @@ result.to_csv("output/wf.csv")      # 결과 저장
 | `max_zero_return_months` | 10 | 0 수익률 허용 최대 월 수 | `model_portfolio.py` |
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
 | `min_downside_obs` | 20 | 하락 상관관계 최소 관측 수 | `correlation.py` |
+| `selection_hysteresis` | 0.5 | 선정 히스테리시스 margin (rank_score 단위, 0=off). 직전 선정 팩터는 챌린저가 이 격차 이상 이겨야 교체 | `model_portfolio.py`, `walk_forward_engine.py` (`apply_selection_hysteresis` 공유) |
 | `turnover_step` | 1.0 | **무스무딩(디폴트)**: 목표 비중을 그대로 배포. 절대스텝 스무딩 시 0.01(1%p/월) | `smoothing.py`, `model_portfolio.py`, `walk_forward_engine.py` |
 | `turnover_deadband` | 0.0 | no-trade 밴드 (factor 변동<값이면 고정). 무스무딩이면 0, 스무딩 시 0.003(0.3%p) | `smoothing.py` |
 

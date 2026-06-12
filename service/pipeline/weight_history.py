@@ -19,6 +19,38 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+def _latest_history_file(
+    history_dir: Path, prefix: str, current_end_date: str | pd.Timestamp,
+) -> tuple[Path | None, str | None]:
+    """{prefix}_{date}.csv 중 current_end_date 미만에서 가장 최근 파일을 찾는다.
+
+    Returns:
+        (파일 경로, 날짜 문자열) 또는 (None, None).
+    """
+    history_dir = Path(history_dir)
+    if not history_dir.exists():
+        return None, None
+
+    cutoff = pd.Timestamp(current_end_date)
+    candidates: list[tuple[pd.Timestamp, Path]] = []
+    for f in history_dir.glob(f"{prefix}_*.csv"):
+        try:
+            ddt_str = f.stem.replace(f"{prefix}_", "")
+            d = pd.Timestamp(ddt_str)
+        except (ValueError, TypeError):
+            logger.warning("weight_history: 파싱 실패 %s", f.name)
+            continue
+        if d < cutoff:
+            candidates.append((d, f))
+
+    if not candidates:
+        return None, None
+
+    candidates.sort()
+    _, latest_path = candidates[-1]
+    return latest_path, latest_path.stem.replace(f"{prefix}_", "")
+
+
 def load_prev_factor_weights(
     history_dir: Path, current_end_date: str | pd.Timestamp,
 ) -> tuple[dict[str, float] | None, str | None]:
@@ -32,35 +64,43 @@ def load_prev_factor_weights(
         ({factor_abbr: weight}, date_str) 튜플.
         history 없을 시 (None, None).
     """
-    history_dir = Path(history_dir)
-    if not history_dir.exists():
+    latest_path, ddt_str = _latest_history_file(history_dir, "factor_weights", current_end_date)
+    if latest_path is None:
         return None, None
 
-    cutoff = pd.Timestamp(current_end_date)
-    candidates: list[tuple[pd.Timestamp, Path]] = []
-    for f in history_dir.glob("factor_weights_*.csv"):
-        try:
-            ddt_str = f.stem.replace("factor_weights_", "")
-            d = pd.Timestamp(ddt_str)
-        except (ValueError, TypeError):
-            logger.warning("weight_history: 파싱 실패 %s", f.name)
-            continue
-        if d < cutoff:
-            candidates.append((d, f))
-
-    if not candidates:
-        return None, None
-
-    candidates.sort()
-    latest_date, latest_path = candidates[-1]
     df = pd.read_csv(latest_path)
     weights = dict(zip(df["factor"].astype(str), df["weight"].astype(float)))
-    ddt_str = latest_path.stem.replace("factor_weights_", "")
     logger.info(
         "weight_history: prev 로딩 (%s, %d factors)",
         latest_path.name, len(weights),
     )
     return weights, ddt_str
+
+
+def load_prev_selection(
+    history_dir: Path, current_end_date: str | pd.Timestamp,
+) -> tuple[set[str] | None, str | None]:
+    """직전 회차의 '선정' factor 집합 (raw_weight > 0) 과 날짜 문자열을 반환.
+
+    선정 히스테리시스의 incumbency 입력. factor_styles_{date}.csv 의
+    raw_weight (optimizer 목표, 스무딩 전) > 0 인 factor 만 취한다 —
+    배포 가중치(factor_weights) 키를 쓰면 스무딩 청산 중인 탈락 factor 가
+    incumbent 로 잘못 잡히므로 raw 기준이 정확하다.
+
+    Returns:
+        ({factor_abbr}, date_str) 튜플. history 없을 시 (None, None).
+    """
+    latest_path, ddt_str = _latest_history_file(history_dir, "factor_styles", current_end_date)
+    if latest_path is None:
+        return None, None
+
+    df = pd.read_csv(latest_path)
+    selected = set(df.loc[df["raw_weight"] > 1e-12, "factor"].astype(str))
+    logger.info(
+        "weight_history: prev selection 로딩 (%s, %d factors)",
+        latest_path.name, len(selected),
+    )
+    return selected, ddt_str
 
 
 def save_factor_weights(

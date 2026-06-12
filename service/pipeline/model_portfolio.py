@@ -45,6 +45,7 @@ from service.pipeline.weight_construction import (
 from service.pipeline.smoothing import step_smooth
 from service.pipeline.weight_history import (
     load_prev_factor_weights,
+    load_prev_selection,
     save_factor_styles,
     save_factor_weights,
     save_style_totals,
@@ -162,7 +163,7 @@ class ModelPortfolioPipeline:
 
         # [4] 롱-숏 수익률 + 팩터 유니버스 선정 — README [4]
         self.return_matrix, self.correlation_matrix, self.meta = self._evaluate_universe(
-            kept_abbrs, kept_names, kept_styles, self.filtered_data, test_file
+            kept_abbrs, kept_names, kept_styles, self.filtered_data, end_date, test_file
         )
 
         # [6] 스타일 캡 하 비중 결정 — README [6]
@@ -345,8 +346,13 @@ class ModelPortfolioPipeline:
         generate_report(factor_abbr_list, factor_name_list, style_name_list, self.factor_stats)
         logger.info("Report generated.")
 
-    def _evaluate_universe(self, kept_abbrs, kept_names, kept_styles, filtered_data, test_file):
-        """팩터 유니버스를 평가하고 rank_score(factor_ranking_method) 상위 50개를 선정한다."""
+    def _evaluate_universe(self, kept_abbrs, kept_names, kept_styles, filtered_data, end_date, test_file):
+        """팩터 유니버스를 평가하고 rank_score(factor_ranking_method) 상위 50개를 선정한다.
+
+        selection_hysteresis > 0 이면 직전 회차 선정 팩터(weight history 의
+        factor_styles raw_weight > 0)를 incumbent 로 보호 — 챌린저가 margin
+        이상 이겨야 교체된다 (walk-forward 엔진과 동일 로직 공유).
+        """
         logger.info("Building monthly return matrix")
         ret_df = aggregate_factor_returns(
             filtered_data, kept_abbrs,
@@ -411,6 +417,7 @@ class ModelPortfolioPipeline:
             meta.to_csv(OUTPUT_DIR / "meta_data.csv", index=False)
 
         top_n = min(self.pipeline_params["top_factor_count"], len(meta))
+        meta_full = meta  # truncation 전 전체 후보 (히스테리시스 부활 후보/점수 조회용)
 
         # Sprint 1-B: Hierarchical Clustering 기반 Top-N dedup (선택적)
         # use_cluster_dedup=False 일 때는 단순 rank_score 상위 N
@@ -424,12 +431,32 @@ class ModelPortfolioPipeline:
                 per_cluster_keep=int(self.pipeline_params.get("per_cluster_keep", 3)),
                 top_n=top_n,
             )
-            meta = meta.set_index("factorAbbreviation").loc[selected].reset_index()
             logger.info("cluster_dedup applied: %d factors selected from %d via %d clusters",
                         len(selected), len(score_series),
                         int(self.pipeline_params.get("n_clusters", 18)))
         else:
-            meta = meta[:top_n]
+            selected = meta["factorAbbreviation"].tolist()[:top_n]
+
+        # 선정 히스테리시스 (walk-forward 와 동일 로직): 직전 선정 incumbents 를
+        # margin 미만 격차의 챌린저로부터 보호. test 모드는 prod history 오염 방지 skip.
+        margin = float(self.pipeline_params.get("selection_hysteresis", 0.0))
+        if margin > 0 and not test_file:
+            from service.backtest.factor_selection import apply_selection_hysteresis
+            prev_selected, prev_sel_date = load_prev_selection(HISTORY_DIR, end_date)
+            if prev_selected:
+                score_full = meta_full.set_index("factorAbbreviation")["rank_score"]
+                adjusted = apply_selection_hysteresis(
+                    list(selected), score_full, prev_selected, margin,
+                )
+                n_reverted = len(set(adjusted) - set(selected))
+                if n_reverted:
+                    logger.info(
+                        "selection_hysteresis: %d incumbent(s) retained vs %s (margin=%.2f)",
+                        n_reverted, prev_sel_date, margin,
+                    )
+                selected = adjusted
+
+        meta = meta_full.set_index("factorAbbreviation").loc[selected].reset_index()
 
         order = meta["factorAbbreviation"].tolist()
         ret_df = ret_df[order]

@@ -63,6 +63,9 @@ def main(argv: list[str] | None = None) -> int:
                                   help="Absolute step/month (default: 1.0 = no smoothing; 0.01 = 1%%p smoothing)")
     parser_backtest.add_argument("--turnover-deadband", type=float, default=0.0,
                                   help="No-trade band (default: 0.0; 0.003 = 0.3%%p when smoothing)")
+    parser_backtest.add_argument("--selection-hysteresis", type=float, default=None,
+                                  help="Selection hysteresis margin in rank_score units "
+                                       "(default: config PIPELINE_PARAMS['selection_hysteresis'])")
 
     args = parser.parse_args(argv)
 
@@ -171,9 +174,16 @@ def _run_benchmark_comparison(start_date, end_date, test_file):
 
 def _run_backtest(args):
     """backtest 커맨드 실행."""
+    from config import PIPELINE_PARAMS
     from service.backtest.overfit_diagnostics import generate_overfit_report, print_overfit_report
     from service.backtest.walk_forward_engine import WalkForwardEngine
     from service.pipeline.model_portfolio import OUTPUT_DIR
+
+    # CLI 미지정 시 config 값 사용 (production parity)
+    selection_hysteresis = (
+        args.selection_hysteresis if args.selection_hysteresis is not None
+        else float(PIPELINE_PARAMS.get("selection_hysteresis", 0.0))
+    )
 
     engine = WalkForwardEngine(
         min_is_months=args.min_is_months,
@@ -182,6 +192,7 @@ def _run_backtest(args):
         turnover_step=args.turnover_step,
         turnover_deadband=args.turnover_deadband,
         top_factors=args.top_factors,
+        selection_hysteresis=selection_hysteresis,
     )
 
     result = engine.run(args.start_date, args.end_date, test_file=getattr(args, "test_file", None))
