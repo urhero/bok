@@ -133,6 +133,30 @@ def test_months_zero_treated_as_one():
     assert _close(new["A"], 0.31) and _close(new["B"], 0.69)
 
 
+# ── step_smooth: step=1.0 (production 무스무딩 디폴트) ─────────────────────
+
+def test_step_one_is_exact_passthrough():
+    """turnover_step=1.0 (production 디폴트) 은 prev 와 무관하게 target 그대로.
+
+    무스무딩의 핵심 계약: 배포 = 목표 (탈락 factor 즉시 제거, float 동일).
+    """
+    target = {"A": 0.5, "B": 0.25, "C": 0.25}     # 이진 표현 정확한 값 (합 == 1.0)
+    prev = {"A": 0.1, "D": 0.9}                    # D 탈락, B/C 신규
+    new = step_smooth(target, prev, step=1.0, deadband=0.0)
+    assert new == target                           # dict 완전 일치 (스케일링 0회)
+    assert "D" not in new
+
+
+def test_step_one_passthrough_with_float_dust():
+    """target 합이 float 오차로 1.0 이 아니어도 비율 보존 + 합 1.0 renorm."""
+    target = {"A": 0.4, "B": 0.35, "C": 0.25}      # 0.4+0.35 는 이진 비정확
+    prev = {"A": 0.2, "B": 0.5, "C": 0.3}
+    new = step_smooth(target, prev, step=1.0, deadband=0.0)
+    assert _close(sum(new.values()), 1.0)
+    for f in target:
+        assert _close(new[f], target[f], tol=1e-12)
+
+
 # ── step_smooth: step_overrides (스타일별 step 차등) ───────────────────────
 
 def test_step_overrides_fast_swap_instant():

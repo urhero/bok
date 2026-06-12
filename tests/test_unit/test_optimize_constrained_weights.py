@@ -225,5 +225,42 @@ class TestOptimizeConstrainedWeightsOutputValidation:
         assert -1.0 <= cagr <= 5.0
 
 
+class TestStyleCapFeasibilityGuard:
+    """style_cap 제약 불가능/미수렴 시 경고 로그 (동작 변경 없음)."""
+
+    def _make_returns(self, styles: list[str]) -> tuple[pd.DataFrame, list[str]]:
+        rng = np.random.default_rng(0)
+        n = len(styles)
+        rtn_df = pd.DataFrame(
+            rng.normal(0.005, 0.02, size=(24, n)),
+            columns=[f"F{i}" for i in range(n)],
+        )
+        return rtn_df, styles
+
+    def test_infeasible_cap_warns(self, caplog) -> None:
+        """스타일 3개 x cap 25% = 75% < 100% -> 제약 불가능 경고."""
+        import logging
+        rtn_df, style_list = self._make_returns(["S1", "S2", "S3"])
+        with caplog.at_level(logging.WARNING, logger="service.pipeline.optimization"):
+            _, weights_tbl = optimize_constrained_weights(
+                rtn_df=rtn_df, style_list=style_list,
+                mode="equal_weight", style_cap=0.25, test_mode=False,
+            )
+        assert any("infeasible" in r.message for r in caplog.records)
+        # 동작은 기존과 동일: 합 1.0 유지 (cap 은 위반된 채 반환)
+        assert np.isclose(weights_tbl["fitted_weight"].sum(), 1.0)
+
+    def test_feasible_cap_no_warning(self, caplog) -> None:
+        """스타일 5개 x cap 25% = 125% >= 100% -> 경고 없음."""
+        import logging
+        rtn_df, style_list = self._make_returns(["S1", "S2", "S3", "S4", "S5"])
+        with caplog.at_level(logging.WARNING, logger="service.pipeline.optimization"):
+            optimize_constrained_weights(
+                rtn_df=rtn_df, style_list=style_list,
+                mode="equal_weight", style_cap=0.25, test_mode=False,
+            )
+        assert not [r for r in caplog.records if "style_cap" in r.message]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

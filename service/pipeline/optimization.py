@@ -50,6 +50,13 @@ def _equal_weight_allocation(
     # 스타일 캡 재분배 (수렴까지 반복)
     uniq_styles = np.unique(styles_arr)
     if not test_mode:
+        # feasibility 가드: n_styles x cap < 100% 면 제약 자체가 불가능
+        # (예: 스타일 3개 x 25% = 75%). 동작은 기존과 동일 - 경고만 남긴다.
+        if len(uniq_styles) * style_cap < 1.0 - tol:
+            logger.warning(
+                "style_cap %.2f infeasible with %d styles (max %.0f%% < 100%%) - constraint will be violated",
+                style_cap, len(uniq_styles), len(uniq_styles) * style_cap * 100,
+            )
         for _ in range(10):
             for s in uniq_styles:
                 mask_s = styles_arr == s
@@ -59,6 +66,16 @@ def _equal_weight_allocation(
             w /= w.sum()
             if all(w[styles_arr == s].sum() <= style_cap + tol for s in uniq_styles):
                 break
+        # 10회 내 미수렴 시 위반 스타일 보고 (float32 오차 허용 1e-6)
+        violations = {
+            s: float(w[styles_arr == s].sum())
+            for s in uniq_styles if w[styles_arr == s].sum() > style_cap + 1e-6
+        }
+        if violations:
+            logger.warning(
+                "style_cap %.2f violated after redistribution: %s",
+                style_cap, {s: round(v, 4) for s, v in violations.items()},
+            )
 
     weights_tbl = pd.DataFrame({
         "factor": factors,

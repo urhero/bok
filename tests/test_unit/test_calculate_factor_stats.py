@@ -17,7 +17,10 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from service.pipeline.factor_analysis import calculate_factor_stats
+from service.pipeline.factor_analysis import (
+    calculate_factor_stats,
+    calculate_factor_stats_batch,
+)
 
 
 class TestCalculateFactorStatsBasic:
@@ -371,6 +374,91 @@ class TestCalculateFactorStatsDataIntegrity:
         expected_spread = (quantile_ret["Q1"] - quantile_ret["Q5"]).values
 
         np.testing.assert_array_almost_equal(spread_values, expected_spread)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# calculate_factor_stats_batch (production 경로) 직접 단위 테스트
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _make_multi_factor_frame(
+    n_months: int = 6, n_stocks: int = 8, factors: tuple = ("FA", "FB"), seed: int = 7,
+) -> pd.DataFrame:
+    """factorAbbreviation 컬럼을 가진 batch 입력 프레임 생성 (2 섹터)."""
+    rng = np.random.default_rng(seed)
+    dates = pd.date_range("2024-01-31", periods=n_months, freq="ME")
+    rows = []
+    for fa in factors:
+        for m, d in enumerate(dates):
+            for s in range(n_stocks):
+                rows.append({
+                    "gvkeyiid": f"G{s:02d}",
+                    "ddt": d,
+                    "sec": "S1" if s < n_stocks // 2 else "S2",
+                    "val": float(rng.normal(s, 0.1)),       # 종목별 수준 + 노이즈
+                    "M_RETURN": float(rng.normal(0.01 * (s % 3), 0.02)),
+                    "factorAbbreviation": fa,
+                })
+    return pd.DataFrame(rows)
+
+
+class TestCalculateFactorStatsBatch:
+    """batch 버전 직접 테스트: single 버전과의 parity 가 핵심 불변식."""
+
+    @pytest.mark.parametrize("sort_order", [1, 0])
+    def test_batch_matches_single_version(self, sort_order: int) -> None:
+        """batch 결과(sector_return, spread)가 single 버전과 일치해야 한다.
+
+        single 은 ascending=bool(order) 직접 랭킹, batch 는 부호 플립 +
+        ascending 고정 — 두 구현이 동일 결과를 내는지가 핵심 회귀 가드.
+        """
+        df = _make_multi_factor_frame()
+        batch = calculate_factor_stats_batch(
+            df, ["FA", "FB"], [sort_order, sort_order], test_mode=True,
+        )
+        for i, fa in enumerate(["FA", "FB"]):
+            single_in = df[df["factorAbbreviation"] == fa].copy()
+            s_sector, _, s_spread, _ = calculate_factor_stats(
+                fa, sort_order, single_in, test_mode=True,
+            )
+            b_sector, _, b_spread, _ = batch[i]
+            pd.testing.assert_frame_equal(
+                b_sector.sort_index(axis=1), s_sector.sort_index(axis=1),
+                check_dtype=False, check_categorical=False, check_index_type=False,
+            )
+            pd.testing.assert_frame_equal(
+                b_spread, s_spread, check_dtype=False, check_freq=False,
+            )
+
+    def test_insufficient_history_returns_none(self) -> None:
+        """월 수 <= 2 (lag 후) 팩터는 (None,)*4."""
+        df = _make_multi_factor_frame(n_months=3)   # lag 후 2개월 -> 부족
+        batch = calculate_factor_stats_batch(df, ["FA", "FB"], [1, 1], test_mode=True)
+        assert batch[0] == (None, None, None, None)
+        assert batch[1] == (None, None, None, None)
+
+    def test_missing_factor_returns_none(self) -> None:
+        """abbr_list 에 있으나 데이터에 없는 팩터는 (None,)*4, 위치 유지."""
+        df = _make_multi_factor_frame(factors=("FA",))
+        batch = calculate_factor_stats_batch(df, ["FA", "GHOST"], [1, 1], test_mode=True)
+        assert batch[0][0] is not None
+        assert batch[1] == (None, None, None, None)
+
+    def test_small_sectors_skipped_for_quintile_coverage(self) -> None:
+        """production 모드에서 전 섹터가 min_sector_stocks 미만이면 분위 배정
+        불가 -> 'insufficient quintile coverage' skip 분기."""
+        df = _make_multi_factor_frame(factors=("FA",), n_stocks=8)  # 섹터당 4 < 10
+        batch = calculate_factor_stats_batch(
+            df, ["FA"], [1], test_mode=False, min_sector_stocks=10,
+        )
+        assert batch[0] == (None, None, None, None)
+
+    def test_result_order_follows_abbr_list(self) -> None:
+        """결과 리스트 순서는 factor_abbr_list 순서 (데이터 순서 아님)."""
+        df = _make_multi_factor_frame(factors=("FB", "FA"))
+        batch = calculate_factor_stats_batch(df, ["FA", "FB"], [1, 1], test_mode=True)
+        # spread 컬럼명으로 위치 검증
+        assert batch[0][2].columns[0] == "FA"
+        assert batch[1][2].columns[0] == "FB"
 
 
 if __name__ == "__main__":
