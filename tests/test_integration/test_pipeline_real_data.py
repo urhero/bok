@@ -2,8 +2,14 @@
 """
 실제 parquet 데이터를 사용한 파이프라인 통합 테스트.
 
-MXCN1A_2017-12-31_2026-02-28.parquet 등 실제 프로덕션 데이터로
-전체 파이프라인을 실행하고 출력 품질을 검증한다.
+연도별 분할 parquet (data/MXCN1A_factor_{YYYY}.parquet + MXCN1A_mreturn.parquet)
+로 전체 파이프라인을 실행하고 출력 품질을 검증한다. 날짜 범위는
+ModelPortfolioPipeline._load_data 가 parquet 에서 스스로 도출하므로
+파일명 파싱이 필요 없다.
+
+주의: module fixture 가 실제 production 파이프라인을 1회 실행하므로
+output/ 의 추적 파일들이 재생성된다 — 출력은 결정적이라 byte-identical
+(다르면 그 자체가 회귀 신호).
 
 실행 방법:
     # real_data 마커가 있는 테스트만 실행
@@ -34,22 +40,11 @@ DATA_DIR = PROJECT_ROOT / "data"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 FACTOR_INFO_PATH = PROJECT_ROOT / "factor_info.csv"
 
-# 최신 parquet 파일 자동 탐색
-PARQUET_FILES = sorted(DATA_DIR.glob("MXCN1A_*.parquet"), key=lambda p: p.stat().st_mtime, reverse=True)
-LATEST_PARQUET = PARQUET_FILES[0] if PARQUET_FILES else None
-
-
-def _parse_parquet_dates(parquet_path: Path) -> tuple[str, str]:
-    """parquet 파일명에서 start_date, end_date를 추출한다.
-
-    예: MXCN1A_2017-12-31_2026-02-28.parquet → ("2017-12-31", "2026-02-28")
-    """
-    stem = parquet_path.stem  # MXCN1A_2017-12-31_2026-02-28
-    parts = stem.split("_")
-    # parts = ["MXCN1A", "2017-12-31", "2026-02-28"]
-    start_date = parts[1]
-    end_date = parts[2]
-    return start_date, end_date
+# 연도별 분할 parquet 탐색 (파일명 = MXCN1A_factor_{YYYY}.parquet, 연도순 정렬)
+FACTOR_PARQUET_FILES = sorted(DATA_DIR.glob("MXCN1A_factor_*.parquet"))
+MRETURN_PARQUET = DATA_DIR / "MXCN1A_mreturn.parquet"
+HAS_REAL_DATA = bool(FACTOR_PARQUET_FILES) and MRETURN_PARQUET.exists()
+LATEST_PARQUET = FACTOR_PARQUET_FILES[-1] if FACTOR_PARQUET_FILES else None  # 최신 연도 파일
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -62,14 +57,15 @@ def pipeline_result():
 
     scope="module" 이므로 이 모듈의 모든 테스트에서 동일한 실행 결과를 공유한다.
     파이프라인 실행 시간이 길기 때문에 중복 실행을 방지한다.
+
+    날짜는 _load_data 가 parquet 범위에서 도출하므로 인자로 전달하지 않는다
+    (연도분할 경로에서는 CLI 날짜 인자가 무시됨 — research.md 참조).
     """
-    if LATEST_PARQUET is None:
-        pytest.skip("No parquet file found in data/ directory")
+    if not HAS_REAL_DATA:
+        pytest.skip("No year-split parquet found in data/ directory")
 
     from service.pipeline.model_portfolio import ModelPortfolioPipeline
     from config import PARAM
-
-    start_date, end_date = _parse_parquet_dates(LATEST_PARQUET)
 
     pipeline = ModelPortfolioPipeline(
         config=PARAM,
@@ -78,8 +74,12 @@ def pipeline_result():
     )
 
     t0 = time.time()
-    pipeline.run(start_date=start_date, end_date=end_date)
+    pipeline.run(start_date=None, end_date=None)
     elapsed = time.time() - t0
+
+    # 실제 사용된 날짜 범위는 로드된 데이터에서 도출
+    start_date = pipeline.raw_data["ddt"].min().strftime("%Y-%m-%d")
+    end_date = pipeline.raw_data["ddt"].max().strftime("%Y-%m-%d")
 
     return {
         "pipeline": pipeline,
@@ -98,19 +98,19 @@ def pipeline_result():
 class TestRealDataPipelineExecution:
     """실제 데이터로 파이프라인 실행 검증"""
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_pipeline_completes_without_error(self, pipeline_result) -> None:
         """파이프라인이 에러 없이 완료되는지 확인"""
         assert pipeline_result["elapsed"] > 0, "Pipeline should take some time"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_pipeline_completes_within_timeout(self, pipeline_result) -> None:
         """파이프라인이 15분 이내에 완료되는지 확인"""
         assert pipeline_result["elapsed"] < 900, (
             f"Pipeline took {pipeline_result['elapsed']:.1f}s (> 15 min limit)"
         )
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_pipeline_stores_intermediate_results(self, pipeline_result) -> None:
         """파이프라인 중간 결과가 인스턴스에 저장되는지 확인"""
         p = pipeline_result["pipeline"]
@@ -130,7 +130,7 @@ class TestRealDataPipelineExecution:
 class TestRealDataOutputFiles:
     """실제 데이터 출력 파일 존재 및 구조 검증"""
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_total_aggregated_weights_file_exists(self, pipeline_result) -> None:
         """total_aggregated_weights CSV가 생성되는지 확인"""
         end_date = pipeline_result["end_date"]
@@ -138,7 +138,7 @@ class TestRealDataOutputFiles:
         files = list(OUTPUT_DIR.glob(pattern))
         assert len(files) >= 1, f"Expected {pattern} in output/"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_total_aggregated_weights_style_file_exists(self, pipeline_result) -> None:
         """total_aggregated_weights_style CSV가 생성되는지 확인"""
         end_date = pipeline_result["end_date"]
@@ -146,7 +146,7 @@ class TestRealDataOutputFiles:
         files = list(OUTPUT_DIR.glob(pattern))
         assert len(files) >= 1, f"Expected {pattern} in output/"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_pivoted_weights_file_exists(self, pipeline_result) -> None:
         """pivoted_total_agg_wgt CSV가 생성되는지 확인"""
         end_date = pipeline_result["end_date"]
@@ -154,7 +154,7 @@ class TestRealDataOutputFiles:
         files = list(OUTPUT_DIR.glob(pattern))
         assert len(files) >= 1, f"Expected {pattern} in output/"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_meta_data_file_exists(self, pipeline_result) -> None:
         """meta_data.csv가 생성되는지 확인"""
         files = list(OUTPUT_DIR.glob("meta_data.csv"))
@@ -169,33 +169,34 @@ class TestRealDataOutputFiles:
 class TestRealDataMetaDataQuality:
     """meta_data.csv 결과 품질 검증"""
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_meta_has_required_columns(self, pipeline_result) -> None:
         """meta_data에 필수 컬럼이 있는지 확인"""
         meta = pipeline_result["pipeline"].meta
-        required = ["factorAbbreviation", "factorName", "styleName", "cagr"]
+        required = ["factorAbbreviation", "factorName", "styleName", "cagr", "rank_score"]
         for col in required:
             assert col in meta.columns, f"Missing column: {col}"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_meta_has_multiple_styles(self, pipeline_result) -> None:
         """meta_data에 다수의 스타일이 있는지 확인 (최소 3개 이상)"""
         meta = pipeline_result["pipeline"].meta
         n_styles = meta["styleName"].nunique()
         assert n_styles >= 3, f"Expected >= 3 styles, got {n_styles}"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_meta_top50_selected(self, pipeline_result) -> None:
         """상위 50개 팩터가 선정되는지 확인"""
         meta = pipeline_result["pipeline"].meta
         assert len(meta) <= 50, f"Meta should have <= 50 factors, got {len(meta)}"
         assert len(meta) >= 10, f"Meta should have >= 10 factors, got {len(meta)}"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_meta_cagr_is_positive_for_top_factors(self, pipeline_result) -> None:
         """상위 팩터들의 CAGR이 양수인지 확인
 
-        팩터 선정 로직이 CAGR 내림차순 정렬이므로 상위 대부분은 양수여야 한다.
+        선정은 rank_score(기본 t-stat) 내림차순 — 상위 t-stat 팩터는 평균
+        수익이 양수이므로 CAGR 도 양수여야 정상이다.
         """
         meta = pipeline_result["pipeline"].meta
         top_10 = meta.head(10)
@@ -203,7 +204,7 @@ class TestRealDataMetaDataQuality:
             f"Top 10 factors should have positive CAGR:\n{top_10[['factorAbbreviation', 'cagr']]}"
         )
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_meta_no_duplicate_factors(self, pipeline_result) -> None:
         """meta_data에 중복 팩터가 없는지 확인"""
         meta = pipeline_result["pipeline"].meta
@@ -219,19 +220,19 @@ class TestRealDataMetaDataQuality:
 class TestRealDataReturnMatrix:
     """return_matrix 품질 검증"""
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_return_matrix_no_inf(self, pipeline_result) -> None:
         """수익률 행렬에 무한대 값이 없는지 확인"""
         ret = pipeline_result["pipeline"].return_matrix
         assert not np.any(np.isinf(ret.values)), "Infinite values found in return matrix"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_return_matrix_no_nan(self, pipeline_result) -> None:
         """수익률 행렬에 NaN이 없는지 확인"""
         ret = pipeline_result["pipeline"].return_matrix
         assert not ret.isna().any().any(), "NaN values found in return matrix"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_return_matrix_reasonable_range(self, pipeline_result) -> None:
         """월간 수익률이 합리적인 범위인지 확인 (±50% 이내)"""
         ret = pipeline_result["pipeline"].return_matrix
@@ -241,14 +242,14 @@ class TestRealDataReturnMatrix:
             f"{pct_extreme:.2f}% of returns exceed ±50% - should be < 1%"
         )
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_return_matrix_sufficient_history(self, pipeline_result) -> None:
         """수익률 행렬이 충분한 기간을 커버하는지 확인 (최소 36개월)"""
         ret = pipeline_result["pipeline"].return_matrix
         n_months = len(ret)
         assert n_months >= 36, f"Expected >= 36 months, got {n_months}"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_return_matrix_first_row_is_zero(self, pipeline_result) -> None:
         """수익률 행렬 첫 행이 0인지 확인 (prepend_start_zero 적용)"""
         ret = pipeline_result["pipeline"].return_matrix
@@ -263,13 +264,13 @@ class TestRealDataReturnMatrix:
 class TestRealDataCorrelationMatrix:
     """correlation_matrix 품질 검증"""
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_correlation_matrix_is_square(self, pipeline_result) -> None:
         """상관관계 행렬이 정방행렬인지 확인"""
         corr = pipeline_result["pipeline"].correlation_matrix
         assert corr.shape[0] == corr.shape[1], "Correlation matrix should be square"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_correlation_diagonal_is_close_to_one(self, pipeline_result) -> None:
         """대각선 값이 1에 가까운지 확인
 
@@ -280,7 +281,7 @@ class TestRealDataCorrelationMatrix:
         diag = np.diag(corr.values)
         np.testing.assert_allclose(diag, 1.0, atol=0.05, err_msg="Diagonal should be close to 1.0")
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_correlation_values_in_range(self, pipeline_result) -> None:
         """상관계수가 [-1, 1] 범위인지 확인"""
         corr = pipeline_result["pipeline"].correlation_matrix
@@ -296,7 +297,7 @@ class TestRealDataCorrelationMatrix:
 class TestRealDataWeightQuality:
     """optimize_constrained_weights 결과 검증"""
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_weights_have_required_columns(self, pipeline_result) -> None:
         """가중치 결과에 필수 컬럼이 있는지 확인"""
         w = pipeline_result["pipeline"].weights
@@ -304,26 +305,26 @@ class TestRealDataWeightQuality:
         for col in required:
             assert col in w.columns, f"Missing column: {col}"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_weights_no_nan(self, pipeline_result) -> None:
         """가중치에 NaN이 없는지 확인"""
         w = pipeline_result["pipeline"].weights
         assert w["fitted_weight"].notna().all(), "NaN found in fitted_weight"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_weights_are_positive(self, pipeline_result) -> None:
         """fitted_weight가 양수인지 확인"""
         w = pipeline_result["pipeline"].weights
         assert (w["fitted_weight"] >= 0).all(), "Negative fitted_weight found"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_weights_sum_close_to_one(self, pipeline_result) -> None:
         """가중치 합이 1에 가까운지 확인 (±5% 허용)"""
         w = pipeline_result["pipeline"].weights
         total = w["fitted_weight"].sum()
         assert abs(total - 1.0) < 0.05, f"Weight sum {total:.4f} deviates from 1.0"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_style_cap_constraint_respected(self, pipeline_result) -> None:
         """각 스타일 가중치가 약 25% 이하인지 확인
 
@@ -356,7 +357,7 @@ class TestRealDataOutputCSVQuality:
         files = list(OUTPUT_DIR.glob(f"total_aggregated_weights_style_{end_date}_test.csv"))
         return pd.read_csv(files[0]) if files else None
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_total_weights_no_inf(self, pipeline_result) -> None:
         """total_aggregated_weights에 무한대 값이 없는지 확인"""
         df = self._load_total_weights(pipeline_result["end_date"])
@@ -367,7 +368,7 @@ class TestRealDataOutputCSVQuality:
             if col in df.columns:
                 assert not np.isinf(df[col]).any(), f"Infinite values in {col}"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_total_weights_ticker_format(self, pipeline_result) -> None:
         """ticker 형식이 '000000 CH Equity' 패턴인지 확인"""
         df = self._load_total_weights(pipeline_result["end_date"])
@@ -380,7 +381,7 @@ class TestRealDataOutputCSVQuality:
             f"{(~ch_equity_mask).sum()} tickers don't end with 'CH Equity'"
         )
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_mp_rows_exist(self, pipeline_result) -> None:
         """MP (집계) 행이 존재하는지 확인"""
         df = self._load_total_weights(pipeline_result["end_date"])
@@ -390,7 +391,7 @@ class TestRealDataOutputCSVQuality:
         mp_rows = df[df["style"] == "MP"]
         assert len(mp_rows) > 0, "No MP rows found in output"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_multiple_styles_in_output(self, pipeline_result) -> None:
         """출력에 다수의 스타일이 포함되는지 확인"""
         df = self._load_total_weights(pipeline_result["end_date"])
@@ -401,7 +402,7 @@ class TestRealDataOutputCSVQuality:
         non_mp_styles = [s for s in styles if s != "MP"]
         assert len(non_mp_styles) >= 2, f"Expected >= 2 styles, got {non_mp_styles}"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_style_ls_weight_column_exists(self, pipeline_result) -> None:
         """style_ls_weight 컬럼이 존재하는지 확인"""
         df = self._load_total_weights(pipeline_result["end_date"])
@@ -410,7 +411,7 @@ class TestRealDataOutputCSVQuality:
 
         assert "style_ls_weight" in df.columns, "style_ls_weight column missing"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_style_ls_weight_no_nan(self, pipeline_result) -> None:
         """style_ls_weight에 NaN이 없는지 확인"""
         df = self._load_total_weights(pipeline_result["end_date"])
@@ -419,7 +420,7 @@ class TestRealDataOutputCSVQuality:
 
         assert df["style_ls_weight"].notna().all(), "NaN found in style_ls_weight"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_mp_style_ls_weight_equals_mp_ls_weight(self, pipeline_result) -> None:
         """MP 행의 style_ls_weight가 mp_ls_weight와 동일한지 확인"""
         df = self._load_total_weights(pipeline_result["end_date"])
@@ -437,7 +438,7 @@ class TestRealDataOutputCSVQuality:
             err_msg="MP: style_ls_weight should equal mp_ls_weight",
         )
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_long_short_balance(self, pipeline_result) -> None:
         """MP 행의 롱/숏 비중이 합리적인지 확인"""
         df = self._load_total_weights(pipeline_result["end_date"])
@@ -462,32 +463,42 @@ class TestRealDataOutputCSVQuality:
 
 @pytest.mark.real_data
 class TestRealDataInputQuality:
-    """실제 parquet 입력 데이터 품질 검증"""
+    """실제 parquet 입력 데이터 품질 검증 (연도분할 레이아웃)"""
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
-    def test_parquet_has_required_columns(self) -> None:
-        """parquet 데이터에 필수 컬럼이 있는지 확인"""
-        df = pd.read_parquet(LATEST_PARQUET, columns=None)
-        required = ["gvkeyiid", "ticker", "isin", "ddt", "sec", "country", "factorAbbreviation", "val"]
-        # 컬럼명만 확인 (전체 데이터 로드 최소화)
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
+    def test_factor_parquet_has_required_columns(self) -> None:
+        """연도 parquet 의 pipeline-ready 스키마 확인 (데이터 로드 없이 schema 만)"""
+        import pyarrow.parquet as pq
+        names = pq.read_schema(LATEST_PARQUET).names
+        required = ["gvkeyiid", "ticker", "isin", "ddt", "sec", "val",
+                    "factorAbbreviation", "factorOrder"]
         for col in required:
-            assert col in df.columns, f"Missing column: {col}"
+            assert col in names, f"Missing column in {LATEST_PARQUET.name}: {col}"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
-    def test_parquet_has_sufficient_factors(self) -> None:
-        """parquet에 충분한 수의 팩터가 있는지 확인 (최소 100개)"""
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
+    def test_mreturn_parquet_valid(self) -> None:
+        """M_RETURN parquet 스키마 + 전 기간 날짜 커버리지 (최소 24개월)"""
+        df = pd.read_parquet(MRETURN_PARQUET)
+        for col in ["gvkeyiid", "ddt", "M_RETURN"]:
+            assert col in df.columns, f"Missing column in mreturn: {col}"
+        n_dates = df["ddt"].nunique()
+        assert n_dates >= 24, f"Expected >= 24 unique dates, got {n_dates}"
+
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
+    def test_factor_parquet_has_sufficient_factors(self) -> None:
+        """최신 연도 parquet 에 충분한 수의 팩터가 있는지 확인 (최소 100개)"""
         df = pd.read_parquet(LATEST_PARQUET, columns=["factorAbbreviation"])
         n_factors = df["factorAbbreviation"].nunique()
         assert n_factors >= 100, f"Expected >= 100 factors, got {n_factors}"
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
-    def test_parquet_has_sufficient_dates(self) -> None:
-        """parquet에 충분한 기간이 있는지 확인 (최소 24개월)"""
-        df = pd.read_parquet(LATEST_PARQUET, columns=["ddt"])
-        n_dates = df["ddt"].nunique()
-        assert n_dates >= 24, f"Expected >= 24 unique dates, got {n_dates}"
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
+    def test_year_split_coverage(self) -> None:
+        """연도분할 파일이 다년 커버리지를 가지는지 확인 (최소 2개 연도)"""
+        assert len(FACTOR_PARQUET_FILES) >= 2, (
+            f"Expected >= 2 year files, got {[p.name for p in FACTOR_PARQUET_FILES]}"
+        )
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_factor_info_csv_exists_and_valid(self) -> None:
         """factor_info.csv가 존재하고 유효한지 확인"""
         assert FACTOR_INFO_PATH.exists(), "factor_info.csv not found"
@@ -506,7 +517,7 @@ class TestRealDataInputQuality:
 class TestRealDataPerformanceBenchmark:
     """파이프라인 성능 벤치마크 (정보 출력 목적)"""
 
-    @pytest.mark.skipif(LATEST_PARQUET is None, reason="No parquet file in data/")
+    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
     def test_log_performance_summary(self, pipeline_result) -> None:
         """성능 요약을 로그에 출력 (항상 pass)"""
         p = pipeline_result["pipeline"]
