@@ -41,7 +41,8 @@ def calc_funnel_value_add(walk_forward_result: WalkForwardResult) -> dict[str, A
 
     판별 기준 (CAGR 기준):
       C > B > A -> 정상 (필터링 + style_cap 제약 모두 가치 창출)
-      B > C > A -> OPTIMIZATION_OVERFIT: style_cap 재분배가 OOS 수익을 깎음
+      B > C > A -> CONSTRAINT_DRAG: style_cap 제약이 OOS CAGR을 깎음
+                   (과적합 아님; 수익 일부를 내주고 변동성/MDD를 낮추는 트레이드오프)
       A > B     -> FILTER_OVERFIT: rank_score 기반 Top-N 선정 자체가 과거 우연
     """
     # OOS 데이터가 없으면 판별 불가
@@ -75,12 +76,12 @@ def calc_funnel_value_add(walk_forward_result: WalkForwardResult) -> dict[str, A
             f"자체가 과거 우연. 하위 팩터 평균보다도 못함."
         )
     elif cagr_b > cagr_cew:
-        pattern = "OPTIMIZATION_OVERFIT"
+        pattern = "CONSTRAINT_DRAG"
         interpretation = (
             f"B(EW_Top50)={cagr_b:.4%} > C(Constrained EW)={cagr_cew:.4%} > A(EW_All)={cagr_a:.4%} "
-            f"-> style_cap 재분배 제약이 OOS 수익을 깎음. 현재 Constrained EW는 "
-            f"Top-50 동일가중에 스타일캡만 추가한 형태이며 학습되는 가중치는 없음. "
-            f"Top-50 동일가중이 더 나은 결과."
+            f"-> style_cap(결정론적 제약, 학습 가중치 아님)이 OOS CAGR을 깎음. "
+            f"과적합이 아니라 제약-리스크 트레이드오프: 수익 일부를 내주는 대신 "
+            f"스타일 집중도/변동성/MDD를 낮춘다. 규제 요건이면 의도된 비용."
         )
     else:
         pattern = "NORMAL"
@@ -528,7 +529,8 @@ def print_overfit_report(report: dict[str, Any]) -> None:
     console.print(funnel_table)
 
     pattern = report["funnel_pattern"]
-    pattern_style = {"NORMAL": "green", "OPTIMIZATION_OVERFIT": "red", "FILTER_OVERFIT": "red"}.get(pattern, "yellow")
+    # CONSTRAINT_DRAG 는 실패가 아니라 트레이드오프이므로 경고(yellow), FILTER_OVERFIT 만 위험(red)
+    pattern_style = {"NORMAL": "green", "CONSTRAINT_DRAG": "yellow", "FILTER_OVERFIT": "red"}.get(pattern, "yellow")
     console.print(Panel(report["funnel_interpretation"], title=f"판별: {pattern}", style=pattern_style))
 
     # ── 진단 지표 테이블 ──

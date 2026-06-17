@@ -150,7 +150,7 @@
 - **과적합 진단 5지표**: Funnel Value-Add, OOS Percentile Tracking, Strict Jaccard, IS-OOS Rank Correlation, Deflation Ratio
 - **벤치마크 비교**: `--benchmark` 옵션으로 MP vs. 동일가중(1/N) 비교
 
-> **상세**: 각 Tier의 look-ahead bias 방지 규칙, 5지표 해석 임계값, 판정 패턴(OPTIMIZATION_OVERFIT/FILTER_OVERFIT) 설명은 [research.md §6](research.md) 참조.
+> **상세**: 각 Tier의 look-ahead bias 방지 규칙, 5지표 해석 임계값, 판정 패턴(CONSTRAINT_DRAG/FILTER_OVERFIT) 설명은 [research.md §6](research.md) 참조.
 
 ### 용어: MP vs Constrained EW
 - **MP (Model Portfolio)** — 프로덕션 산출물 (Bloomberg Optimizer 입력 CSV). 역할 이름.
@@ -254,6 +254,35 @@ result.to_csv("output/wf.csv")      # 결과 저장
 **산출 파일:**
 - `output/walk_forward_results.csv` — OOS 월별 Constrained EW / EW / EW_All / EW_Top50 수익률 + 누적 수익률
 - `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
+- `output/walk_forward_weight_history.csv` — 월별 팩터 가중치 이력 (대시보드 비중 추이/회전율용)
+
+### 시각화 대시보드 사용법 (viz)
+백테스트 내역과 현재 포트(배팅)를 단일 인터랙티브 HTML 리포트로 본다.
+기존 `output/*.csv`만 읽는 read-only 레이어라 파이프라인을 건드리지 않는다 (plotly 사용, 새 의존성 없음).
+
+```bash
+# 최신 스냅샷으로 대시보드 생성 -> output/dashboard_<date>.html
+python main.py viz
+
+# 특정 스냅샷 날짜 지정
+python main.py viz 2026-05-31
+
+# 생성 후 기본 브라우저로 바로 열기
+python main.py viz --open
+```
+
+포함 차트:
+- (백테스트) KPI 카드(CAGR/MDD/Sharpe/Calmar/승률/Funnel - `overfit_diagnostics.csv` 값 우선),
+  누적수익 4선 비교, 낙폭, 월별수익 분포, **스타일 비중 추이(스택 영역)**, **팩터 회전율**
+- (현재 포트) 스타일 배분(25% cap 라인), **섹터별 순비중(롱-숏 순노출)**, 종목별 순비중 상위 롱/숏,
+  팩터 틸트, 팩터 리더보드(tstat vs CAGR), 전월 대비 스타일 변화(운영모드만)
+
+HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
+
+> **스타일 비중 추이/회전율**은 `output/walk_forward_weight_history.csv`가 있어야 표시된다.
+> 이 파일은 `python main.py backtest ...` 실행 시 생성되므로, 백테스트를 한 번 돌려야 한다.
+> **섹터별 순비중**은 `data/MXCN1A_factor_<연도>.parquet`을 read-only 로 읽어 `gvkeyiid`로 join한다
+> (파이프라인/출력 스키마 무수정).
 
 ---
 

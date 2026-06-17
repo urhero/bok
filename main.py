@@ -67,6 +67,13 @@ def main(argv: list[str] | None = None) -> int:
                                   help="Selection hysteresis margin in rank_score units "
                                        "(default: config PIPELINE_PARAMS['selection_hysteresis'])")
 
+    # viz: 기존 output CSV -> 인터랙티브 HTML 대시보드 (read-only, 파이프라인 미수정)
+    parser_viz = subparsers.add_parser("viz", help="Generate interactive HTML dashboard from existing outputs.")
+    parser_viz.add_argument("end_date", nargs="?", default=None,
+                            help="Snapshot date YYYY-MM-DD (default: latest available snapshot)")
+    parser_viz.add_argument("--open", dest="open_browser", action="store_true",
+                            help="Open the generated HTML in the default browser after generating.")
+
     args = parser.parse_args(argv)
 
     # ─────────────────────────────────────────────────────────────────────
@@ -106,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     # ─────────────────────────────────────────────────────────────────────
     # 명령어 실행
     # ─────────────────────────────────────────────────────────────────────
-    if args.command in ("download", "mp", "backtest"):
+    if args.command in ("download", "mp", "backtest", "viz"):
         logging.basicConfig(
             level=logging.INFO,
             format="%(message)s",
@@ -131,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
 
         elif args.command == "backtest":
             _run_backtest(args)
+
+        elif args.command == "viz":
+            _run_viz(args)
 
         return 0
 
@@ -172,6 +182,19 @@ def _run_benchmark_comparison(start_date, end_date, test_file):
     pd.DataFrame([summary]).to_csv(OUTPUT_DIR / "benchmark_comparison.csv", index=False)
 
 
+def _run_viz(args):
+    """viz 커맨드: 기존 output CSV -> 인터랙티브 HTML 대시보드 (read-only)."""
+    from service.report.dashboard import build_dashboard
+
+    out_path = build_dashboard(end_date=args.end_date)
+    # cp949 콘솔 호환: ASCII 만 사용
+    print(f"Dashboard saved to {out_path}")
+    if getattr(args, "open_browser", False):
+        import webbrowser
+
+        webbrowser.open(out_path.resolve().as_uri())
+
+
 def _run_backtest(args):
     """backtest 커맨드 실행."""
     from config import PIPELINE_PARAMS
@@ -199,6 +222,10 @@ def _run_backtest(args):
 
     # 결과 저장
     result.to_csv(str(OUTPUT_DIR / "walk_forward_results.csv"))
+
+    # 팩터 가중치 이력 직렬화 (viz 대시보드의 비중 추이/회전율용; 가산적, 기존 출력 불변)
+    if not result.weight_history.empty:
+        result.weight_history.to_csv(OUTPUT_DIR / "walk_forward_weight_history.csv")
 
     # 과적합 진단 (full_period_cagr은 마지막 Tier 2 시점의 IS MP CAGR)
     oos_report = generate_overfit_report(result, full_period_cagr=result.is_full_period_cagr)

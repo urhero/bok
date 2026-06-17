@@ -93,8 +93,8 @@ class TestFunnelValueAdd:
         assert funnel["pattern"] == "NORMAL"
         assert funnel["cew_cagr"] > funnel["ew_top50_cagr"]
 
-    def test_optimization_overfit_pattern(self):
-        """B > C > A -> OPTIMIZATION_OVERFIT 패턴.
+    def test_constraint_drag_pattern(self):
+        """B > C > A -> CONSTRAINT_DRAG 패턴.
 
         조건: EW_All(A) < EW_Top50(B) > MP_Final(C)
         - Top50에 고수익 팩터 배치 -> EW_Top50 높음
@@ -114,7 +114,7 @@ class TestFunnelValueAdd:
             top50_factors=["F1", "F2", "F3", "F4", "F5"],
         )
         funnel = calc_funnel_value_add(result)
-        assert funnel["pattern"] == "OPTIMIZATION_OVERFIT"
+        assert funnel["pattern"] == "CONSTRAINT_DRAG"
 
     def test_filter_overfit_pattern(self):
         """A > B → FILTER_OVERFIT 패턴."""

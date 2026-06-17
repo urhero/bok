@@ -212,3 +212,7 @@ output/experiments/
 
 # Production mp 의 factor / style 가중치 history 는 회차별 산출물로 추적
 # (factor_weights = 다음 회차 EMA prev 입력, factor_styles / style_totals = 분석용)
+.gstack/
+
+# viz 대시보드 HTML 은 생성물 (python main.py viz 로 재생성) - 추적 안 함
+output/dashboard_*.html

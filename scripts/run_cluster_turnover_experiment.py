@@ -209,7 +209,7 @@ def classify_verdict(funnel_pattern: str, oos_pctile: float) -> str:
 
     spec §5.2 규칙:
       FILTER_OVERFIT (pattern) -> FILTER_OVERFIT
-      OPTIMIZATION_OVERFIT (pattern) -> OPTIMIZATION_OVERFIT
+      CONSTRAINT_DRAG (pattern) -> CONSTRAINT_DRAG (구 OPTIMIZATION_OVERFIT 호환)
       UNCATEGORIZED (pattern) -> UNCATEGORIZED
       INSUFFICIENT_DATA (pattern) -> N/A
       NORMAL + pctile >= 0.60 -> PERCENTILE_WARN
@@ -224,8 +224,8 @@ def classify_verdict(funnel_pattern: str, oos_pctile: float) -> str:
     """
     if funnel_pattern == "FILTER_OVERFIT":
         return "FILTER_OVERFIT"
-    if funnel_pattern == "OPTIMIZATION_OVERFIT":
-        return "OPTIMIZATION_OVERFIT"
+    if funnel_pattern in ("CONSTRAINT_DRAG", "OPTIMIZATION_OVERFIT"):  # 후자는 구버전 호환
+        return "CONSTRAINT_DRAG"
     if funnel_pattern == "UNCATEGORIZED":
         return "UNCATEGORIZED"
     if funnel_pattern == "INSUFFICIENT_DATA":
@@ -302,7 +302,8 @@ def build_summary_row(
     # funnel_verdict 라벨
     funnel_label_map = {
         "NORMAL": "OK (C>B>A)",
-        "OPTIMIZATION_OVERFIT": "OPT_OVERFIT (B>C>A)",
+        "CONSTRAINT_DRAG": "CONSTRAINT_DRAG (B>C>A)",
+        "OPTIMIZATION_OVERFIT": "CONSTRAINT_DRAG (B>C>A)",  # 구버전 기록 호환
         "FILTER_OVERFIT": "FILTER_OVERFIT (A>B)",
         "UNCATEGORIZED": "UNCATEGORIZED",
         "INSUFFICIENT_DATA": "N/A",

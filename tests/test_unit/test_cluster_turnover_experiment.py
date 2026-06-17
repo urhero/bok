@@ -152,9 +152,10 @@ def test_verdict_percentile_warn_when_normal_but_high_pctile():
     assert classify_verdict("NORMAL", 0.65) == "PERCENTILE_WARN"
 
 
-def test_verdict_optimization_overfit():
-    # pattern 이 OPTIMIZATION_OVERFIT 이면 pctile 무시
-    assert classify_verdict("OPTIMIZATION_OVERFIT", 0.30) == "OPTIMIZATION_OVERFIT"
+def test_verdict_constraint_drag():
+    # pattern 이 CONSTRAINT_DRAG 이면 pctile 무시 (구 OPTIMIZATION_OVERFIT 도 호환)
+    assert classify_verdict("CONSTRAINT_DRAG", 0.30) == "CONSTRAINT_DRAG"
+    assert classify_verdict("OPTIMIZATION_OVERFIT", 0.30) == "CONSTRAINT_DRAG"
 
 
 def test_verdict_filter_overfit():
@@ -397,7 +398,7 @@ def test_pick_recommendation_returns_none_when_no_ok_rows():
     """모든 케이스가 FAILED 또는 과적합 verdict 일 때 None 반환."""
     df = pd.DataFrame([
         {"case": "a", "status": "FAILED", "verdict": "N/A", "sharpe_cew": np.nan, "avg_turnover": np.nan},
-        {"case": "b", "status": "OK", "verdict": "OPTIMIZATION_OVERFIT", "sharpe_cew": 1.0, "avg_turnover": 0.1},
+        {"case": "b", "status": "OK", "verdict": "CONSTRAINT_DRAG", "sharpe_cew": 1.0, "avg_turnover": 0.1},
     ])
     assert pick_recommendation(df) is None
 

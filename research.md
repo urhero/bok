@@ -641,7 +641,7 @@ OOS 구간에서 3개 포트폴리오의 성과(CAGR, MDD)를 동시 비교:
 | 패턴 | 의미 |
 |------|------|
 | C > B > A | 정상 -- 필터링과 style_cap 제약 모두 가치 창출 |
-| B > C > A | OPTIMIZATION_OVERFIT -- style_cap 재분배가 OOS 수익을 깎음 (학습 가중치 없음) |
+| B > C > A | CONSTRAINT_DRAG -- style_cap 제약이 OOS CAGR을 깎음. 과적합 아님(학습 가중치 없는 결정론적 제약): 수익 일부를 내주고 변동성/MDD를 낮추는 트레이드오프. 구 라벨 `OPTIMIZATION_OVERFIT` |
 | A > B | FILTER_OVERFIT -- rank_score 기반 Top-50 선정 자체가 과거 우연 |
 
 > 현재 C는 학습된 가중치가 아니라 **deterministic style_cap 재분배**일 뿐이다
@@ -733,4 +733,63 @@ python main.py mp <start> <end> --benchmark
 **산출 파일:**
 - `output/walk_forward_results.csv` -- OOS 월별 Constrained EW / EW / EW_All / EW_Top50 수익률 + 누적 수익률 (컬럼 prefix `cew_*`)
 - `output/overfit_diagnostics.csv` -- 과적합 진단 5개 지표 요약
+- `output/walk_forward_weight_history.csv` -- 월별 팩터 가중치 이력 (date x factor; viz 비중 추이/회전율용)
 - `docs/backtest_results_2009_2026.md` -- 136개월 OOS 분석 보고서
+
+---
+
+## 7. 시각화 대시보드 레이어 (viz)
+
+백테스트와 현재 포트를 단일 인터랙티브 HTML로 보여주는 **read-only** 레이어.
+기존 `output/*.csv`만 소비하고 파이프라인 코드/출력 스키마를 일절 수정하지 않으므로,
+CLAUDE.md 의 코드 변경 검증 절차(aggregated_weights before/after diff)를 발동시키지 않는다.
+
+### 7.1 모듈 구조 (관심사 분리)
+
+| 파일 | 책임 |
+|------|------|
+| `service/report/dashboard_data.py` | CSV -> DataFrame + 파생지표(낙폭/KPI/스타일집계/상위롱숏/팩터틸트/선정셋/진단파싱). plotly 의존 없음 -> 단위 테스트 용이 |
+| `service/report/dashboard_charts.py` | DataFrame -> plotly Figure. `STYLE_COLORS`는 `report_generator.py` 미러 + Volatility 보강(결합도 회피 위해 복제) |
+| `service/report/dashboard.py` | 조립 + HTML 출력(얇음). `build_dashboard(end_date=None) -> Path` |
+| `main.py` `viz` 서브커맨드 | `python main.py viz [end_date] [--open]` -> `_run_viz()` |
+| `tests/test_unit/test_dashboard_data.py` | 순수 함수 단위 + HTML 스모크 (17개) |
+
+### 7.2 스냅샷 파일 선택 규칙
+
+`find_latest_weights_file()`: `total_aggregated_weights_*.csv` 중 `_style` 변형 제외,
+파일명에서 `(\d{4}-\d{2}-\d{2})` 파싱 -> 최대 날짜(또는 인자 `end_date`). 동일 날짜 복수 시
+mtime 최신 우선. 운영(무접미사)/`_test`/`_test_test_data` 모두 포함 — 접미사 무관.
+
+### 7.3 KPI 일치 정책 (중요)
+
+KPI 카드(CAGR/MDD/Sharpe/Calmar/승률/초과CAGR)는 `build_kpis()`에서 **곡선 계산값을
+구한 뒤 `overfit_diagnostics.csv` 값이 있으면 그것으로 덮어쓴다.** 진단 파일이 사용자의
+기존 리포트 기준값이므로 일치시켜 혼선을 막는다. 진단 파일이 없으면(test 모드) 곡선 계산값 사용.
+
+- 곡선 계산만으로 CAGR/MDD/Sharpe/Calmar/초과CAGR는 진단과 정확히 일치(검증됨, 2026-05-31 기준).
+- **승률 caveat:** `overfit_diagnostics.csv`의 "Win Rate"는 CSV 카테고리 라벨이
+  "Constrained EW vs EW_Top50"이지만, 실제 계산은 `result_stitcher.compare_cew_vs_ew_oos()`에서
+  `excess = oos_returns - oos_ew_returns` 즉 **CEW vs 선정 EW(`ew_*`)** 기준이다 (Top50 아님).
+  `compute_kpis()`도 이를 맞춰 `cew_return > ew_return` 으로 계산한다. (라벨/계산 불일치는 기존 코드의 것)
+
+### 7.4 출력 / 제약
+
+- `output/dashboard_<date>.html`, plotly.js **인라인** 임베드 -> 오프라인 단독 열림(약 4.7MB).
+- 한글 차트 타이틀은 plotly JSON 내에서 `\uXXXX` 이스케이프로 저장됨(렌더링 정상). raw grep 시 주의.
+- Bloomberg 핸드오프 파일 `pivoted_total_agg_wgt_*.csv`는 읽지도 수정하지도 않음.
+### 7.5 섹터 분해 (read-only parquet join)
+
+`total_aggregated_weights_*.csv`에는 `sec` 컬럼이 없다. `load_sector_map()`이 소스
+`data/MXCN1A_factor_<연도>.parquet`을 `load_factor_parquet()`로 읽어(스냅샷 연도만),
+해당 `ddt` 행에서 `gvkeyiid -> sec` 매핑을 만들고, `sector_net_weights()`가 종목 순비중
+(`mp_ls_weight`)을 섹터로 묶는다. 파이프라인/출력 스키마는 건드리지 않는다(read-only).
+parquet 없거나 날짜 불일치 시 빈 dict -> 섹터 차트 자동 생략. 매핑 없는 종목은 'Unknown' 버킷.
+
+### 7.6 백테스트 비중 추이 / 회전율
+
+`WalkForwardResult.weight_history`(date x factor)는 메모리에만 있었으나, `_run_backtest`에서
+`result.weight_history.to_csv(output/walk_forward_weight_history.csv)` **한 줄로 직렬화**한다
+(기존 `walk_forward_results.csv` 기록 *다음에* 별도 파일을 쓰므로 기존 출력은 불변).
+viz는 이 파일을 읽어 `compute_turnover()`(one-way = 0.5*sum|dw|)로 회전율을,
+`style_weight_history()`(factor->style via `factor_info.csv`)로 스타일 비중 스택 영역을 그린다.
+파일이 없으면(백테스트 미실행) 두 차트는 자동 생략. **백테스트를 한 번 돌려야 생성된다.**
