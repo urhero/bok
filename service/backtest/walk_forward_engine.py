@@ -217,6 +217,24 @@ def _apply_rules_and_aggregate(
     return precomputed_ret_df
 
 
+def _resolve_backtest_cost_bps(pp: dict) -> float:
+    """factor-level 백테스트의 유효 매매비용(bps)을 계산한다.
+
+    factor-level 백테스트는 포트 수익을 '팩터수익 x 비중' 으로 계산하므로, 팩터 간
+    비중변경(inter-factor rebalancing)으로 실제 발생하는 종목 매매비용을 직접 잡지
+    못한다 (팩터 내부 종목 회전 비용만 factor return 에 반영됨). 이를 보정하려고
+    종목 매매비용(transaction_cost_bps)에 backtest_cost_multiplier(기본 2.0 -> 60bp)를
+    곱해 '총 비용'을 근사한다.
+
+    - 정확한 종목단 비용이 아니라 보수적 근사값이다 (종목 overlap 무시 -> 약간 과대계상 가능).
+    - 배수는 config PIPELINE_PARAMS['backtest_cost_multiplier'] 로 조정한다 (figure 관리).
+    - 운영 mp 파이프라인에는 적용되지 않는다 (이 함수는 백테스트 엔진 전용).
+    """
+    base = float(pp.get("transaction_cost_bps", 30.0))
+    mult = float(pp.get("backtest_cost_multiplier", 2.0))
+    return base * mult
+
+
 def _run_weight_optimization(
     ret_df_is: pd.DataFrame,
     meta: pd.DataFrame,
@@ -312,6 +330,11 @@ class WalkForwardEngine:
             pp.update(self.pipeline_params_override)
         if pp["optimization_mode"] == "hardcoded":
             pp["optimization_mode"] = "equal_weight"  # hardcoded는 backtest에서 사용 불가
+
+        # factor-level 백테스트 비용 보정: 종목비용 x backtest_cost_multiplier (기본 2.0 = 60bp).
+        # factor-level 백테스트는 inter-factor 비중변경 매매비용을 직접 못 잡으므로 근사 보정한다.
+        # 이 pp 가 이후 ModelPortfolioPipeline / aggregate_factor_returns 전체에 적용됨.
+        pp["transaction_cost_bps"] = _resolve_backtest_cost_bps(pp)
 
         # 1. 데이터 1회 로딩 — pipeline 인스턴스를 통해 [1] 실행
         from service.pipeline.model_portfolio import DATA_DIR

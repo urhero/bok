@@ -585,7 +585,7 @@ fitted = shrunk + redistributed
 기존 파이프라인([1]~[7])의 내부 코드를 **한 줄도 수정하지 않고**, 외부에서 감싸는(wrapper) 방식으로 구현한다.
 
 - **Factor-Level Backtest**: 종목(stock-level) MP까지 내려가지 않고, 팩터 수익률(net-of-cost) × 팩터 가중치로 포트폴리오 수익률을 산출
-- **거래비용 이중 적용 금지**: 기존 `calculate_vectorized_return()`이 팩터 내부 종목 리밸런싱에서 30bp를 이미 차감. 팩터 가중치 변경에 대한 별도 거래비용은 적용하지 않음
+- **거래비용 (중요)**: `calculate_vectorized_return()`이 팩터 내부 종목 리밸런싱 비용만 차감하고, 팩터 간 비중변경(inter-factor) 매매비용은 '팩터수익 × 비중' 구조상 직접 못 잡는다. 이를 보정하려고 **백테스트 전용으로 종목비용의 2배(기본 60bp)** 를 적용한다 — `config.PIPELINE_PARAMS['backtest_cost_multiplier']`(기본 2.0) × `transaction_cost_bps`(30bp). 적용 지점: `walk_forward_engine._resolve_backtest_cost_bps()` → `run()`의 `pp`. 정확한 종목단 비용이 아닌 보수적 근사이며 이 figure 로 조정. **mp(운영)는 영향 없음**(30bp 유지)
 - **equal_weight 모드**: 백테스트 전체에서 equal_weight 모드 사용. hardcoded 모드는 프로덕션 전용
 
 ### 6.2 계층적 리밸런싱 (Tiered Rebalancing)

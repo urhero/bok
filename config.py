@@ -34,7 +34,14 @@ if not PARAM["user_name"]:
 #
 PIPELINE_PARAMS = {
     "style_cap": 0.25,                # 스타일별 최대 비중 (프로덕션 규제 요건)
-    "transaction_cost_bps": 30.0,      # 거래비용 (basis points)
+    "transaction_cost_bps": 30.0,      # 종목 단위 거래비용 (basis points)
+    # ── factor-level 백테스트 전용 비용 배수 ──────────────────────────────────
+    # factor-level 백테스트는 포트 수익을 '팩터수익 x 비중' 으로 계산하므로, 팩터 간
+    # 비중변경(inter-factor rebalancing)으로 실제 발생하는 종목 매매비용을 직접 잡지
+    # 못한다(팩터 내부 종목 회전 비용만 반영). 이를 보정하려고 종목비용의 2배(=60bp)를
+    # 적용해 총 비용을 근사한다. 정확한 종목단 비용이 아닌 보수적 근사값이며, 보수성은
+    # 이 figure 로 조정한다. mp(운영) 파이프라인에는 적용되지 않음 (백테스트 엔진 전용).
+    "backtest_cost_multiplier": 2.0,
     "top_factor_count": 50,            # 상위 팩터 선정 수
     "spread_threshold_pct": 0.10,      # L/N/S 라벨링 임계값 (스프레드의 10%)
     "min_sector_stocks": 10,           # 섹터-날짜 최소 종목 수 (프로덕션)

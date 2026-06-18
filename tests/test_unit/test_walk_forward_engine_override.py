@@ -2,7 +2,10 @@
 """WalkForwardEngine.pipeline_params_override 회귀 테스트."""
 from __future__ import annotations
 
-from service.backtest.walk_forward_engine import WalkForwardEngine
+from service.backtest.walk_forward_engine import (
+    WalkForwardEngine,
+    _resolve_backtest_cost_bps,
+)
 
 
 def test_engine_accepts_none_override():
@@ -54,3 +57,25 @@ def test_override_can_change_top_factor_count():
     if engine.pipeline_params_override:
         pp.update(engine.pipeline_params_override)
     assert pp["top_factor_count"] == 18  # override 가 이김
+
+
+# ── factor-level 백테스트 비용 보정 (_resolve_backtest_cost_bps) ──────────────
+
+def test_backtest_cost_default_doubles_to_60bp():
+    """기본 multiplier 2.0 -> 종목비용 30bp 의 2배 = 60bp."""
+    assert _resolve_backtest_cost_bps({"transaction_cost_bps": 30.0}) == 60.0
+
+
+def test_backtest_cost_respects_multiplier():
+    assert _resolve_backtest_cost_bps(
+        {"transaction_cost_bps": 30.0, "backtest_cost_multiplier": 1.0}
+    ) == 30.0
+    assert _resolve_backtest_cost_bps(
+        {"transaction_cost_bps": 30.0, "backtest_cost_multiplier": 2.5}
+    ) == 75.0
+
+
+def test_config_has_backtest_cost_multiplier():
+    """config 에 figure 가 존재하고 기본 2.0 (60bp 근사)."""
+    from config import PIPELINE_PARAMS
+    assert PIPELINE_PARAMS.get("backtest_cost_multiplier") == 2.0

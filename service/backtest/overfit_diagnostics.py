@@ -486,9 +486,10 @@ def generate_overfit_report(walk_forward_result: WalkForwardResult, full_period_
             f"Funnel Value-Add Test(단계별 가치 창출)를 가장 먼저 확인할 것."
         ),
         "limitation": (
-            "본 백테스트는 factor-level에서 수행되었으며, 팩터 내부 종목 리밸런싱 비용(30bp)만 "
-            "반영됨. 팩터 간 비중 변경(inter-factor rebalancing)에 따른 자산 배분 차원의 "
-            "거래비용은 미반영이므로, OOS 수익률에 약간의 상방 편향이 존재할 수 있음."
+            "본 백테스트는 factor-level('팩터수익 x 비중')에서 수행되어 팩터 간 비중변경"
+            "(inter-factor rebalancing) 매매비용을 직접 잡지 못한다. 이를 보정하기 위해 "
+            "종목 매매비용의 2배(기본 60bp, config backtest_cost_multiplier)를 적용해 총 "
+            "비용을 근사한다. 정확한 종목단 비용은 아니므로 보수성은 해당 figure 로 조정한다."
         ),
     }
 
