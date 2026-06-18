@@ -99,7 +99,7 @@ def style_allocation_fig(style_weights: pd.Series, style_cap: float = 0.25) -> g
     fig.add_vline(x=style_cap, line_dash="dash", line_color=_NEG_COLOR,
                   annotation_text=f"cap {style_cap:.0%}", annotation_position="top")
     fig.update_layout(title="스타일 배분 (style_cap 라인)", height=360,
-                      xaxis_tickformat=".0%", **_BASE_LAYOUT)
+                      xaxis_tickformat=".0%", yaxis=dict(automargin=True), **_BASE_LAYOUT)
     return fig
 
 
@@ -111,7 +111,7 @@ def longs_shorts_fig(ls_df: pd.DataFrame) -> go.Figure:
         hovertemplate="%{y}<br>%{x:.3%}<extra></extra>",
     ))
     fig.update_layout(title="종목별 순비중 상위 롱/숏", height=max(360, 22 * len(d) + 80),
-                      xaxis_tickformat=".2%", **_BASE_LAYOUT)
+                      xaxis_tickformat=".2%", yaxis=dict(automargin=True), **_BASE_LAYOUT)
     return fig
 
 
@@ -125,7 +125,8 @@ def factor_tilt_fig(tilt_df: pd.DataFrame, top_n: int = 25) -> go.Figure:
     ))
     n_shown = min(top_n, len(tilt_df))
     fig.update_layout(title=f"팩터 틸트 (상위 {n_shown}, 스타일별 색)",
-                      height=max(360, 20 * len(d) + 80), xaxis_tickformat=".2%", **_BASE_LAYOUT)
+                      height=max(360, 20 * len(d) + 80), xaxis_tickformat=".2%",
+                      yaxis=dict(automargin=True), **_BASE_LAYOUT)
     return fig
 
 
@@ -160,20 +161,46 @@ def sector_net_fig(sector_series: pd.Series) -> go.Figure:
     ))
     fig.add_vline(x=0, line_color="#888780", line_width=1)
     fig.update_layout(title="섹터별 순비중 (롱-숏 순노출)", height=360,
-                      xaxis_tickformat=".2%", **_BASE_LAYOUT)
+                      xaxis_tickformat=".2%", yaxis=dict(automargin=True), **_BASE_LAYOUT)
     return fig
 
 
-def turnover_fig(turnover: pd.Series) -> go.Figure:
-    fig = go.Figure(go.Bar(
-        x=turnover.index, y=turnover.values, marker_color="#534AB7",
-        hovertemplate="%{x|%Y-%m}<br>%{y:.2%}<extra></extra>",
+def turnover_fig(turnover: pd.Series, churn_split: pd.DataFrame | None = None) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=turnover.index, y=turnover.values, name="회전율 (one-way)",
+        marker_color="#534AB7", offsetgroup="turnover",
+        hovertemplate="%{x|%Y-%m}<br>%{y:.2%}<extra>회전율</extra>",
     ))
     avg = float(turnover[turnover > 0].mean()) if (turnover > 0).any() else 0.0
     fig.add_hline(y=avg, line_dash="dash", line_color="#888780",
                   annotation_text=f"평균 {avg:.1%}", annotation_position="top left")
-    fig.update_layout(title="팩터 회전율 (one-way, 리밸런싱 시점)", height=320,
-                      yaxis_tickformat=".0%", **_BASE_LAYOUT)
+
+    if churn_split is None:
+        fig.update_layout(title="팩터 회전율 (one-way, 리밸런싱 시점)", height=320,
+                          yaxis_tickformat=".0%", **_BASE_LAYOUT)
+        return fig
+
+    # 편입/편출을 보조 우측 y축에 쌓은(stacked) 막대로, 회전율 막대와 나란히 표시
+    fig.add_trace(go.Bar(
+        x=churn_split.index, y=churn_split["entries"], name="편입",
+        marker_color="#1D9E75", yaxis="y2", offsetgroup="churn", legendgroup="churn",
+        hovertemplate="%{x|%Y-%m}<br>편입 %{y:.0f}개<extra></extra>",
+    ))
+    fig.add_trace(go.Bar(
+        x=churn_split.index, y=churn_split["exits"], name="편출",
+        marker_color="#D85A30", yaxis="y2", offsetgroup="churn", legendgroup="churn",
+        hovertemplate="%{x|%Y-%m}<br>편출 %{y:.0f}개<extra></extra>",
+    ))
+    fig.update_layout(
+        title="팩터 회전율(좌, %) + 선정 편입·편출(우, 개)", height=380,
+        template="plotly_white", margin=dict(l=60, r=55, t=50, b=70),
+        barmode="relative", bargap=0.2,
+        yaxis=dict(title="회전율", tickformat=".0%"),
+        yaxis2=dict(title="편입·편출 팩터 수", overlaying="y", side="right",
+                    rangemode="tozero", showgrid=False),
+        legend=dict(orientation="h", yanchor="top", y=-0.16, x=0, font=dict(size=11)),
+    )
     return fig
 
 
@@ -187,10 +214,12 @@ def style_weight_evolution_fig(style_hist: pd.DataFrame) -> go.Figure:
             stackgroup="one", line=dict(width=0.5, color=_style_color(st)),
             hovertemplate="%{x|%Y-%m}<br>" + str(st) + " %{y:.1%}<extra></extra>",
         ))
-    fig.update_layout(title="스타일 비중 추이 (백테스트)", height=380,
-                      yaxis_tickformat=".0%",
-                      legend=dict(orientation="h", yanchor="bottom", y=-0.25, x=0),
-                      **_BASE_LAYOUT)
+    fig.update_layout(
+        title="스타일 비중 추이 (백테스트)", height=430,
+        template="plotly_white", margin=dict(l=60, r=20, t=50, b=95),
+        yaxis_tickformat=".0%",
+        legend=dict(orientation="h", yanchor="top", y=-0.13, x=0, font=dict(size=11)),
+    )
     return fig
 
 

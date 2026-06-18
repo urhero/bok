@@ -125,6 +125,37 @@ def test_active_factors_excludes_zero_weight():
     assert dd.active_factors(_weights()) == {"F1", "F2", "F3"}
 
 
+def test_load_weights_drops_aggregation_rows(tmp_path):
+    """MP 합계 행(style=='MP', factor=='AGG')은 로드 시 제외돼야 한다."""
+    rows = [
+        {"ddt": "2099-01-31", "ticker": "T1", "isin": "x", "gvkeyiid": "G1",
+         "mp_ls_weight": 0.05, "ls_weight": 0.05, "factor_weight": 0.1,
+         "factor": "F1", "style": "A", "name": "n", "count": 10, "style_ls_weight": 0.05},
+        {"ddt": "2099-01-31", "ticker": "T1", "isin": "x", "gvkeyiid": "G1",
+         "mp_ls_weight": 0.05, "ls_weight": 0.05, "factor_weight": 0.2928,
+         "factor": "AGG", "style": "MP", "name": "MXCN1A_MP", "count": 10, "style_ls_weight": 0.05},
+    ]
+    p = tmp_path / "total_aggregated_weights_2099-01-31_test.csv"
+    pd.DataFrame(rows).to_csv(p, index=True)
+    w = dd.load_weights(p)
+    assert "AGG" not in set(w["factor"])
+    assert "MP" not in set(w["style"])
+    assert len(w) == 1
+
+
+def test_style_allocation_prefers_style_totals():
+    deltas = pd.DataFrame({"style": ["A", "B", "C"], "new_weight": [0.25, 0.15, 0.0]})
+    s = dd.style_allocation(_weights(), deltas)
+    assert list(s.index) == ["A", "B"]          # 0 가중 C 제외 + 내림차순
+    assert s["A"] == pytest.approx(0.25)         # cap 바인딩 값 그대로
+
+
+def test_style_allocation_fallback_normalizes_to_one():
+    # style_totals 없으면 factor_weight 집계를 합=1 로 정규화
+    s = dd.style_allocation(_weights(), None)
+    assert s.sum() == pytest.approx(1.0)
+
+
 def test_factor_tilt_sorted_and_no_zero():
     tilt = dd.factor_tilt(_weights())
     assert list(tilt["factor"]) == ["F3", "F2", "F1"]
@@ -238,6 +269,39 @@ def test_compute_turnover():
     assert t.iloc[1] == pytest.approx(0.0)
     assert t.iloc[2] == pytest.approx(0.2)  # 0.5*(|0.3-0.5|+|0.7-0.5|)
     assert t.iloc[3] == pytest.approx(0.0)
+
+
+def test_selection_churn_counts_entries_and_exits():
+    dates = pd.date_range("2020-01-31", periods=3, freq="ME")
+    wh = pd.DataFrame(
+        {"F1": [0.5, 0.5, 0.0],   # period3 에 편출
+         "F2": [0.5, 0.3, 0.5],   # 계속 활성
+         "F3": [0.0, 0.2, 0.5]},  # period2 에 편입
+        index=pd.Index(dates, name="date"),
+    )
+    churn = dd.selection_churn(wh)
+    assert list(churn) == [0.0, 1.0, 1.0]  # p1:0, p2:F3 편입(1), p3:F1 편출(1)
+
+
+def test_selection_churn_zero_when_set_stable():
+    # 가중치는 바뀌어도 활성 집합이 그대로면 churn 0 (회전율과 구분됨)
+    churn = dd.selection_churn(_weight_history())
+    assert churn.sum() == pytest.approx(0.0)
+
+
+def test_selection_churn_split_entries_and_exits():
+    dates = pd.date_range("2020-01-31", periods=3, freq="ME")
+    wh = pd.DataFrame(
+        {"F1": [0.5, 0.5, 0.0],   # p3 편출
+         "F2": [0.5, 0.3, 0.5],   # 유지
+         "F3": [0.0, 0.2, 0.5]},  # p2 편입
+        index=pd.Index(dates, name="date"),
+    )
+    split = dd.selection_churn_split(wh)
+    assert list(split["entries"]) == [0.0, 1.0, 0.0]
+    assert list(split["exits"]) == [0.0, 0.0, 1.0]
+    # 합은 selection_churn 총합과 일치
+    assert list(split["entries"] + split["exits"]) == list(dd.selection_churn(wh))
 
 
 def test_style_weight_history_buckets():

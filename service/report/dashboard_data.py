@@ -155,12 +155,21 @@ def build_kpis(curves: pd.DataFrame, diag: dict | None = None) -> dict:
 # ── 현재 포트 / 배팅 ───────────────────────────────────────────────────────
 
 def load_weights(path: Path) -> pd.DataFrame:
-    """total_aggregated_weights_*.csv -> 무명 인덱스열 제거한 DataFrame."""
+    """total_aggregated_weights_*.csv -> 무명 인덱스열 + MP 집계행 제거한 DataFrame.
+
+    파일에는 종목x팩터 원천 행 외에 MP 합계 행(style=='MP', factor=='AGG')이 섞여 있다.
+    이는 합계 산출물이므로 차트 집계(스타일/팩터/종목/섹터)에서 제외한다 - 포함하면
+    거대 합계 막대로 x축이 왜곡되고 종목 순비중이 이중 계산된다.
+    """
     df = pd.read_csv(path)
     drop = [c for c in df.columns if str(c).startswith("Unnamed")]
     if drop:
         df = df.drop(columns=drop)
-    return df
+    if "factor" in df.columns:
+        df = df[df["factor"] != "AGG"]
+    if "style" in df.columns:
+        df = df[df["style"] != "MP"]
+    return df.reset_index(drop=True)
 
 
 def active_factors(weights: pd.DataFrame) -> set:
@@ -174,6 +183,19 @@ def aggregate_style_weights(weights: pd.DataFrame) -> pd.Series:
     uniq = weights[["factor", "style", "factor_weight"]].drop_duplicates(subset=["factor"])
     uniq = uniq[uniq["factor_weight"] > 0]
     return uniq.groupby("style")["factor_weight"].sum().sort_values(ascending=False)
+
+
+def style_allocation(weights: pd.DataFrame, style_deltas: pd.DataFrame | None = None) -> pd.Series:
+    """스타일 배분(합 ~= 1). 운영 style_totals(new_weight, cap 바인딩 반영) 우선.
+
+    style_totals 가 없으면(test 모드) weights 의 factor_weight 집계를 1로 정규화해 대체.
+    """
+    if style_deltas is not None and not style_deltas.empty and "new_weight" in style_deltas.columns:
+        s = style_deltas.set_index("style")["new_weight"].astype(float)
+        return s[s > 0].sort_values(ascending=False)
+    s = aggregate_style_weights(weights)
+    total = s.sum()
+    return (s / total) if total > 0 else s
 
 
 def factor_tilt(weights: pd.DataFrame, top_n: int | None = None) -> pd.DataFrame:
@@ -259,6 +281,36 @@ def compute_turnover(weight_history: pd.DataFrame) -> pd.Series:
     if len(turnover) > 0:
         turnover.iloc[0] = 0.0
     return turnover
+
+
+def selection_churn(weight_history: pd.DataFrame) -> pd.Series:
+    """매 기간 선정 팩터 집합의 변화 수 = 편입+편출 팩터 수 (대칭차집합 크기). 첫 기간 0.
+
+    가중치 회전율(연속적 |dw|)과 달리, 어떤 팩터가 새로 들어오거나 빠졌는지(이산적)를 센다.
+    """
+    wh = weight_history.apply(pd.to_numeric, errors="coerce").fillna(0.0).sort_index()
+    active = wh.gt(0)  # 팩터별 활성(weight>0) 여부
+    changed = active.ne(active.shift(1)).sum(axis=1).astype(float)
+    if len(changed) > 0:
+        changed.iloc[0] = 0.0  # 첫 기간은 비교 대상 없음
+    return changed
+
+
+def selection_churn_split(weight_history: pd.DataFrame) -> pd.DataFrame:
+    """매 기간 편입(entries)/편출(exits) 팩터 수를 분리. 첫 기간 0.
+
+    entries = 직전 비활성 -> 활성 된 팩터 수, exits = 활성 -> 비활성 된 팩터 수.
+    (entries + exits == selection_churn 총합)
+    """
+    wh = weight_history.apply(pd.to_numeric, errors="coerce").fillna(0.0).sort_index()
+    active = wh.gt(0)
+    prev = active.shift(1, fill_value=False)
+    entries = (active & ~prev).sum(axis=1).astype(float)
+    exits = (~active & prev).sum(axis=1).astype(float)
+    if len(entries) > 0:
+        entries.iloc[0] = 0.0  # 첫 기간은 비교 대상 없음
+        exits.iloc[0] = 0.0
+    return pd.DataFrame({"entries": entries, "exits": exits})
 
 
 def factor_style_map(factor_info_path: Path) -> dict:

@@ -44,7 +44,18 @@ h2 { font-size: 17px; font-weight: 500; color: #444441; margin: 28px 0 12px;
   padding: 8px 10px; overflow: hidden; }
 .card.full { margin-bottom: 14px; }
 .note { font-size: 13px; color: #888780; padding: 8px 0; }
+.plotly-graph-div { width: 100% !important; }
 """
+
+# 일부 브라우저에서 plotly 초기 렌더 폭이 컨테이너와 어긋나 잘리는 경우 대비:
+# 로드/리사이즈 시 각 차트를 컨테이너 폭에 맞춰 다시 그린다.
+_RESIZE_SCRIPT = (
+    "<script>(function(){function fit(){if(!window.Plotly)return;"
+    "document.querySelectorAll('.plotly-graph-div').forEach(function(d){"
+    "try{Plotly.Plots.resize(d);}catch(e){}});}"
+    "window.addEventListener('load',fit);window.addEventListener('resize',fit);"
+    "setTimeout(fit,300);})();</script>"
+)
 
 
 def _fig_div(fig, include_js: bool = False) -> str:
@@ -103,12 +114,13 @@ def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
         f'<div class="kpi-grid">{_kpi_cards(kpis)}</div>',
         f'<div class="card full">{_fig_div(ch.equity_curve_fig(curves), include_js=True)}</div>',
     ]
-    cards = [
+    parts.append(_grid2([
         f'<div class="card">{_fig_div(ch.drawdown_fig(curves))}</div>',
         f'<div class="card">{_fig_div(ch.monthly_dist_fig(curves))}</div>',
-    ]
+    ]))
 
-    # 가중치 이력이 직렬화돼 있으면 스타일 비중 추이 + 회전율 추가 (백테스트 재실행 산출)
+    # 가중치 이력이 직렬화돼 있으면 스타일 비중 추이 + 회전율 추가 (백테스트 재실행 산출).
+    # 스타일 추이는 범례(스타일 7~8개)가 넓어 풀폭 카드로 둔다 - 반폭이면 범례가 그래프 침범.
     wh_path = output_dir / "walk_forward_weight_history.csv"
     if wh_path.exists():
         wh = dd.load_weight_history(wh_path)
@@ -116,10 +128,10 @@ def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
         fmap = dd.factor_style_map(fi_path) if fi_path.exists() else {}
         style_hist = dd.style_weight_history(wh, fmap)
         turnover = dd.compute_turnover(wh)
-        cards.append(f'<div class="card">{_fig_div(ch.style_weight_evolution_fig(style_hist))}</div>')
-        cards.append(f'<div class="card">{_fig_div(ch.turnover_fig(turnover))}</div>')
+        churn_split = dd.selection_churn_split(wh)
+        parts.append(f'<div class="card full">{_fig_div(ch.style_weight_evolution_fig(style_hist))}</div>')
+        parts.append(f'<div class="card full">{_fig_div(ch.turnover_fig(turnover, churn_split))}</div>')
 
-    parts.append(_grid2(cards))
     return parts, True
 
 
@@ -133,7 +145,8 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
 
     weights = dd.load_weights(weights_path)
     snap = dd.snapshot_date_from_path(weights_path) or "?"
-    style_w = dd.aggregate_style_weights(weights)
+    deltas = dd.load_style_deltas(output_dir, snap)
+    style_w = dd.style_allocation(weights, deltas)
     ls_df = dd.top_longs_shorts(weights, n=15)
     tilt = dd.factor_tilt(weights)
     selected = dd.active_factors(weights)
@@ -167,7 +180,6 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
         meta = dd.load_meta(meta_path)
         cards.append(f'<div class="card">{_fig_div(ch.leaderboard_fig(meta, selected))}</div>')
 
-    deltas = dd.load_style_deltas(output_dir, snap)
     if deltas is not None and not deltas.empty:
         cards.append(f'<div class="card">{_fig_div(ch.style_delta_fig(deltas))}</div>')
 
@@ -205,7 +217,7 @@ def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f'<title>BOK 포트폴리오 대시보드 {snap}</title>'
         f'<style>{_PAGE_CSS}</style></head><body>'
-        f'<div class="wrap">{body}</div></body></html>'
+        f'<div class="wrap">{body}</div>{_RESIZE_SCRIPT}</body></html>'
     )
 
     out_path = output_dir / f"dashboard_{snap}.html"
