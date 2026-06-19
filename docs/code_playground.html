@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BOK · Module Dependency Map</title>
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<style>
+:root{color-scheme:light}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:#eef0f4;color:#2b2838;height:100vh;overflow:hidden;
+ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Malgun Gothic',sans-serif}
+.win{width:100%;height:100vh;background:#fff;overflow:hidden;border:0;display:flex;flex-direction:column}
+.subbar{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid #ececf2;font-size:13px}
+.subbar b{font-size:13.5px}
+.pill{font-size:11px;color:#5b6b8c;background:#eef2fb;border:1px solid #dde6f6;border-radius:20px;padding:2px 9px}
+.pill.p{color:#7a4fb0;background:#f3ecfb;border-color:#e7d8f7}
+.pill.g{color:#1c7a5e;background:#e6f6ef;border-color:#cdeede}
+.body{display:flex;flex:1;min-height:0}
+.side{width:236px;flex:0 0 236px;border-right:1px solid #ececf2;padding:14px 14px 16px;overflow:auto;background:#fafafc}
+.side h3{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#9b9aac;margin:16px 0 8px;font-weight:700}
+.side h3:first-child{margin-top:0}
+.preset{display:block;width:100%;text-align:left;border:1px solid #e4e4ee;background:#fff;border-radius:9px;
+ padding:8px 11px;font-size:13px;margin-bottom:6px;cursor:pointer;color:#3a3850}
+.preset:hover{background:#f3f4fb;border-color:#cfd0e6}
+.preset.on{border-color:#3266ad;background:#eef4fc;color:#1e3a63;font-weight:600}
+.grp{display:flex;align-items:center;gap:8px;font-size:13px;margin:5px 0;cursor:pointer;color:#3a3850}
+.grp input{accent-color:#3266ad}
+.grp i{width:13px;height:13px;border-radius:4px;display:inline-block;border:1px solid rgba(0,0,0,.12)}
+.zoom{display:flex;gap:6px}
+.zoom button,.searchwrap input{height:32px}
+.zoom button{flex:1;border:1px solid #e4e4ee;background:#fff;border-radius:8px;cursor:pointer;font-size:15px;color:#3a3850}
+.zoom button:hover{background:#f3f4fb}
+.searchwrap input{width:100%;border:1px solid #e4e4ee;border-radius:8px;padding:0 10px;font-size:13px;background:#fff}
+.cmtbox{font-size:13px}
+.cmt-empty{color:#a7a6b6;font-size:12.5px;line-height:1.6}
+.cmt-item{border:1px solid #eee;border-radius:8px;padding:7px 9px;margin-bottom:6px;cursor:pointer;background:#fff}
+.cmt-item:hover{background:#f6f6fb}
+.cmt-item b{font-size:12.5px}.cmt-item div{font-size:12px;color:#7a7886;margin-top:2px;
+ overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.editor .ename{font-size:14px;font-weight:600}
+.editor .epath{font-size:11px;color:#9b9aac;font-family:Consolas,monospace;margin:2px 0 4px;word-break:break-all}
+.editor .edesc{font-size:12.5px;color:#5b5a6b;margin-bottom:8px}
+.editor .edetail{font-size:12.5px;color:#43415a;line-height:1.62;background:#f5f6fb;border:1px solid #e6e7f1;
+ border-left:3px solid #3266ad;border-radius:8px;padding:9px 11px;margin:3px 0 11px}
+.editor .elabel{font-size:11px;color:#9b9aac;font-weight:700;letter-spacing:.04em;margin:0 0 4px}
+.editor textarea{width:100%;height:120px;border:1px solid #e0e0ec;border-radius:9px;padding:9px;font-size:13px;
+ font-family:inherit;line-height:1.55;resize:vertical}
+.editor .ebtn{display:flex;gap:6px;margin-top:8px}
+.editor .ebtn button{flex:1;height:34px;border:1px solid #e4e4ee;border-radius:8px;background:#fff;cursor:pointer;font-size:13px}
+.editor .ebtn .save{background:#3266ad;border-color:#3266ad;color:#fff}
+.editor .deps{margin-top:10px}
+.editor .deps h4{font-size:10.5px;color:#9b9aac;margin:8px 0 3px;font-weight:700;letter-spacing:.04em}
+.editor .deps a{display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border:1px solid #e4e4ee;border-radius:14px;
+ font-size:11.5px;color:#3266ad;background:#fff;cursor:pointer;text-decoration:none}
+.editor .deps a:hover{background:#eef4fc}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+.stages{font-size:12px;color:#5b5a6b;background:#f5f6fb;border-bottom:1px solid #ececf2;padding:7px 16px}
+.stages b{color:#3266ad}
+#net{flex:1;min-height:0}
+.foot{display:flex;align-items:center;gap:18px;padding:8px 16px;border-top:1px solid #ececf2;font-size:12px;color:#7a7886}
+.foot .ek{display:flex;align-items:center;gap:6px}
+.foot .ek span{width:22px;height:0;border-top:2px solid #b9b7c6}
+.foot .note{margin-left:auto;color:#a7a6b6}
+</style></head>
+<body>
+<div class="win">
+  <div class="subbar"><b>BOK 팩터 파이프라인 — 모듈 의존성 맵</b>
+    <span class="pill">22 모듈</span><span class="pill p">Python</span>
+    <span class="pill g">Factor Pipeline</span></div>
+  <div class="body">
+    <aside class="side">
+      <h3>프리셋 보기</h3><div id="presets"></div>
+      <h3>그룹 표시</h3><div id="groups"></div>
+      <h3>보기</h3>
+      <div class="searchwrap" style="margin-bottom:7px"><input id="search" placeholder="모듈 검색" oninput="onSearch(this.value)"></div>
+      <div class="zoom"><button onclick="zoom(1.25)">+</button><button onclick="fitAll()" title="전체 보기">&#9678;</button><button onclick="zoom(0.8)">&minus;</button></div>
+      <h3 id="cmt-head">코멘트 (0)</h3>
+      <div class="cmtbox" id="cmtbox"></div>
+    </aside>
+    <div class="main">
+      <div class="stages"><b>실행 순서 (왼→오):</b> 진입 &rarr; 다운로드 &rarr; 팩터분석 &rarr; 수익률·상관 &rarr; 팩터선정 &rarr; 가중치 &rarr; MP 조립 &rarr; 백테스트 &rarr; 리포트·시각화</div>
+      <div id="net"></div>
+      <div class="foot">
+        <div class="ek"><span></span>import 의존성 (A→B = A가 B를 import)</div>
+        <div class="ek" style="color:#3266ad"><span style="border-color:#3266ad"></span>선택 시 연결 강조</div>
+        <div class="note">클릭=강조·메모 · Ctrl/Shift+클릭=여러 개 선택 후 함께 이동 · 빈 곳 드래그=화면 이동</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+var GRAPH={"nodes": [{"id": "config", "label": "config", "group": "entry", "indeg": 5, "outdeg": 0, "level": 0, "desc": "환경설정 · PIPELINE_PARAMS · .env 로드", "core": false, "detail": "전역 설정. .env(python-dotenv)에서 DB 접속정보를 로드하고, PIPELINE_PARAMS에 style_cap·거래비용·top_factor_count·랭킹기준·선정 히스테리시스·backtest_cost_multiplier 등 비즈니스 파라미터를 중앙 관리한다. 거의 모든 모듈이 참조.", "x": 0, "y": -70}, {"id": "main", "label": "main", "group": "entry", "indeg": 0, "outdeg": 7, "level": 0, "desc": "CLI 진입점 · download/mp/backtest/viz 라우팅", "core": false, "detail": "CLI 진입점. argparse로 download/mp/backtest/viz 서브커맨드를 파싱해 각 파이프라인으로 라우팅한다. backtest는 _run_backtest()에서 엔진 실행 + 결과/진단 CSV + weight_history 직렬화까지 담당.", "x": 0, "y": 70}, {"id": "service.backtest.data_slicer", "label": "data_slicer", "group": "backtest", "indeg": 1, "outdeg": 0, "level": 7, "desc": "IS / OOS 날짜 슬라이싱", "core": false, "detail": "백테스트 IS/OOS 날짜 슬라이싱 유틸. 누적창(expanding) IS 범위를 날짜 필터로 제어.", "x": 1610, "y": -210}, {"id": "service.backtest.factor_selection", "label": "factor_selection", "group": "backtest", "indeg": 1, "outdeg": 0, "level": 4, "desc": "rank_score 랭킹 · 클러스터 dedup · 히스테리시스", "core": false, "detail": "rank_score(기본 tstat) 기준 Top-N 팩터 선정. 클러스터 dedup(상관 기반 중복 제거) + 선정 히스테리시스(챌린저가 margin 이상 이겨야 교체)로 turnover 억제. mp·백테스트 공통.", "x": 920, "y": 0}, {"id": "service.backtest.overfit_diagnostics", "label": "overfit_diagnostics", "group": "backtest", "indeg": 1, "outdeg": 1, "level": 7, "desc": "과적합 진단 (Funnel · Jaccard 등)", "core": false, "detail": "과적합 진단. Funnel Value-Add(A<B<C)·OOS 백분위·Strict Jaccard·IS-OOS 랭크상관·Deflation Ratio. 패턴: NORMAL / CONSTRAINT_DRAG / FILTER_OVERFIT.", "x": 1610, "y": 210}, {"id": "service.backtest.result_stitcher", "label": "result_stitcher", "group": "backtest", "indeg": 2, "outdeg": 0, "level": 7, "desc": "OOS 결과 접합 · 성과 지표", "core": false, "detail": "OOS 월별 결과를 접합해 WalkForwardResult 구성(누적수익·가중치이력·팩터수익이력·리밸로그). CAGR/MDD/Sharpe/Calmar 등 성과지표 계산.", "x": 1610, "y": -70}, {"id": "service.backtest.walk_forward_engine", "label": "walk_forward_engine", "group": "backtest", "indeg": 1, "outdeg": 7, "level": 7, "desc": "Walk-Forward(OOS) 백테스트 엔진", "core": false, "detail": "Walk-Forward(Expanding) 백테스트 엔진. 파이프라인을 한 줄도 수정 않고 감싸며 Tier1(6M 규칙학습)·Tier2(3M 선정·가중치)·Tier3(월 OOS 조회) 계층 리밸런싱. OOS look-ahead 방지 위해 IS 전용 규칙 매핑. 비용 = 종목비용 × backtest_cost_multiplier(기본 60bp).", "x": 1610, "y": 70}, {"id": "service.download.download_factors", "label": "download_factors", "group": "download", "indeg": 1, "outdeg": 1, "level": 1, "desc": "SQL Server → factor parquet 다운로드", "core": false, "detail": "SQL Server에서 200+ 팩터 원천 데이터를 받아 pipeline-ready 연도분할 parquet로 저장(download 커맨드). 증분 모드 지원. parquet_io·download_validation 사용.", "x": 230, "y": -140}, {"id": "service.download.download_validation", "label": "download_validation", "group": "download", "indeg": 0, "outdeg": 1, "level": 1, "desc": "다운로드 데이터 무결성 검증", "core": false, "detail": "다운로드 factor 데이터 무결성 검증(필수컬럼·월수·팩터/종목 수·NaN비율·월 gap·중복). ERROR 발견 시 적재 중단.", "x": 230, "y": 140}, {"id": "service.download.parquet_io", "label": "parquet_io", "group": "download", "indeg": 3, "outdeg": 0, "level": 1, "desc": "연도분할 parquet 저장 / 병합 로드", "core": false, "detail": "연도별 분할 parquet 저장/로드 유틸. load_factor_parquet()가 연도별 파일을 투명하게 병합(단일파일 하위호환). 모든 데이터 진입의 IO 계층.", "x": 230, "y": 0}, {"id": "service.pipeline.benchmark_comparison", "label": "benchmark_comparison", "group": "pipeline", "indeg": 1, "outdeg": 0, "level": 6, "desc": "MP vs 동일가중(1/N) 비교", "core": false, "detail": "MP vs 동일가중(1/N) 벤치마크 비교 리포트(--benchmark). 초과수익/성과지표 산출.", "x": 1380, "y": 70}, {"id": "service.pipeline.correlation", "label": "correlation", "group": "pipeline", "indeg": 2, "outdeg": 0, "level": 3, "desc": "하락(다운사이드) 상관 행렬", "core": false, "detail": "팩터 간 하락(다운사이드) 상관 행렬 계산. 최소 관측수(min_downside_obs) 제약. 선정/분석 보조.", "x": 690, "y": 70}, {"id": "service.pipeline.factor_analysis", "label": "factor_analysis", "group": "pipeline", "indeg": 1, "outdeg": 0, "level": 2, "desc": "5분위 · 섹터필터 · L/N/S 라벨링", "core": false, "detail": "5분위 포트폴리오 구성 + 섹터 필터링 + L/N/S 라벨링([2][3]). Q1-Q5 스프레드 음수 섹터 제거, 분위 평균수익으로 롱/숏/중립 결정. 횡단면 정렬이라 시계열 과적합 아님. 백테스트 OOS에선 IS 규칙(rule_bundle)을 직접 적용(재학습 금지 = look-ahead 방지).", "x": 460, "y": 0}, {"id": "service.pipeline.model_portfolio", "label": "model_portfolio", "group": "pipeline", "indeg": 3, "outdeg": 7, "level": 6, "desc": "MP 오케스트레이터 · 종목별 비중 · CSV 산출", "core": true, "detail": "MP 파이프라인 오케스트레이터(코어). 데이터로딩→5분위→필터/라벨→롱숏수익→Top-N 선정→style_cap 가중치→종목별 mp_ls_weight 집계→CSV(Bloomberg 입력)까지 run()에서 순차 실행. 백테스트도 이 모듈을 래핑. OUTPUT_DIR/DATA_DIR 상수 보유.", "x": 1380, "y": -70}, {"id": "service.pipeline.optimization", "label": "optimization", "group": "pipeline", "indeg": 2, "outdeg": 0, "level": 5, "desc": "style_cap 제약 동일가중(CEW) 재분배", "core": false, "detail": "style_cap(기본 25%) 제약 하 동일가중(CEW) 재분배. 1/N에서 시작해 캡 초과 스타일을 반복 축소·정규화. 학습 가중치 없는 결정론적 제약.", "x": 1150, "y": -140}, {"id": "service.pipeline.smoothing", "label": "smoothing", "group": "pipeline", "indeg": 2, "outdeg": 0, "level": 5, "desc": "턴오버 스무딩 (step / deadband)", "core": false, "detail": "월별 가중치 턴오버 스무딩. 절대스텝(turnover_step)+데드밴드로 이동폭 제한. 기본 무스무딩(step=1.0). 스타일별 step 차등 지원.", "x": 1150, "y": 0}, {"id": "service.pipeline.weight_construction", "label": "weight_construction", "group": "pipeline", "indeg": 0, "outdeg": 0, "level": 3, "desc": "롱-숏 종목 수익률(net-of-cost) 계산", "core": false, "detail": "팩터별 롱-숏 종목 수익률을 벡터연산으로 산출(net-of-cost). 종목 내부 회전 turnover에 거래비용(bps) 차감. 롱/숏 leg 합산이 팩터 순수익률.", "x": 690, "y": -70}, {"id": "service.pipeline.weight_history", "label": "weight_history", "group": "pipeline", "indeg": 0, "outdeg": 0, "level": 5, "desc": "월별 가중치 이력 저장 (EMA prev)", "core": false, "detail": "운영 mp의 월별 팩터/스타일 가중치 이력 저장(output/mp_weight_history/). 다음 회차 EMA prev 입력 + 전월대비 delta 분석용. test 모드 skip.", "x": 1150, "y": 140}, {"id": "service.report.dashboard", "label": "dashboard", "group": "report", "indeg": 1, "outdeg": 3, "level": 8, "desc": "대시보드 HTML 조립 (viz)", "core": false, "detail": "viz 대시보드 조립 레이어. 기존 output CSV만 읽어 plotly 단일 HTML 생성(read-only). build_dashboard()가 백테스트+현재포트 섹션 조립.", "x": 1840, "y": -70}, {"id": "service.report.dashboard_charts", "label": "dashboard_charts", "group": "report", "indeg": 1, "outdeg": 1, "level": 8, "desc": "대시보드 plotly 차트", "core": false, "detail": "대시보드 plotly Figure 생성 레이어(누적수익·낙폭·분포·스타일배분·섹터·회전율 등). STYLE_COLORS 매핑.", "x": 1840, "y": 70}, {"id": "service.report.dashboard_data", "label": "dashboard_data", "group": "report", "indeg": 2, "outdeg": 1, "level": 8, "desc": "대시보드 데이터 레이어 (read-only)", "core": false, "detail": "대시보드 데이터 레이어(순수함수). CSV→정돈 DataFrame + 낙폭/KPI/스타일집계/상위 롱숏/회전율/churn/섹터 등 파생. plotly 의존 없어 테스트 용이.", "x": 1840, "y": 210}, {"id": "service.report.report_generator", "label": "report_generator", "group": "report", "indeg": 1, "outdeg": 2, "level": 8, "desc": "팩터/섹터/분위 PDF 리포트", "core": false, "detail": "팩터수익/섹터/분위 스프레드를 matplotlib PDF 멀티페이지 리포트로 생성(mp 실행 시). 스타일→색 매핑.", "x": 1840, "y": -210}], "edges": [{"from": "main", "to": "config"}, {"from": "main", "to": "service.backtest.overfit_diagnostics"}, {"from": "main", "to": "service.backtest.walk_forward_engine"}, {"from": "main", "to": "service.download.download_factors"}, {"from": "main", "to": "service.pipeline.benchmark_comparison"}, {"from": "main", "to": "service.pipeline.model_portfolio"}, {"from": "main", "to": "service.report.dashboard"}, {"from": "service.backtest.overfit_diagnostics", "to": "service.backtest.result_stitcher"}, {"from": "service.backtest.walk_forward_engine", "to": "config"}, {"from": "service.backtest.walk_forward_engine", "to": "service.backtest.data_slicer"}, {"from": "service.backtest.walk_forward_engine", "to": "service.backtest.result_stitcher"}, {"from": "service.backtest.walk_forward_engine", "to": "service.pipeline.correlation"}, {"from": "service.backtest.walk_forward_engine", "to": "service.pipeline.model_portfolio"}, {"from": "service.backtest.walk_forward_engine", "to": "service.pipeline.optimization"}, {"from": "service.backtest.walk_forward_engine", "to": "service.pipeline.smoothing"}, {"from": "service.download.download_factors", "to": "config"}, {"from": "service.download.download_validation", "to": "service.download.parquet_io"}, {"from": "service.pipeline.model_portfolio", "to": "config"}, {"from": "service.pipeline.model_portfolio", "to": "service.backtest.factor_selection"}, {"from": "service.pipeline.model_portfolio", "to": "service.download.parquet_io"}, {"from": "service.pipeline.model_portfolio", "to": "service.pipeline.correlation"}, {"from": "service.pipeline.model_portfolio", "to": "service.pipeline.optimization"}, {"from": "service.pipeline.model_portfolio", "to": "service.pipeline.smoothing"}, {"from": "service.pipeline.model_portfolio", "to": "service.report.report_generator"}, {"from": "service.report.dashboard", "to": "config"}, {"from": "service.report.dashboard", "to": "service.report.dashboard_charts"}, {"from": "service.report.dashboard", "to": "service.report.dashboard_data"}, {"from": "service.report.dashboard_charts", "to": "service.report.dashboard_data"}, {"from": "service.report.dashboard_data", "to": "service.download.parquet_io"}, {"from": "service.report.report_generator", "to": "service.pipeline.factor_analysis"}, {"from": "service.report.report_generator", "to": "service.pipeline.model_portfolio"}]}, STAGES=["진입", "다운로드", "팩터분석", "수익률·상관", "팩터선정", "가중치", "MP 조립", "백테스트", "리포트·시각화"];
+var PAL={
+ entry:{bg:'#e6edfb',bd:'#aac2ee',ti:'#274a7e'},
+ download:{bg:'#dbf2ea',bd:'#a5dcca',ti:'#15614f'},
+ pipeline:{bg:'#fbf2d1',bd:'#ecd884',ti:'#7a611a'},
+ backtest:{bg:'#ece5f8',bd:'#cdbcec',ti:'#503d82'},
+ report:{bg:'#fbe2ec',bd:'#f1bcd3',ti:'#84335a'}};
+var GLABEL={entry:'진입 (main/config)',download:'다운로드',pipeline:'파이프라인 (코어)',backtest:'백테스트',report:'리포트·시각화'};
+var PRESETS={'전체 시스템':['entry','download','pipeline','backtest','report'],
+ 'MP 파이프라인':['entry','download','pipeline','report'],
+ '백테스트':['entry','pipeline','backtest'],
+ '시각화':['entry','download','report'],
+ '다운로드 데이터':['entry','download']};
+var LSP='bok-codemap:', cur=null, groupOn={};
+Object.keys(PAL).forEach(function(g){groupOn[g]=true;});
+function ck(id){return LSP+id;} function hasC(id){return !!localStorage.getItem(ck(id));}
+var META={}; GRAPH.nodes.forEach(function(n){META[n.id]=n;});
+
+function nodeColor(n){var p=PAL[n.group]; var bd=hasC(n.id)?'#E24B4A':(n.core?'#d6a431':p.bd);
+ return {background:p.bg,border:bd,highlight:{background:p.bg,border:'#3266ad'}};}
+function nodeObj(n){var p=PAL[n.group];
+ return {id:n.id, x:n.x, y:n.y, value:n.indeg,
+  label:'<b>'+(n.core?'★ ':'')+n.label+'</b>\n'+n.desc,
+  title:n.id+'  ·  '+STAGES[n.level],
+  color:nodeColor(n), borderWidth:(hasC(n.id)||n.core)?2.6:1.4,
+  font:{multi:'html',size:12.5,color:'#8a8898',face:"-apple-system,Segoe UI,Malgun Gothic",
+        bold:{size:15,color:p.ti}}};}
+var nodes=new vis.DataSet(GRAPH.nodes.map(nodeObj));
+var edges=new vis.DataSet(GRAPH.edges.map(function(e,i){return {id:'e'+i,from:e.from,to:e.to};}));
+
+var net=new vis.Network(document.getElementById('net'),{nodes:nodes,edges:edges},{
+ layout:{hierarchical:false,improvedLayout:false},
+ nodes:{shape:'box',shapeProperties:{borderRadius:11},margin:{top:9,bottom:9,left:13,right:13},
+   widthConstraint:{minimum:165,maximum:235},scaling:{min:1,max:1.5}},
+ edges:{arrows:{to:{enabled:true,scaleFactor:0.5}},color:{color:'#c9cad6',highlight:'#3266ad',hover:'#3266ad'},
+   smooth:{type:'cubicBezier',forceDirection:'horizontal',roundness:0.35},width:1,selectionWidth:1.6},
+ physics:false,
+ interaction:{hover:true,tooltipDelay:140,dragNodes:true,dragView:true,zoomView:true,navigationButtons:false,keyboard:false,multiselect:true}});
+// 노드는 Python에서 계산한 고정 x,y 로 LR 배치됨 (계층 엔진 미사용) -> 자유 드래그 가능
+// 시작 줌: 전체 fit 시 너무 작으면 가독성 위해 최소 배율로 키우고 왼쪽(실행 시작)부터 보여준다.
+var MINSCALE=0.95;
+function initView(){net.fit({animation:false});
+ if(net.getScale()<MINSCALE){
+  var xs=GRAPH.nodes.map(function(n){return n.x;}), ys=GRAPH.nodes.map(function(n){return n.y;});
+  var minx=Math.min.apply(null,xs), cy=(Math.min.apply(null,ys)+Math.max.apply(null,ys))/2;
+  net.moveTo({scale:MINSCALE, position:{x:minx+360, y:cy}});}}
+net.once('afterDrawing',initView);
+var _rt; window.addEventListener('resize',function(){clearTimeout(_rt);_rt=setTimeout(function(){net.fit();},150);});
+
+// focus
+function focusNode(id){var conn=net.getConnectedNodes(id);var keep={};keep[id]=1;conn.forEach(function(c){keep[c]=1;});
+ nodes.update(nodes.get().map(function(n){return {id:n.id,opacity:keep[n.id]?1:0.16};}));
+ edges.update(edges.get().map(function(e){var on=(e.from===id||e.to===id);
+  return {id:e.id,color:{color:on?'#3266ad':'#e7e7ee'},width:on?2.3:0.6};}));}
+function clearFocus(){nodes.update(nodes.get().map(function(n){return {id:n.id,opacity:1};}));
+ edges.update(edges.get().map(function(e){return {id:e.id,color:{color:'#c9cad6'},width:1};}));}
+net.on('selectNode',function(p){
+ if(p.nodes.length===1){focusNode(p.nodes[0]);openEditor(p.nodes[0]);}
+ else{clearFocus();document.getElementById('cmt-head').textContent='선택 '+p.nodes.length+'개 · 드래그로 함께 이동';
+  document.getElementById('cmtbox').innerHTML='<div class="cmt-empty">Ctrl(또는 Shift)+클릭으로 여러 노드를 선택했습니다. 아무 노드나 드래그하면 함께 움직입니다.</div>';}});
+net.on('deselectNode',function(){clearFocus();renderCmtList();});
+net.on('click',function(p){if(!p.nodes.length){clearFocus();renderCmtList();}});
+
+// sidebar: presets + groups
+(function(){var pe=document.getElementById('presets');
+ Object.keys(PRESETS).forEach(function(name){var b=document.createElement('button');
+  b.className='preset'+(name==='전체 시스템'?' on':'');b.textContent=name;
+  b.onclick=function(){applyPreset(name);};pe.appendChild(b);});
+ var ge=document.getElementById('groups');
+ Object.keys(GLABEL).forEach(function(g){var l=document.createElement('label');l.className='grp';
+  l.innerHTML='<input type="checkbox" checked onchange="toggleGroup(\''+g+'\',this.checked)">'+
+   '<i style="background:'+PAL[g].bg+';border-color:'+PAL[g].bd+'"></i>'+GLABEL[g];
+  ge.appendChild(l);});})();
+function applyPreset(name){var on=PRESETS[name];Object.keys(groupOn).forEach(function(g){groupOn[g]=on.indexOf(g)>=0;});
+ document.querySelectorAll('#groups input').forEach(function(cb,i){cb.checked=groupOn[Object.keys(GLABEL)[i]];});
+ document.querySelectorAll('.preset').forEach(function(b){b.classList.toggle('on',b.textContent===name);});
+ applyVis();setTimeout(fitAll,40);}
+function toggleGroup(g,on){groupOn[g]=on;document.querySelectorAll('.preset').forEach(function(b){b.classList.remove('on');});applyVis();}
+function applyVis(){nodes.update(GRAPH.nodes.map(function(n){return {id:n.id,hidden:!groupOn[n.group]};}));
+ edges.update(GRAPH.edges.map(function(e,i){return {id:'e'+i,hidden:!(groupOn[META[e.from].group]&&groupOn[META[e.to].group])};}));}
+
+// zoom / search
+function zoom(f){net.moveTo({scale:net.getScale()*f});}
+function fitAll(){clearFocus();net.unselectAll();net.fit({animation:true});renderCmtList();}
+function onSearch(q){q=q.trim().toLowerCase();if(!q){clearFocus();return;}
+ var h=GRAPH.nodes.find(function(n){return n.id.toLowerCase().indexOf(q)>=0;});if(h)go(h.id);}
+function go(id){net.selectNodes([id]);net.focus(id,{scale:1.05,animation:true});focusNode(id);openEditor(id);}
+
+// comments (sidebar)
+function openEditor(id){cur=id;var m=META[id];var outs=[],ins=[];
+ GRAPH.edges.forEach(function(e){if(e.from===id)outs.push(e.to);if(e.to===id)ins.push(e.from);});
+ function chips(a){return a.length?a.map(function(x){return '<a onclick="go(\''+x+'\')">'+META[x].label+'</a>';}).join(''):'<span style="color:#bbb">없음</span>';}
+ document.getElementById('cmt-head').textContent='코멘트 · '+m.label;
+ document.getElementById('cmtbox').innerHTML=
+  '<div class="editor"><div class="ename">'+(m.core?'★ ':'')+m.label+'</div>'+
+  '<div class="epath">'+id+'</div>'+
+  '<div class="edetail">'+m.detail+'</div>'+
+  '<div class="elabel">내 메모 (피드백)</div>'+
+  '<textarea id="cmt-text" placeholder="이 모듈에 대한 메모...">'+(localStorage.getItem(ck(id))||'')+'</textarea>'+
+  '<div class="ebtn"><button class="save" onclick="saveC()">저장</button><button onclick="delC()">삭제</button></div>'+
+  '<div class="deps"><h4>IMPORT (→)</h4>'+chips(outs)+'<h4>IMPORTED BY (←)</h4>'+chips(ins)+'</div></div>';}
+function saveC(){if(!cur)return;var v=document.getElementById('cmt-text').value.trim();
+ if(v)localStorage.setItem(ck(cur),v);else localStorage.removeItem(ck(cur));mark(cur);}
+function delC(){if(!cur)return;localStorage.removeItem(ck(cur));var t=document.getElementById('cmt-text');if(t)t.value='';mark(cur);}
+function mark(id){nodes.update({id:id,color:nodeColor(META[id]),borderWidth:(hasC(id)||META[id].core)?2.4:1.3});updateHead();}
+function updateHead(){var n=GRAPH.nodes.filter(function(x){return hasC(x.id);}).length;
+ if(!cur)document.getElementById('cmt-head').textContent='코멘트 ('+n+')';}
+function renderCmtList(){cur=null;var ks=GRAPH.nodes.filter(function(n){return hasC(n.id);});
+ document.getElementById('cmt-head').textContent='코멘트 ('+ks.length+')';
+ var box=document.getElementById('cmtbox');
+ if(!ks.length){box.innerHTML='<div class="cmt-empty">노드를 클릭하면 여기서 메모를 추가할 수 있습니다. 저장한 메모는 이 목록에 모입니다.</div>';return;}
+ box.innerHTML=ks.map(function(n){return '<div class="cmt-item" onclick="go(\''+n.id+'\')"><b>'+n.label+'</b><div>'+
+   (localStorage.getItem(ck(n.id))||'').replace(/</g,'&lt;')+'</div></div>';}).join('');}
+renderCmtList();
+</script>
+</body></html>
