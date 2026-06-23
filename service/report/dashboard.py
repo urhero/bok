@@ -20,30 +20,38 @@ logger = logging.getLogger(__name__)
 _PLOTLY_CFG = {"displayModeBar": False, "responsive": True}
 
 _PAGE_CSS = """
-:root { color-scheme: light; }
+:root {
+  --canvas:#0b0e11; --card:#1e2329; --elev:#2b3139; --hair:#2b3139;
+  --primary:#fcd535; --on-primary:#181a20; --body:#eaecef; --on-dark:#ffffff;
+  --muted:#707a8a; --muted-strong:#929aa5; --up:#0ecb81; --down:#f6465d;
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Malgun Gothic',sans-serif;
+  --mono:'JetBrains Mono','Consolas',ui-monospace,monospace;
+  color-scheme: dark;
+}
 * { box-sizing: border-box; }
-body { margin: 0; background: #f5f4ef; color: #2c2c2a;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif; }
+body { margin: 0; background: var(--canvas); color: var(--body);
+  font-family: var(--sans); }
 .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 20px 48px; }
 header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
   margin-bottom: 20px; }
-header .title { font-size: 22px; font-weight: 500; }
-header .date { font-size: 13px; color: #0c447c; background: #e6f1fb;
-  padding: 3px 10px; border-radius: 8px; }
-header .gen { font-size: 12px; color: #888780; margin-left: auto; }
-h2 { font-size: 17px; font-weight: 500; color: #444441; margin: 28px 0 12px;
-  border-bottom: 1px solid #d3d1c7; padding-bottom: 6px; }
+header .title { font-size: 24px; font-weight: 600; letter-spacing: -0.3px; color: var(--on-dark); }
+header .date { font-size: 13px; font-weight: 600; color: var(--primary); background: var(--card);
+  padding: 4px 12px; border-radius: 8px; font-family: var(--mono); }
+header .gen { font-size: 12px; color: var(--muted); margin-left: auto; }
+h2 { font-size: 18px; font-weight: 600; color: var(--on-dark); margin: 32px 0 14px;
+  border-bottom: 1px solid var(--hair); padding-bottom: 8px; }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 10px; margin-bottom: 14px; }
-.kpi { background: #fff; border: 1px solid #e7e5dd; border-radius: 8px; padding: 10px 14px; }
-.kpi-label { font-size: 12px; color: #5f5e5a; }
-.kpi-val { font-size: 22px; font-weight: 500; margin-top: 2px; }
+.kpi { background: var(--card); border: 1px solid var(--hair); border-radius: 8px; padding: 12px 14px; }
+.kpi-label { font-size: 12px; color: var(--muted); }
+.kpi-val { font-size: 22px; font-weight: 600; margin-top: 2px; color: var(--on-dark);
+  font-family: var(--mono); letter-spacing: -0.3px; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: 14px; margin-bottom: 14px; }
-.card { background: #fff; border: 1px solid #e7e5dd; border-radius: 12px;
+.card { background: var(--card); border: 1px solid var(--hair); border-radius: 12px;
   padding: 8px 10px; overflow: hidden; }
 .card.full { margin-bottom: 14px; }
-.note { font-size: 13px; color: #888780; padding: 8px 0; }
+.note { font-size: 13px; color: var(--muted); padding: 8px 0; }
 .plotly-graph-div { width: 100% !important; }
 """
 
@@ -216,6 +224,10 @@ def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
         '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f'<title>BOK 포트폴리오 대시보드 {snap}</title>'
+        '<link rel="preconnect" href="https://fonts.googleapis.com">'
+        '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+        '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700'
+        '&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">'
         f'<style>{_PAGE_CSS}</style></head><body>'
         f'<div class="wrap">{body}</div>{_RESIZE_SCRIPT}</body></html>'
     )
