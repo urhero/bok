@@ -6,7 +6,6 @@ End-to-End Factor Pipeline (v4-complete)
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,7 +36,7 @@ RENAME_SECTORS = {
 }
 
 def plot_factor_returns(
-    data, style_name, factor_name, name, mode, ax=None, show=False, dropped=None
+    data, style_name, name, mode, ax=None, dropped=None
 ):
     if dropped is None:
         dropped = set()
@@ -144,8 +143,8 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
 
     (
         kept_abbr,
-        kept_name,
-        kept_style,
+        _kept_name,
+        _kept_style,
         kept_idx,
         dropped_sec,
         cleaned_raw,
@@ -297,7 +296,7 @@ def _generate_plots(
             drop_set = factor2drop.get(factor_abbr, set()) if factor2drop else set()
 
             plot_factor_returns(
-                data, style_name, factor_abbr, full_name, mode, ax=ax, dropped=drop_set
+                data, style_name, full_name, mode, ax=ax, dropped=drop_set
             )
             ax.set_axis_on()
             idx_in_page += 1

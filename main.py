@@ -150,8 +150,6 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_benchmark_comparison(start_date, end_date, test_file):
     """--benchmark 옵션: 파이프라인 후 벤치마크 비교 실행."""
-    from pathlib import Path
-
     from config import PARAM, PIPELINE_PARAMS
     from service.pipeline.benchmark_comparison import compare_vs_benchmark, print_benchmark_report
     from service.pipeline.model_portfolio import DATA_DIR, ModelPortfolioPipeline, OUTPUT_DIR

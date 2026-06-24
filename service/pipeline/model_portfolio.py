@@ -23,7 +23,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from rich.progress import track
 
 from config import PARAM, PIPELINE_PARAMS
 

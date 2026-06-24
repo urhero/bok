@@ -13,7 +13,6 @@ Usage
 """
 
 import logging
-from typing import Any, Dict
 
 import pandas as pd
 import sqlalchemy as sql

@@ -16,7 +16,6 @@ import logging
 import time
 from typing import Any
 
-import numpy as np
 import pandas as pd
 from rich.progress import track
 
@@ -77,7 +76,7 @@ def _run_rule_learning(
     # [3] 섹터 필터링 + L/N/S 라벨링
     factor_name_list = factor_metadata.factorName.tolist()
     style_name_list = factor_metadata.styleName.tolist()
-    kept_abbrs, kept_names, kept_styles, kept_idx, dropped_sec, filtered_data = filter_and_label_factors(
+    kept_abbrs, kept_names, kept_styles, _kept_idx, dropped_sec, filtered_data = filter_and_label_factors(
         factor_abbr_list, factor_name_list, style_name_list, factor_stats,
         spread_threshold_pct=pp["spread_threshold_pct"],
     )
@@ -137,7 +136,7 @@ def _apply_rules_and_aggregate(
     pp = pipeline.pipeline_params
 
     # 전체 데이터에 대해 메타데이터 병합
-    factor_metadata, merged_data_full, factor_abbr_list, orders = pipeline._prepare_metadata(
+    _factor_metadata, merged_data_full, factor_abbr_list, orders = pipeline._prepare_metadata(
         raw_data, mreturn_df
     )
 
@@ -239,7 +238,6 @@ def _run_weight_optimization(
     ret_df_is: pd.DataFrame,
     meta: pd.DataFrame,
     pp: dict,
-    loop_index: int = 0,
 ) -> tuple[dict[str, float], pd.DataFrame]:
     """[6] 가중치 계산.
 
@@ -251,7 +249,7 @@ def _run_weight_optimization(
     style_list = [style_map[f] for f in factor_list]
     ret_subset = ret_df_is[factor_list]
 
-    best_stats, weights_tbl = optimize_constrained_weights(
+    _best_stats, weights_tbl = optimize_constrained_weights(
         ret_subset, style_list,
         mode=pp["optimization_mode"],
         style_cap=pp["style_cap"],
@@ -499,7 +497,7 @@ class WalkForwardEngine:
 
                         try:
                             raw_new_weights, cached_meta = _run_weight_optimization(
-                                ret_df_selected, meta_top, pp, loop_index=i,
+                                ret_df_selected, meta_top, pp,
                             )
                         except (ValueError, RuntimeError) as e:
                             logger.warning("OOS %s: weight optimization failed: %s — 이전 가중치 유지", oos_date, e)
