@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BOK 파이프라인 재구조화 — 멀티에이전트 설계 리뷰</title>
+  <meta name="description" content="13개 에이전트가 분석·검증·종합한 BOK 팩터 파이프라인 재구조화. 산출물 byte-identity를 유지하며 유지보수성 재설계.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://code.iconify.design/iconify-icon/2.3.0/iconify-icon.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Pretendard', 'system-ui', 'sans-serif'],
+            display: ['Outfit', 'Pretendard', 'sans-serif'],
+          },
+          colors: {
+            accent: {
+              DEFAULT: '#34d399',
+              soft: '#6ee7b7',
+              deep: '#059669',
+            },
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    :root { color-scheme: dark; }
+    html { scroll-behavior: smooth; }
+    body { background-color: #09090b; }
+    .kr { word-break: keep-all; }
+    .mono { font-variant-numeric: tabular-nums; font-family: 'Outfit', 'Pretendard', monospace; }
+
+    /* Grain overlay */
+    .grain::after {
+      content: ""; position: fixed; inset: 0; z-index: 60; pointer-events: none; opacity: 0.04;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(1.75rem); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+    @keyframes meshDrift { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(3%, -4%) scale(1.08); } }
+
+    .reveal { opacity: 0; }
+    .reveal.in { animation: fadeInUp 0.7s cubic-bezier(0.16,1,0.3,1) forwards; animation-delay: calc(var(--i, 0) * 90ms); }
+
+    .glass {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+    .glass-strong {
+      background: rgba(255,255,255,0.045);
+      border: 1px solid rgba(255,255,255,0.10);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 24px 60px -30px rgba(0,0,0,0.8);
+    }
+    .mesh {
+      background:
+        radial-gradient(40% 50% at 15% 10%, rgba(52,211,153,0.14), transparent 70%),
+        radial-gradient(45% 55% at 85% 0%, rgba(16,185,129,0.10), transparent 70%),
+        radial-gradient(50% 60% at 70% 90%, rgba(45,212,191,0.07), transparent 75%);
+    }
+    .cta-magnet { transition: transform 0.4s cubic-bezier(0.16,1,0.3,1), box-shadow 0.4s ease; }
+    .cta-magnet:hover { transform: scale(1.02); box-shadow: 0 18px 50px -18px rgba(52,211,153,0.55); }
+    .cta-magnet:active { transform: scale(0.985); }
+    .card-lift { transition: transform 0.4s cubic-bezier(0.16,1,0.3,1), border-color 0.4s ease, background 0.4s ease; }
+    .card-lift:hover { transform: translateY(-4px); border-color: rgba(52,211,153,0.35); background: rgba(255,255,255,0.05); }
+    .rule { height:1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent); }
+  </style>
+</head>
+<body class="grain font-sans text-zinc-200 antialiased selection:bg-accent/30 selection:text-white">
+
+  <!-- ambient mesh -->
+  <div class="fixed inset-0 -z-10 mesh" style="animation: meshDrift 18s ease-in-out infinite;"></div>
+  <div class="fixed inset-0 -z-10 bg-[radial-gradient(60%_50%_at_50%_-10%,rgba(255,255,255,0.04),transparent)]"></div>
+
+  <!-- ===== NAV (glass pill) ===== -->
+  <nav class="fixed top-4 inset-x-0 z-40 px-4">
+    <div class="max-w-6xl mx-auto glass rounded-full px-5 py-2.5 flex items-center justify-between backdrop-blur-xl">
+      <a href="#top" class="flex items-center gap-2.5">
+        <span class="grid place-items-center w-7 h-7 rounded-lg bg-accent/15 text-accent">
+          <iconify-icon icon="solar:layers-minimalistic-bold" width="16"></iconify-icon>
+        </span>
+        <span class="font-display font-semibold tracking-tight text-zinc-100">BOK Restructure</span>
+      </a>
+      <div class="hidden md:flex items-center gap-7 text-sm text-zinc-400">
+        <a href="#process" class="hover:text-accent transition-colors">분석 과정</a>
+        <a href="#proposals" class="hover:text-accent transition-colors">4개 제안</a>
+        <a href="#phases" class="hover:text-accent transition-colors">실행</a>
+        <a href="#verify" class="hover:text-accent transition-colors">검증</a>
+      </div>
+      <a href="#verify" class="cta-magnet text-sm font-semibold rounded-full px-4 py-2 bg-accent text-zinc-950">
+        결과 보기
+      </a>
+    </div>
+  </nav>
+
+  <!-- ===== HERO (split, left content / right verdict card) ===== -->
+  <header id="top" class="relative min-h-[100dvh] flex items-center pt-28 pb-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-12 gap-12 items-center w-full">
+      <div class="lg:col-span-7">
+        <div class="reveal inline-flex items-center gap-2 rounded-full glass px-3.5 py-1.5 text-xs text-accent-soft mb-7" style="--i:0">
+          <span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span>
+          Multi-Agent Architecture Review · 13 agents
+        </div>
+        <h1 class="reveal kr font-display text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.05] text-white" style="--i:1">
+          전부 다시 짠다면<br><span class="text-accent">어떤 구조</span>가 최선인가
+        </h1>
+        <p class="reveal kr mt-7 text-lg md:text-xl text-zinc-400 leading-relaxed max-w-2xl" style="--i:2">
+          BOK 팩터 파이프라인을 처음부터 재설계한다고 가정하고, 서로 다른 4개 설계철학을
+          독립 에이전트가 제안했다. 별도 에이전트가 적대적으로 검증하고, 또 다른 에이전트가
+          종합해 단일 실행계획을 세웠다. 핵심 제약은 단 하나 — <span class="text-zinc-200 font-medium">산출물 수치를 1바이트도 바꾸지 않는다.</span>
+        </p>
+        <div class="reveal mt-9 flex flex-wrap items-center gap-3" style="--i:3">
+          <a href="#proposals" class="cta-magnet inline-flex items-center gap-2 rounded-full px-7 py-3.5 bg-accent text-zinc-950 font-semibold text-base">
+            4개 설계안 비교
+            <iconify-icon icon="solar:arrow-right-linear" width="18"></iconify-icon>
+          </a>
+          <a href="#phases" class="inline-flex items-center gap-2 rounded-full px-6 py-3.5 glass text-zinc-200 font-medium hover:border-accent/40 transition-colors">
+            <iconify-icon icon="solar:routing-2-linear" width="18"></iconify-icon>
+            6단계 실행 보기
+          </a>
+        </div>
+      </div>
+
+      <!-- verdict card -->
+      <div class="lg:col-span-5 reveal" style="--i:4">
+        <div class="glass-strong rounded-3xl p-7 backdrop-blur-xl relative overflow-hidden">
+          <div class="absolute -top-16 -right-16 w-44 h-44 rounded-full bg-accent/10 blur-2xl"></div>
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-zinc-400">최종 검증</span>
+            <span class="inline-flex items-center gap-1.5 text-accent text-sm font-semibold">
+              <iconify-icon icon="solar:check-circle-bold" width="18"></iconify-icon> ALL PASS
+            </span>
+          </div>
+          <div class="mt-5 space-y-4">
+            <div class="flex items-end justify-between border-b border-white/5 pb-4">
+              <span class="kr text-zinc-400">산출물 byte-identical</span>
+              <span class="mono text-3xl font-bold text-white">11<span class="text-base text-zinc-500 font-normal">/11</span></span>
+            </div>
+            <div class="flex items-end justify-between border-b border-white/5 pb-4">
+              <span class="kr text-zinc-400">단위 테스트</span>
+              <span class="mono text-3xl font-bold text-white">277<span class="text-base text-zinc-500 font-normal"> pass</span></span>
+            </div>
+            <div class="flex items-end justify-between border-b border-white/5 pb-4">
+              <span class="kr text-zinc-400">수치 변경</span>
+              <span class="mono text-3xl font-bold text-accent">0</span>
+            </div>
+            <div class="flex items-end justify-between">
+              <span class="kr text-zinc-400">머지된 커밋</span>
+              <span class="mono text-3xl font-bold text-white">6</span>
+            </div>
+          </div>
+          <p class="kr mt-5 text-xs text-zinc-500 leading-relaxed">
+            mp test · 실데이터 mp(meta_data.csv 포함) · walk-forward 백테스트 전 산출물이
+            재구조화 전후 완전히 동일함을 byte 단위로 확인.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <a href="#process" class="absolute bottom-7 left-1/2 -translate-x-1/2 text-zinc-600 hover:text-accent transition-colors" aria-label="scroll">
+      <iconify-icon icon="solar:double-alt-arrow-down-linear" width="26" style="animation: float 2.4s ease-in-out infinite;"></iconify-icon>
+    </a>
+  </header>
+
+  <!-- ===== METRICS STRIP ===== -->
+  <section class="border-y border-white/5 bg-white/[0.015]">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 grid grid-cols-2 md:grid-cols-4 gap-8">
+      <div class="reveal" style="--i:0">
+        <div class="mono text-4xl font-bold text-white">13</div>
+        <div class="kr text-sm text-zinc-500 mt-1">에이전트 (매핑·설계·검증·종합)</div>
+      </div>
+      <div class="reveal" style="--i:1">
+        <div class="mono text-4xl font-bold text-white">1.36M</div>
+        <div class="kr text-sm text-zinc-500 mt-1">서브에이전트 토큰</div>
+      </div>
+      <div class="reveal" style="--i:2">
+        <div class="mono text-4xl font-bold text-white">~12<span class="text-xl text-zinc-500">분</span></div>
+        <div class="kr text-sm text-zinc-500 mt-1">분석 소요 (4단계 파이프라인)</div>
+      </div>
+      <div class="reveal" style="--i:3">
+        <div class="mono text-4xl font-bold text-white">7</div>
+        <div class="kr text-sm text-zinc-500 mt-1">고정한 결정성 핫스팟</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== PROCESS (horizontal flow) ===== -->
+  <section id="process" class="py-24 md:py-32">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="max-w-3xl">
+        <span class="reveal text-accent text-sm font-semibold tracking-wide uppercase">The Process</span>
+        <h2 class="reveal kr font-display text-4xl md:text-5xl font-bold tracking-tight text-white mt-3 leading-tight" style="--i:1">
+          제안 하나가 아니라, 충돌하는 네 개에서 출발했다
+        </h2>
+        <p class="reveal kr text-zinc-400 text-lg mt-5 leading-relaxed" style="--i:2">
+          단일 모델의 첫 답을 믿지 않는다. 같은 문제를 네 가지 철학으로 병렬 설계하고,
+          각 안을 별도 검증자가 깨뜨리려 시도한 뒤, 종합 에이전트가 검증된 아이디어만 골라 합쳤다.
+        </p>
+      </div>
+
+      <div class="mt-14 grid lg:grid-cols-4 gap-5">
+        <!-- step 1 -->
+        <div class="reveal card-lift glass rounded-2xl p-6" style="--i:0">
+          <div class="flex items-center justify-between">
+            <span class="grid place-items-center w-11 h-11 rounded-xl bg-accent/12 text-accent"><iconify-icon icon="solar:map-arrow-square-linear" width="22"></iconify-icon></span>
+            <span class="mono text-xs text-zinc-600">01</span>
+          </div>
+          <h3 class="kr font-semibold text-lg text-white mt-5">현재구조 매핑</h3>
+          <p class="kr text-sm text-zinc-400 mt-2 leading-relaxed">4개 리더가 서브시스템별로 책임·의존성·결합 냄새, 그리고 수치/계약 위험 경로를 정밀 매핑.</p>
+          <span class="inline-block mt-4 text-xs text-zinc-600">4 agents · Sonnet</span>
+        </div>
+        <!-- step 2 -->
+        <div class="reveal card-lift glass rounded-2xl p-6" style="--i:1">
+          <div class="flex items-center justify-between">
+            <span class="grid place-items-center w-11 h-11 rounded-xl bg-accent/12 text-accent"><iconify-icon icon="solar:lightbulb-bolt-linear" width="22"></iconify-icon></span>
+            <span class="mono text-xs text-zinc-600">02</span>
+          </div>
+          <h3 class="kr font-semibold text-lg text-white mt-5">4개 철학 설계</h3>
+          <p class="kr text-sm text-zinc-400 mt-2 leading-relaxed">계층형·함수형코어·최소위험·계약우선 — 서로 다른 가치관으로 목표 아키텍처를 독립 제안.</p>
+          <span class="inline-block mt-4 text-xs text-zinc-600">4 agents · Opus</span>
+        </div>
+        <!-- step 3 -->
+        <div class="reveal card-lift glass rounded-2xl p-6" style="--i:2">
+          <div class="flex items-center justify-between">
+            <span class="grid place-items-center w-11 h-11 rounded-xl bg-accent/12 text-accent"><iconify-icon icon="solar:shield-warning-linear" width="22"></iconify-icon></span>
+            <span class="mono text-xs text-zinc-600">03</span>
+          </div>
+          <h3 class="kr font-semibold text-lg text-white mt-5">적대적 검증</h3>
+          <p class="kr text-sm text-zinc-400 mt-2 leading-relaxed">각 안을 독립 검증자가 제약·범위초과·결정성 위험 기준으로 깨뜨리려 시도하고 점수화.</p>
+          <span class="inline-block mt-4 text-xs text-zinc-600">4 agents · Opus</span>
+        </div>
+        <!-- step 4 -->
+        <div class="reveal card-lift glass rounded-2xl p-6" style="--i:3">
+          <div class="flex items-center justify-between">
+            <span class="grid place-items-center w-11 h-11 rounded-xl bg-accent/12 text-accent"><iconify-icon icon="solar:diagram-up-linear" width="22"></iconify-icon></span>
+            <span class="mono text-xs text-zinc-600">04</span>
+          </div>
+          <h3 class="kr font-semibold text-lg text-white mt-5">종합</h3>
+          <p class="kr text-sm text-zinc-400 mt-2 leading-relaxed">승자 하나를 베끼지 않고, 검증된 best idea만 접목 + 지적된 위험은 배제해 단일 계획 산출.</p>
+          <span class="inline-block mt-4 text-xs text-zinc-600">1 agent · Opus</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== PROPOSALS (bento, asymmetric) ===== -->
+  <section id="proposals" class="py-24 md:py-32 border-t border-white/5 bg-white/[0.015]">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
+        <div class="max-w-2xl">
+          <span class="reveal text-accent text-sm font-semibold tracking-wide uppercase">Four Proposals</span>
+          <h2 class="reveal kr font-display text-4xl md:text-5xl font-bold tracking-tight text-white mt-3 leading-tight" style="--i:1">
+            네 개의 설계안과 검증 점수
+          </h2>
+        </div>
+        <p class="reveal kr text-zinc-400 max-w-md" style="--i:2">
+          순수함수화가 가장 아름다웠지만(함수형코어) 부동소수 byte-diff 위험으로 최하점.
+          가장 보수적인 <span class="text-accent font-medium">최소위험 실용</span>이 골격으로 채택됐다.
+        </p>
+      </div>
+
+      <div class="mt-14 grid md:grid-cols-6 gap-5">
+        <!-- chosen, wide -->
+        <div class="reveal card-lift glass-strong rounded-3xl p-7 md:col-span-4 relative overflow-hidden" style="--i:0">
+          <div class="absolute -top-20 -right-20 w-52 h-52 rounded-full bg-accent/10 blur-3xl"></div>
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center gap-2 text-xs font-semibold rounded-full bg-accent/15 text-accent px-3 py-1">
+              <iconify-icon icon="solar:crown-minimalistic-bold" width="14"></iconify-icon> 채택 골격
+            </span>
+            <span class="mono text-2xl font-bold text-accent">7.5</span>
+          </div>
+          <h3 class="kr font-display text-2xl font-bold text-white mt-5">최소위험 실용 리팩터</h3>
+          <p class="kr text-zinc-400 mt-3 leading-relaxed max-w-xl">
+            수치 동일성을 최우선으로 보호하며 유지보수성을 가장 크게 올리는 "최소 이동 집합"만 수행.
+            비대한 파일 분할과 명백한 오배치 정리에 집중하고, 위험한 광역 재배치는 지양한다.
+          </p>
+          <div class="mt-5 flex flex-wrap gap-2">
+            <span class="text-xs rounded-md glass px-2.5 py-1 text-zinc-300">글자보존 이동</span>
+            <span class="text-xs rounded-md glass px-2.5 py-1 text-zinc-300">최소 표면적</span>
+            <span class="text-xs rounded-md glass px-2.5 py-1 text-zinc-300">byte-identity 우선</span>
+          </div>
+        </div>
+
+        <!-- layered -->
+        <div class="reveal card-lift glass rounded-3xl p-7 md:col-span-2" style="--i:1">
+          <div class="flex items-center justify-between">
+            <span class="grid place-items-center w-10 h-10 rounded-xl bg-white/5 text-zinc-300"><iconify-icon icon="solar:layers-linear" width="20"></iconify-icon></span>
+            <span class="mono text-xl font-bold text-zinc-200">7.5</span>
+          </div>
+          <h3 class="kr font-semibold text-lg text-white mt-5">계층형 / DDD-lite</h3>
+          <p class="kr text-sm text-zinc-400 mt-2 leading-relaxed">data-access / domain / orchestration / presentation 4계층 엄격 분리. 공유 도메인 로직 승격.</p>
+          <p class="kr text-xs text-accent-soft mt-4"><iconify-icon icon="solar:check-read-linear" width="13"></iconify-icon> 채택된 아이디어: factor_selection 도메인 승격</p>
+        </div>
+
+        <!-- contract-first -->
+        <div class="reveal card-lift glass rounded-3xl p-7 md:col-span-3" style="--i:2">
+          <div class="flex items-center justify-between">
+            <span class="grid place-items-center w-10 h-10 rounded-xl bg-white/5 text-zinc-300"><iconify-icon icon="solar:document-add-linear" width="20"></iconify-icon></span>
+            <span class="mono text-xl font-bold text-zinc-200">7.5</span>
+          </div>
+          <h3 class="kr font-semibold text-lg text-white mt-5">계약 우선 &amp; 확장성</h3>
+          <p class="kr text-sm text-zinc-400 mt-2 leading-relaxed">외부 계약(Bloomberg CSV 스키마, PIPELINE_PARAMS, SQL allowlist)을 명시 경계로 중앙화하고 factor/ranking을 플러그인화.</p>
+          <p class="kr text-xs text-accent-soft mt-4"><iconify-icon icon="solar:check-read-linear" width="13"></iconify-icon> 채택된 아이디어: 직렬화 계약 중앙화</p>
+        </div>
+
+        <!-- functional core -->
+        <div class="reveal card-lift glass rounded-3xl p-7 md:col-span-3" style="--i:3">
+          <div class="flex items-center justify-between">
+            <span class="grid place-items-center w-10 h-10 rounded-xl bg-white/5 text-zinc-300"><iconify-icon icon="solar:function-square-linear" width="20"></iconify-icon></span>
+            <span class="mono text-xl font-bold text-zinc-400">6.5</span>
+          </div>
+          <h3 class="kr font-semibold text-lg text-white mt-5">함수형 코어 / 명령형 셸</h3>
+          <p class="kr text-sm text-zinc-400 mt-2 leading-relaxed">각 단계를 순수 함수로, IO·부수효과는 얇은 셸로 격리. 결정성/테스트성은 최고지만 광역 재작성이 byte-diff를 부른다.</p>
+          <p class="kr text-xs text-zinc-500 mt-4"><iconify-icon icon="solar:check-read-linear" width="13"></iconify-icon> 채택된 아이디어: 결정성 체크리스트(7 핫스팟)</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SYNTHESIS (zig-zag) ===== -->
+  <section class="py-24 md:py-32">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-14 items-center">
+      <div>
+        <span class="reveal text-accent text-sm font-semibold tracking-wide uppercase">The Synthesis</span>
+        <h2 class="reveal kr font-display text-4xl md:text-5xl font-bold tracking-tight text-white mt-3 leading-tight" style="--i:1">
+          "재작성"이 아니라<br>글자보존 이동
+        </h2>
+        <p class="reveal kr text-zinc-400 text-lg mt-5 leading-relaxed" style="--i:2">
+          종합의 핵심 통찰은 적대적 검증이 '중복 통합' 본능을 기각한 것이다. 함수 본문을 새로 쓰는
+          순간 부동소수 연산 순서가 달라져 수치가 깨진다. 그래서 채택된 원칙은 단순하다 —
+          <span class="text-zinc-200 font-medium">본문은 1바이트도 바꾸지 않고 위치와 import만 옮긴다.</span>
+        </p>
+        <div class="reveal mt-7 space-y-3" style="--i:3">
+          <div class="flex items-start gap-3">
+            <iconify-icon icon="solar:check-circle-bold" class="text-accent mt-0.5 shrink-0" width="20"></iconify-icon>
+            <p class="kr text-zinc-300"><span class="text-white font-medium">최소위험</span> 골격에 <span class="text-white font-medium">계층형</span>의 도메인 승격을 접목</p>
+          </div>
+          <div class="flex items-start gap-3">
+            <iconify-icon icon="solar:check-circle-bold" class="text-accent mt-0.5 shrink-0" width="20"></iconify-icon>
+            <p class="kr text-zinc-300"><span class="text-white font-medium">계약우선</span>의 직렬화 상수 중앙화 + <span class="text-white font-medium">함수형코어</span>의 결정성 체크리스트</p>
+          </div>
+          <div class="flex items-start gap-3">
+            <iconify-icon icon="solar:check-circle-bold" class="text-accent mt-0.5 shrink-0" width="20"></iconify-icon>
+            <p class="kr text-zinc-300">검증이 지적한 scope-creep·결정성 위험은 전부 배제</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- determinism hotspots code panel -->
+      <div class="reveal" style="--i:2">
+        <div class="glass-strong rounded-2xl overflow-hidden">
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-white/5">
+            <span class="w-2.5 h-2.5 rounded-full bg-zinc-700"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-zinc-700"></span>
+            <span class="w-2.5 h-2.5 rounded-full bg-zinc-700"></span>
+            <span class="ml-2 text-xs text-zinc-500 mono">determinism_hotspots — 이동 금지</span>
+          </div>
+          <pre class="p-5 text-[13px] leading-relaxed overflow-x-auto"><code class="mono"><span class="text-zinc-500"># sorted/round/dtype 1:1 보존 (7곳)</span>
+<span class="text-accent">smoothing.py:51</span>      sorted(set(target)|set(prev))
+<span class="text-accent">selection.py:208</span>     hysteresis 타이브레이크 key
+<span class="text-accent">walk_forward:542</span>     sorted(available_factors)
+<span class="text-accent">model_portfolio:473</span>  sort_values(['factor',...])
+<span class="text-accent">model_portfolio:499</span>  factor_weight.round(12)
+<span class="text-accent">optimization:48,88</span>   np.float32 유지
+<span class="text-accent">weight_history:154</span>   groupby + sort_values
+
+<span class="text-zinc-500"># 가드: git diff -w 로 위치변화 외 0 확인</span></code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== PHASES (timeline) ===== -->
+  <section id="phases" class="py-24 md:py-32 border-t border-white/5 bg-white/[0.015]">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="max-w-3xl mb-14">
+        <span class="reveal text-accent text-sm font-semibold tracking-wide uppercase">Execution</span>
+        <h2 class="reveal kr font-display text-4xl md:text-5xl font-bold tracking-tight text-white mt-3 leading-tight" style="--i:1">
+          위험 낮은 순서로, 단계마다 검증 게이트
+        </h2>
+        <p class="reveal kr text-zinc-400 text-lg mt-5 leading-relaxed" style="--i:2">
+          저렴한 단계(mp test + pytest)를 먼저 통과시키고, 41분짜리 백테스트 회귀는 계산경로를
+          건드리는 단계에만 지불했다.
+        </p>
+      </div>
+
+      <div class="relative">
+        <div class="absolute left-[19px] md:left-1/2 top-2 bottom-2 w-px bg-white/8 md:-translate-x-1/2"></div>
+        <div class="space-y-5">
+
+          <!-- P1 -->
+          <div class="reveal relative md:grid md:grid-cols-2 md:gap-10 items-center" style="--i:0">
+            <div class="md:text-right md:pr-10">
+              <div class="glass card-lift rounded-2xl p-6 ml-12 md:ml-0">
+                <div class="flex md:justify-end items-center gap-3">
+                  <span class="kr font-semibold text-white text-lg">factor_selection 도메인 승격</span>
+                </div>
+                <p class="kr text-sm text-zinc-400 mt-2">backtest/ 에 있으나 production도 쓰던 공유 로직을 <span class="mono text-accent-soft">service/factor/selection.py</span> 로. 레이어 역전 해소.</p>
+                <div class="mt-3 text-xs text-zinc-500 md:text-right">게이트: mp test diff 0 · 277 pass · rename 100%</div>
+              </div>
+            </div>
+            <span class="absolute left-2.5 md:left-1/2 md:-translate-x-1/2 top-6 md:top-1/2 md:-translate-y-1/2 grid place-items-center w-9 h-9 rounded-full bg-accent text-zinc-950 mono font-bold text-sm ring-4 ring-zinc-950">1</span>
+          </div>
+
+          <!-- P2 -->
+          <div class="reveal relative md:grid md:grid-cols-2 md:gap-10 items-center" style="--i:1">
+            <div class="md:col-start-2 md:pl-10">
+              <div class="glass card-lift rounded-2xl p-6 ml-12 md:ml-0">
+                <span class="kr font-semibold text-white text-lg">overfit CSV 직렬화 추출</span>
+                <p class="kr text-sm text-zinc-400 mt-2">main.py 의 45줄 표현 로직을 <span class="mono text-accent-soft">serialize_diagnostics_csv</span> 로. 대시보드가 파싱하는 한국어 키 계약은 회귀 테스트로 고정.</p>
+                <div class="mt-3 text-xs text-zinc-500">게이트: mp test diff 0 · 신규 회귀 테스트 3</div>
+              </div>
+            </div>
+            <span class="absolute left-2.5 md:left-1/2 md:-translate-x-1/2 top-6 md:top-1/2 md:-translate-y-1/2 grid place-items-center w-9 h-9 rounded-full bg-accent text-zinc-950 mono font-bold text-sm ring-4 ring-zinc-950">2</span>
+          </div>
+
+          <!-- P3 -->
+          <div class="reveal relative md:grid md:grid-cols-2 md:gap-10 items-center" style="--i:2">
+            <div class="md:text-right md:pr-10">
+              <div class="glass card-lift rounded-2xl p-6 ml-12 md:ml-0">
+                <span class="kr font-semibold text-white text-lg">scripts → research 분리</span>
+                <p class="kr text-sm text-zinc-400 mt-2">실험 코드 ~2,000줄을 배포 트리에서 <span class="mono text-accent-soft">research/</span> 로 분리. intra/test import 경로 갱신.</p>
+                <div class="mt-3 text-xs text-zinc-500 md:text-right">게이트: import 0건 · cluster 테스트 35 pass</div>
+              </div>
+            </div>
+            <span class="absolute left-2.5 md:left-1/2 md:-translate-x-1/2 top-6 md:top-1/2 md:-translate-y-1/2 grid place-items-center w-9 h-9 rounded-full bg-accent text-zinc-950 mono font-bold text-sm ring-4 ring-zinc-950">3</span>
+          </div>
+
+          <!-- P4 -->
+          <div class="reveal relative md:grid md:grid-cols-2 md:gap-10 items-center" style="--i:3">
+            <div class="md:col-start-2 md:pl-10">
+              <div class="glass-strong card-lift rounded-2xl p-6 ml-12 md:ml-0 border-accent/20">
+                <div class="flex items-center gap-2">
+                  <span class="kr font-semibold text-white text-lg">_evaluate_universe 추출</span>
+                  <span class="text-[10px] font-semibold rounded bg-amber-400/15 text-amber-300 px-1.5 py-0.5">계산경로</span>
+                </div>
+                <p class="kr text-sm text-zinc-400 mt-2">오케스트레이터의 god-method 116줄을 <span class="mono text-accent-soft">pipeline/universe.py</span> 로. walk-forward Tier2와는 의도적으로 통합하지 않음.</p>
+                <div class="mt-3 text-xs text-zinc-500">게이트: 실데이터 mp + 백테스트 byte-identical (~41분)</div>
+              </div>
+            </div>
+            <span class="absolute left-2.5 md:left-1/2 md:-translate-x-1/2 top-6 md:top-1/2 md:-translate-y-1/2 grid place-items-center w-9 h-9 rounded-full bg-amber-400 text-zinc-950 mono font-bold text-sm ring-4 ring-zinc-950">4</span>
+          </div>
+
+          <!-- P5 -->
+          <div class="reveal relative md:grid md:grid-cols-2 md:gap-10 items-center" style="--i:4">
+            <div class="md:text-right md:pr-10">
+              <div class="glass card-lift rounded-2xl p-6 ml-12 md:ml-0">
+                <span class="kr font-semibold text-white text-lg">shim 제거 + 문서 동기화</span>
+                <p class="kr text-sm text-zinc-400 mt-2">전환기 shim 제거(grep 0건 확인 후). README 모듈트리·research.md·VARIABLE_FLOW를 새 구조로 갱신.</p>
+                <div class="mt-3 text-xs text-zinc-500 md:text-right">게이트: grep 0건 · 277 pass</div>
+              </div>
+            </div>
+            <span class="absolute left-2.5 md:left-1/2 md:-translate-x-1/2 top-6 md:top-1/2 md:-translate-y-1/2 grid place-items-center w-9 h-9 rounded-full bg-accent text-zinc-950 mono font-bold text-sm ring-4 ring-zinc-950">5</span>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== REJECTED (full-bleed dark, warning accent) ===== -->
+  <section class="py-24 md:py-32">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="max-w-2xl mb-12">
+        <span class="reveal text-rose-300 text-sm font-semibold tracking-wide uppercase">Deliberately Not Done</span>
+        <h2 class="reveal kr font-display text-4xl md:text-5xl font-bold tracking-tight text-white mt-3 leading-tight" style="--i:1">
+          검증이 막은 함정들
+        </h2>
+        <p class="reveal kr text-zinc-400 text-lg mt-5 leading-relaxed" style="--i:2">
+          "중복 제거"처럼 보이지만 실은 동작을 바꾸는 통합들. 적대적 검증이 byte-diff 위험을 짚어
+          종합안에서 명시적으로 배제했다.
+        </p>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-5">
+        <div class="reveal glass card-lift rounded-2xl p-6 border-l-2 border-rose-400/40" style="--i:0">
+          <iconify-icon icon="solar:forbidden-circle-linear" class="text-rose-300" width="24"></iconify-icon>
+          <h3 class="kr font-semibold text-white mt-4">performance 공식 통합</h3>
+          <p class="kr text-sm text-zinc-400 mt-2 leading-relaxed">result_stitcher와 dashboard_data의 MDD 식이 부동소수 수준에서 다름. 통합은 overfit CSV byte-diff를 유발.</p>
+        </div>
+        <div class="reveal glass card-lift rounded-2xl p-6 border-l-2 border-rose-400/40" style="--i:1">
+          <iconify-icon icon="solar:forbidden-circle-linear" class="text-rose-300" width="24"></iconify-icon>
+          <h3 class="kr font-semibold text-white mt-4">universe ↔ Tier2 통합</h3>
+          <p class="kr text-sm text-zinc-400 mt-2 leading-relaxed">두 경로의 컬럼 순서·incumbency 소스가 달라 clustering 선정 집합이 바뀜. 호출부는 각각 유지.</p>
+        </div>
+        <div class="reveal glass card-lift rounded-2xl p-6 border-l-2 border-rose-400/40" style="--i:2">
+          <iconify-icon icon="solar:forbidden-circle-linear" class="text-rose-300" width="24"></iconify-icon>
+          <h3 class="kr font-semibold text-white mt-4">MXCN1A_ 일반화</h3>
+          <p class="kr text-sm text-zinc-400 mt-2 leading-relaxed">우연히 benchmark명과 같을 뿐. 도출식으로 바꾸면 다른 universe에서 출력 계약 위반.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== VERIFY (table) + target tree ===== -->
+  <section id="verify" class="py-24 md:py-32 border-t border-white/5 bg-white/[0.015]">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-5 gap-12 items-start">
+      <div class="lg:col-span-3">
+        <span class="reveal text-accent text-sm font-semibold tracking-wide uppercase">Verification</span>
+        <h2 class="reveal kr font-display text-4xl md:text-5xl font-bold tracking-tight text-white mt-3 leading-tight" style="--i:1">
+          수정 전후, 1바이트도 안 바뀜
+        </h2>
+        <p class="reveal kr text-zinc-400 mt-5 leading-relaxed" style="--i:2">
+          재구조화 전 코드로 fresh baseline을 캡처하고, 모든 산출물을 SHA-256으로 비교했다.
+        </p>
+
+        <div class="reveal mt-8 glass-strong rounded-2xl overflow-hidden" style="--i:3">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-zinc-500 border-b border-white/8">
+                <th class="kr font-medium px-5 py-3.5">검증 표면</th>
+                <th class="font-medium px-5 py-3.5 text-center">파일</th>
+                <th class="kr font-medium px-5 py-3.5 text-right">결과</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5">
+              <tr class="hover:bg-white/[0.02]">
+                <td class="kr px-5 py-4 text-zinc-300"><span class="mono text-zinc-400">mp test test_data.csv</span></td>
+                <td class="mono px-5 py-4 text-center text-zinc-400">4</td>
+                <td class="px-5 py-4 text-right"><span class="inline-flex items-center gap-1.5 text-accent font-medium"><iconify-icon icon="solar:check-circle-bold" width="16"></iconify-icon> byte-identical</span></td>
+              </tr>
+              <tr class="hover:bg-white/[0.02]">
+                <td class="kr px-5 py-4 text-zinc-300">실데이터 mp <span class="text-zinc-500">(meta_data.csv 포함)</span></td>
+                <td class="mono px-5 py-4 text-center text-zinc-400">4</td>
+                <td class="px-5 py-4 text-right"><span class="inline-flex items-center gap-1.5 text-accent font-medium"><iconify-icon icon="solar:check-circle-bold" width="16"></iconify-icon> byte-identical</span></td>
+              </tr>
+              <tr class="hover:bg-white/[0.02]">
+                <td class="kr px-5 py-4 text-zinc-300">walk-forward 백테스트</td>
+                <td class="mono px-5 py-4 text-center text-zinc-400">3</td>
+                <td class="px-5 py-4 text-right"><span class="inline-flex items-center gap-1.5 text-accent font-medium"><iconify-icon icon="solar:check-circle-bold" width="16"></iconify-icon> byte-identical</span></td>
+              </tr>
+              <tr class="hover:bg-white/[0.02]">
+                <td class="kr px-5 py-4 text-zinc-300">pytest (test_unit)</td>
+                <td class="mono px-5 py-4 text-center text-zinc-400">274→277</td>
+                <td class="px-5 py-4 text-right"><span class="inline-flex items-center gap-1.5 text-accent font-medium"><iconify-icon icon="solar:check-circle-bold" width="16"></iconify-icon> all pass</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- target tree -->
+      <div class="lg:col-span-2 reveal" style="--i:2">
+        <div class="glass-strong rounded-2xl overflow-hidden h-full">
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-white/5">
+            <iconify-icon icon="solar:folder-with-files-linear" class="text-accent" width="16"></iconify-icon>
+            <span class="text-xs text-zinc-500 mono">목표 구조 (현재)</span>
+          </div>
+          <pre class="p-5 text-[13px] leading-[1.7] overflow-x-auto"><code class="mono text-zinc-300">service/
+├── <span class="text-accent">factor/</span>
+│   └── selection.py        <span class="text-zinc-600"># 공유 도메인</span>
+├── download/
+├── pipeline/
+│   ├── model_portfolio.py  <span class="text-zinc-600"># 오케스트레이터</span>
+│   ├── <span class="text-accent">universe.py</span>          <span class="text-zinc-600"># 추출</span>
+│   └── ...
+└── backtest/
+    ├── walk_forward_engine.py
+    └── overfit_diagnostics.py
+<span class="text-accent">research/</span>                    <span class="text-zinc-600"># ← scripts/</span>
+docs/restructure_plan.md</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== CTA (deferred work) ===== -->
+  <section class="py-24 md:py-32">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="reveal glass-strong rounded-3xl p-10 md:p-14 text-center relative overflow-hidden">
+        <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-80 h-80 rounded-full bg-accent/10 blur-3xl"></div>
+        <span class="text-accent text-sm font-semibold tracking-wide uppercase">Next</span>
+        <h2 class="kr font-display text-3xl md:text-5xl font-bold tracking-tight text-white mt-4 leading-tight">
+          이번 범위 밖으로 미뤄둔 후속 작업
+        </h2>
+        <p class="kr text-zinc-400 text-lg mt-5 max-w-2xl mx-auto leading-relaxed">
+          1차 재구조화의 위험을 낮추기 위해 분리한, 다음 라운드의 후보들.
+        </p>
+        <div class="mt-9 grid sm:grid-cols-2 gap-3 max-w-2xl mx-auto text-left">
+          <div class="glass rounded-xl px-5 py-4 flex items-center gap-3">
+            <iconify-icon icon="solar:layers-minimalistic-linear" class="text-accent" width="20"></iconify-icon>
+            <span class="kr text-zinc-300 text-sm">walk_forward Tier 1/2/3 메서드 추출</span>
+          </div>
+          <div class="glass rounded-xl px-5 py-4 flex items-center gap-3">
+            <iconify-icon icon="solar:shield-check-linear" class="text-accent" width="20"></iconify-icon>
+            <span class="kr text-zinc-300 text-sm">download 검증 로직 통합</span>
+          </div>
+          <div class="glass rounded-xl px-5 py-4 flex items-center gap-3">
+            <iconify-icon icon="solar:database-linear" class="text-accent" width="20"></iconify-icon>
+            <span class="kr text-zinc-300 text-sm">GenerateQueryStructure 의존성 주입</span>
+          </div>
+          <div class="glass rounded-xl px-5 py-4 flex items-center gap-3">
+            <iconify-icon icon="solar:monitor-smartphone-linear" class="text-accent" width="20"></iconify-icon>
+            <span class="kr text-zinc-300 text-sm">Rich 콘솔 출력 분리 (표현 계층)</span>
+          </div>
+        </div>
+        <a href="#top" class="cta-magnet inline-flex items-center gap-2 rounded-full px-8 py-4 bg-accent text-zinc-950 font-semibold text-lg mt-10">
+          처음으로
+          <iconify-icon icon="solar:arrow-up-linear" width="18"></iconify-icon>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="border-t border-white/5">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2.5">
+        <span class="grid place-items-center w-7 h-7 rounded-lg bg-accent/15 text-accent">
+          <iconify-icon icon="solar:layers-minimalistic-bold" width="16"></iconify-icon>
+        </span>
+        <span class="kr text-sm text-zinc-400">BOK 팩터 파이프라인 · 재구조화 설계 리뷰</span>
+      </div>
+      <div class="kr text-xs text-zinc-600">
+        멀티에이전트 분석 · 글자보존 이동 · 산출물 byte-identity 검증 완료
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Staggered reveal on viewport entry (IntersectionObserver, transform/opacity only)
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+    document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+  </script>
+</body>
+</html>
