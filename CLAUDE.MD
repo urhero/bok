@@ -14,6 +14,7 @@
 - **코드:** 영문 (변수명, 함수명)
 - **문서/주석:** 한글 (투자/금융 도메인)
 - **Git:** `main-ikm`에서 개발 → `main`으로 머지
+- **HTML 생성:** HTML/리포트/페이지를 만들 때는 `supanova-design-engine` 스킬을 사용한다 (프리미엄 standalone HTML — Tailwind CDN + Pretendard + Iconify Solar, 다크 기본, 이모지/금지폰트 배제). 프로젝트 브랜드 컬러가 필요하면 `docs/design/DESIGN-binance.md`의 토큰을 supanova에 입력으로 넣는다 (supanova = 생성 엔진, DESIGN-binance = 선택적 브랜드 팔레트).
 
 ## 환경 설정
 
