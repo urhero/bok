@@ -25,7 +25,6 @@ BOK은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 Model Portfolio
 main.py (CLI)
   └→ ModelPortfolioPipeline.run()  [오케스트레이터]
        ├→ factor_analysis.py       [5분위 분석]
-       ├→ correlation.py           [하락 상관관계]
        ├→ optimization.py          [가중치 계산]
        └→ weight_construction.py   [롱/숏 수익률 + MP 비중 구성]
 ```
@@ -119,7 +118,6 @@ main.py (CLI)
      │         │       vectorized return (30bp cost)      │
      │         │       → 롱-숏 수익률 합산                 │
      │         ├─ CAGR 계산 + 상위 50개 선정              │
-     │         ├─ calculate_downside_correlation()        │
      │         └─ meta_data.csv 저장                      │
      │         │                                         │
      │    [6] optimize_constrained_weights()               │
@@ -238,9 +236,6 @@ meta["rank_score"] = compute_rank_score(monthly_rets, ranking_method, style_map)
 
 # 5. rank_score 상위 50개 선정 (use_cluster_dedup=True 면 클러스터 dedup 경유)
 meta = meta[:top_n]
-
-# 6. 하락 상관관계 행렬 계산
-downside_corr = calculate_downside_correlation(ret_df)
 ```
 
 **aggregate_factor_returns 내부 흐름**:
@@ -345,7 +340,6 @@ main.py
   │    ├→ config.py (PARAM)
   │    ├→ service/download/parquet_io.py (load_factor_parquet)
   │    ├→ service/pipeline/factor_analysis.py (prepend_start_zero 포함)
-  │    ├→ service/pipeline/correlation.py
   │    ├→ service/pipeline/optimization.py
   │    ├→ service/pipeline/weight_construction.py (build_factor_weight_frames, aggregate_mp_weights, calculate_style_weights 포함)
   │    └→ service/pipeline/benchmark_comparison.py (--benchmark 옵션)
@@ -378,7 +372,7 @@ main.py
 | `optimization.py` 가중치 계산 | 최종 가중치 (equal_weight 또는 hardcoded) |
 | `optimization.py` hardcoded 가중치 | **프로덕션 MP 직접 영향** — 가장 위험 |
 | `config.py` PARAM | 전 모듈 (DB 연결, 벤치마크명, 파일 경로) |
-| `config.py` PIPELINE_PARAMS | 파이프라인 비즈니스 파라미터 (style_cap, 거래비용, 팩터 수, 임계값, min_downside_obs 등). 이전 코드 내 산재하던 매직넘버를 중앙 집중화 |
+| `config.py` PIPELINE_PARAMS | 파이프라인 비즈니스 파라미터 (style_cap, 거래비용, 팩터 수, 임계값 등). 이전 코드 내 산재하던 매직넘버를 중앙 집중화 |
 | `factor_info.csv` 팩터 목록 | 분석 대상 팩터 전체 변경 |
 | `hardcoded_weights.csv` | 프로덕션 MP 가중치 직접 변경 |
 | `_construct_and_export` 출력 로직 | CSV 포맷 변경 → Bloomberg Optimizer 연동 영향 가능 |
@@ -496,15 +490,7 @@ def construct_long_short_df(labeled_data_df, backtest_start="2017-12-31"):
 ```
 `weight_construction.py` — 시작일이 `backtest_start` 파라미터로 전달됨. `PIPELINE_PARAMS["backtest_start"]`에서 중앙 관리되며, `aggregate_factor_returns()`를 통해 전달.
 
-#### 4.4.2 calculate_downside_correlation의 O(n_cols) 루프
-```python
-for i in range(n_cols):
-    mask = data[:, i] < 0
-    ...
-```
-`correlation.py:50-65` — 컬럼별 for 루프. 50개 팩터에서는 문제없으나, 팩터 수가 크게 증가하면 병목. NumPy 벡터화로 개선 가능하지만 팩터별 mask가 다르므로 단순하지 않음. 공분산 계산은 `nanmean * N/(N-1)` Bessel's correction을 적용하여 `nanstd(ddof=1)`과 일관된 unbiased 추정량을 사용한다.
-
-#### 4.4.3 SQL injection 완화
+#### 4.4.2 SQL injection 완화
 `factor_query.py` — universe 테이블명이 f-string 삽입. `ALLOWED_UNIVERSES` allowlist로 방어.
 
 ### 4.5 테스트 커버리지 현황
@@ -512,8 +498,7 @@ for i in range(n_cols):
 | 모듈 | 테스트 수 | 커버되는 핵심 로직 | 미커버 영역 |
 |------|-----------|-------------------|------------|
 | `factor_analysis.prepend_start_zero` | 16 | 기본, NaN, Inf, 월말 처리 | - |
-| `factor_analysis.calculate_factor_stats` | 17 | 분위, 래그, sort_order, test_mode | batch 모드 직접 테스트 없음 |
-| `correlation.calculate_downside_correlation` | 18 | 기본, min_obs, 엣지케이스 | - |
+| `factor_analysis.calculate_factor_stats_batch` | 4 | batch 5분위 분석, None 처리, 결과 순서 | - |
 | `optimization.optimize_constrained_weights` | ~10 | 기본, style_cap, 엣지케이스 | hardcoded 모드 미테스트 |
 | `factor_analysis.filter_and_label_factors` | ~8 | 섹터 제거, L/N/S 라벨, 엣지케이스 | - |
 | `weight_construction` | ~10 | L/S 분리, 동일가중, 수익률 계산 | - |
@@ -554,11 +539,6 @@ MDD = min(cumulative / running_max - 1)
 ### 복합 랭크 (팩터 선정 + 시뮬레이션 공통)
 ```
 rank_total = rank_CAGR × 0.6 + rank_MDD × 0.4
-```
-
-### 보조 팩터 선정 복합 랭크
-```
-rank_avg = rank_CAGR × 0.7 + rank_negative_correlation × 0.3
 ```
 
 ### 거래비용

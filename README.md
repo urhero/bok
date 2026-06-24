@@ -190,8 +190,7 @@ service/
 │
 ├── pipeline/
 │   ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
-│   ├── factor_analysis.py      # calculate_factor_stats, calculate_factor_stats_batch, filter_and_label_factors
-│   ├── correlation.py          # calculate_downside_correlation
+│   ├── factor_analysis.py      # calculate_factor_stats_batch, filter_and_label_factors
 │   ├── optimization.py         # optimize_constrained_weights (hardcoded/equal_weight)
 │   ├── weight_construction.py  # build_factor_weight_frames, aggregate_mp_weights, calculate_style_weights, construct_long_short_df, calculate_vectorized_return
 │   └── benchmark_comparison.py # Constrained EW vs. 동일가중(1/N) 벤치마크 비교
@@ -304,7 +303,6 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `min_sector_stocks` | 10 | 섹터-날짜 최소 종목 수 | `factor_analysis.py` |
 | `max_zero_return_months` | 10 | 0 수익률 허용 최대 월 수 | `model_portfolio.py` |
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
-| `min_downside_obs` | 20 | 하락 상관관계 최소 관측 수 | `correlation.py` |
 | `selection_hysteresis` | 0.5 | 선정 히스테리시스 margin (rank_score 단위, 0=off). 직전 선정 팩터는 챌린저가 이 격차 이상 이겨야 교체 | `model_portfolio.py`, `walk_forward_engine.py` (`apply_selection_hysteresis` 공유) |
 | `turnover_step` | 1.0 | **무스무딩(디폴트)**: 목표 비중을 그대로 배포. 절대스텝 스무딩 시 0.01(1%p/월) | `smoothing.py`, `model_portfolio.py`, `walk_forward_engine.py` |
 | `turnover_deadband` | 0.0 | no-trade 밴드 (factor 변동<값이면 고정). 무스무딩이면 0, 스무딩 시 0.003(0.3%p) | `smoothing.py` |

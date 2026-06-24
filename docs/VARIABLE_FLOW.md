@@ -52,12 +52,10 @@ graph TD
     %% --- [4] Evaluate Universe ---
     Func_GenMeta{{"[4] _evaluate_universe<br/>(aggregate_factor_returns → CAGR 랭킹 → top 50)"}}:::func
     Var_FacRet("return_matrix<br/>(pd.DataFrame)"):::data
-    Var_DownCorr("correlation_matrix<br/>(pd.DataFrame)"):::data
     Var_Meta("meta<br/>(pd.DataFrame)"):::data
 
     Var_CleanedRaw & Var_KeptLists --> Func_GenMeta
     Func_GenMeta --> Var_FacRet
-    Func_GenMeta --> Var_DownCorr
     Func_GenMeta --> Var_Meta
 
     %% --- [6] Weight Determination ---
@@ -105,7 +103,6 @@ graph TD
 | `[3]` | `filtered_data` | 섹터 필터 + label 부여된 종목 데이터 | `List[pd.DataFrame]` | `filter_and_label_factors` |
 | `[3]` | `kept_abbrs/names/styles` | 유지된 팩터 메타 리스트 | `List[str]` | `filter_and_label_factors` |
 | `[4]` | `return_matrix` | 월간 net return 매트릭스 (top 50 팩터) | `pd.DataFrame` | `_evaluate_universe` |
-| `[4]` | `correlation_matrix` | 하락 상관관계 행렬 | `pd.DataFrame` | `_evaluate_universe` |
 | `[4]` | `meta` | 팩터 성과/랭크 테이블 (CAGR, rank_style, rank_total) | `pd.DataFrame` | `_evaluate_universe` |
 | `[6]` | `sim_result` | (best_stats, weights_tbl) -- 최적 비중 결과 | `Tuple` | `optimize_constrained_weights` |
 | `[7]` | `weight_raw` | 팩터별 종목 가중치 | `pd.DataFrame` | `_construct_and_export` |
