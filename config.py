@@ -48,7 +48,6 @@ PIPELINE_PARAMS = {
     "max_zero_return_months": 10,      # 0 수익률 허용 최대 월 수
     "backtest_start": "2009-12-31",    # 백테스트 시작일
     "backtest_end": "2026-03-31",      # 백테스트 종료일
-    "min_downside_obs": 20,            # 하락 상관관계 최소 관측 수
     "optimization_mode": "equal_weight", # "hardcoded": 고정 가중치, "equal_weight": 동일가중 (권장)
     "factor_ranking_method": "tstat",  # "shrunk_tstat" / "tstat"(현 기본) / "cagr" — mp+backtest 공통 선정 기준
     "use_cluster_dedup": True,         # Sprint 1-B: Top-N Hierarchical Clustering 중복 제거 (production 적용)

@@ -10,7 +10,6 @@ Constrained EW 방식으로 구성된다. 공분산/리스크 모델 기반 최�
 
 모듈 구조:
 - factor_analysis.py: 5분위 분석 + 섹터 필터링
-- correlation.py: 하락 상관관계 (현재 계산만 되고 사용 안 됨)
 - optimization.py: 가중치 계산 (equal_weight + style_cap)
 - weight_construction.py: 롱/숏 포트폴리오 수익률 + MP 가중치 구성
 """
@@ -27,7 +26,6 @@ import pandas as pd
 from config import PARAM, PIPELINE_PARAMS
 
 # 모듈 import
-from service.pipeline.correlation import calculate_downside_correlation
 from service.pipeline.factor_analysis import (
     calculate_factor_stats_batch,
     filter_and_label_factors,
@@ -128,7 +126,6 @@ class ModelPortfolioPipeline:
         self.factor_stats: list[Any] = []
         self.filtered_data: list[pd.DataFrame] = []
         self.return_matrix: pd.DataFrame | None = None
-        self.correlation_matrix: pd.DataFrame | None = None
         self.meta: pd.DataFrame | None = None
         self.weights: pd.DataFrame | None = None
 
@@ -160,7 +157,7 @@ class ModelPortfolioPipeline:
         )
 
         # [4] 롱-숏 수익률 + 팩터 유니버스 선정 — README [4]
-        self.return_matrix, self.correlation_matrix, self.meta = self._evaluate_universe(
+        self.return_matrix, self.meta = self._evaluate_universe(
             kept_abbrs, kept_names, kept_styles, self.filtered_data, end_date, test_file
         )
 
@@ -458,10 +455,9 @@ class ModelPortfolioPipeline:
 
         order = meta["factorAbbreviation"].tolist()
         ret_df = ret_df[order]
-        negative_corr = calculate_downside_correlation(ret_df, min_obs=self.pipeline_params["min_downside_obs"]).loc[order, order]
 
         logger.info("Return matrix built (%d factors)", len(order))
-        return ret_df, negative_corr, meta
+        return ret_df, meta
 
     def _construct_and_export(self, sim_result, kept_abbrs, filtered_data, end_date, test_file):
         """종목별 가중치를 산출하고 CSV로 출력한다."""

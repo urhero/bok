@@ -27,7 +27,6 @@ from service.backtest.factor_selection import (
     compute_rank_score,
 )
 from service.backtest.result_stitcher import WalkForwardResult
-from service.pipeline.correlation import calculate_downside_correlation
 from service.pipeline.factor_analysis import (
     calculate_factor_stats_batch,
     filter_and_label_factors,
@@ -490,10 +489,6 @@ class WalkForwardEngine:
                                 meta_top = meta_df.set_index("factorAbbreviation").loc[selected].reset_index()
                         cached_top50_factors = list(selected)
                         ret_df_selected = ret_df_is[selected]
-
-                        neg_corr = calculate_downside_correlation(
-                            ret_df_selected, min_obs=pp["min_downside_obs"]
-                        ).loc[selected, selected]
 
                         try:
                             raw_new_weights, cached_meta = _run_weight_optimization(

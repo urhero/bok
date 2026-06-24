@@ -117,7 +117,6 @@ class TestRealDataPipelineExecution:
         assert p.raw_data is not None, "raw_data should be stored"
         assert p.factor_metadata is not None, "factor_metadata should be stored"
         assert p.return_matrix is not None, "return_matrix should be stored"
-        assert p.correlation_matrix is not None, "correlation_matrix should be stored"
         assert p.meta is not None, "meta should be stored"
         assert p.weights is not None, "weights should be stored"
 
@@ -254,39 +253,6 @@ class TestRealDataReturnMatrix:
         """수익률 행렬 첫 행이 0인지 확인 (prepend_start_zero 적용)"""
         ret = pipeline_result["pipeline"].return_matrix
         assert (ret.iloc[0] == 0).all(), "First row should be all zeros"
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 5. 상관관계 행렬 검증
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@pytest.mark.real_data
-class TestRealDataCorrelationMatrix:
-    """correlation_matrix 품질 검증"""
-
-    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
-    def test_correlation_matrix_is_square(self, pipeline_result) -> None:
-        """상관관계 행렬이 정방행렬인지 확인"""
-        corr = pipeline_result["pipeline"].correlation_matrix
-        assert corr.shape[0] == corr.shape[1], "Correlation matrix should be square"
-
-    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
-    def test_correlation_diagonal_is_close_to_one(self, pipeline_result) -> None:
-        """대각선 값이 1에 가까운지 확인
-
-        Note: calculate_downside_correlation()은 nanmean(ddof=0)과 nanstd(ddof=1)을
-        사용하므로 대각선이 정확히 1.0이 아닐 수 있다 (약 0.97).
-        """
-        corr = pipeline_result["pipeline"].correlation_matrix
-        diag = np.diag(corr.values)
-        np.testing.assert_allclose(diag, 1.0, atol=0.05, err_msg="Diagonal should be close to 1.0")
-
-    @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")
-    def test_correlation_values_in_range(self, pipeline_result) -> None:
-        """상관계수가 [-1, 1] 범위인지 확인"""
-        corr = pipeline_result["pipeline"].correlation_matrix
-        assert (corr.values >= -1 - 1e-10).all(), "Correlation < -1 found"
-        assert (corr.values <= 1 + 1e-10).all(), "Correlation > 1 found"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
