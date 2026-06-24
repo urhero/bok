@@ -22,6 +22,18 @@ import pandas as pd
 from scipy import stats
 
 from service.backtest.result_stitcher import WalkForwardResult
+from service.report.diagnostics_keys import (
+    CAT_CAUTION,
+    CAT_CMP,
+    CAT_DEFLATION,
+    CAT_FUNNEL,
+    CAT_OOS_CEW,
+    CAT_OOS_EW,
+    CAT_OOS_PERCENTILE,
+    CAT_RANK_CORR,
+    CAT_STRICT_JACCARD,
+    METRIC_PATTERN,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -513,34 +525,34 @@ def serialize_diagnostics_csv(oos_report: dict[str, Any], path) -> None:
 
     rows = [
         # 1순위: Funnel Value-Add Test
-        ("1순위 - Funnel Value-Add", "패턴", oos_report["funnel_pattern"], oos_report["funnel_interpretation"]),
-        ("1순위 - Funnel Value-Add", "EW_All CAGR", _pct(oos_report["funnel_ew_all_cagr"]), "전체 유효 팩터 동일가중"),
-        ("1순위 - Funnel Value-Add", "EW_Top50 CAGR", _pct(oos_report["funnel_ew_top50_cagr"]), "Top-50 후보군 동일가중"),
-        ("1순위 - Funnel Value-Add", "Constrained EW CAGR", _pct(oos_report["funnel_cew_cagr"]), "Constrained EW (Top-N + style_cap)"),
-        ("1순위 - Funnel Value-Add", "EW_All MDD", _pct(oos_report["funnel_ew_all_mdd"]), ""),
-        ("1순위 - Funnel Value-Add", "EW_Top50 MDD", _pct(oos_report["funnel_ew_top50_mdd"]), ""),
-        ("1순위 - Funnel Value-Add", "Constrained EW MDD", _pct(oos_report["funnel_cew_mdd"]), ""),
+        (CAT_FUNNEL, METRIC_PATTERN, oos_report["funnel_pattern"], oos_report["funnel_interpretation"]),
+        (CAT_FUNNEL, "EW_All CAGR", _pct(oos_report["funnel_ew_all_cagr"]), "전체 유효 팩터 동일가중"),
+        (CAT_FUNNEL, "EW_Top50 CAGR", _pct(oos_report["funnel_ew_top50_cagr"]), "Top-50 후보군 동일가중"),
+        (CAT_FUNNEL, "Constrained EW CAGR", _pct(oos_report["funnel_cew_cagr"]), "Constrained EW (Top-N + style_cap)"),
+        (CAT_FUNNEL, "EW_All MDD", _pct(oos_report["funnel_ew_all_mdd"]), ""),
+        (CAT_FUNNEL, "EW_Top50 MDD", _pct(oos_report["funnel_ew_top50_mdd"]), ""),
+        (CAT_FUNNEL, "Constrained EW MDD", _pct(oos_report["funnel_cew_mdd"]), ""),
         # 2순위: OOS Percentile Tracking
-        ("2순위 - OOS Percentile", "평균 백분위", _pct(oos_report["oos_avg_percentile"]), oos_report["oos_percentile_interpretation"]),
+        (CAT_OOS_PERCENTILE, "평균 백분위", _pct(oos_report["oos_avg_percentile"]), oos_report["oos_percentile_interpretation"]),
         # 3순위: Strict Jaccard
-        ("3순위 - Strict Jaccard", "Strict Jaccard", _dec(oos_report["strict_jaccard"]), oos_report["strict_jaccard_interpretation"]),
+        (CAT_STRICT_JACCARD, "Strict Jaccard", _dec(oos_report["strict_jaccard"]), oos_report["strict_jaccard_interpretation"]),
         # 4순위 (보조): IS-OOS Rank Correlation
-        ("4순위(보조) - Rank Corr", "IS-OOS Rank Correlation", _dec(oos_report["is_oos_rank_spearman"]), oos_report["rank_corr_interpretation"]),
-        ("4순위(보조) - Rank Corr", "Rank Corr p-value", _dec(oos_report["rank_corr_p_value"]), ""),
+        (CAT_RANK_CORR, "IS-OOS Rank Correlation", _dec(oos_report["is_oos_rank_spearman"]), oos_report["rank_corr_interpretation"]),
+        (CAT_RANK_CORR, "Rank Corr p-value", _dec(oos_report["rank_corr_p_value"]), ""),
         # 5순위 (보조): Deflation Ratio
-        ("5순위(보조) - Deflation", "Deflation Ratio", _dec(oos_report["deflation_ratio"]), oos_report["deflation_interpretation"]),
+        (CAT_DEFLATION, "Deflation Ratio", _dec(oos_report["deflation_ratio"]), oos_report["deflation_interpretation"]),
         # OOS 성과
-        ("OOS 성과 - Constrained EW", "CAGR", _pct(oos_report["oos_cagr"]), ""),
-        ("OOS 성과 - Constrained EW", "MDD", _pct(oos_report["oos_mdd"]), ""),
-        ("OOS 성과 - Constrained EW", "Sharpe", _dec(oos_report["oos_sharpe"]), ""),
-        ("OOS 성과 - Constrained EW", "Calmar", _dec(oos_report["oos_calmar"]), ""),
-        ("OOS 성과 - EW", "CAGR", _pct(oos_report["oos_ew_cagr"]), ""),
-        ("OOS 성과 - EW", "MDD", _pct(oos_report["oos_ew_mdd"]), ""),
-        ("OOS 성과 - EW", "Sharpe", _dec(oos_report["oos_ew_sharpe"]), ""),
-        ("Constrained EW vs EW_Top50 비교", "Excess CAGR", _pct(oos_report["cew_vs_ew_excess_cagr"]), ""),
-        ("Constrained EW vs EW_Top50 비교", "Win Rate", _pct(oos_report["cew_vs_ew_win_rate"]), ""),
-        ("주의사항", "경고", "", oos_report["warning"]),
-        ("주의사항", "한계점", "", oos_report["limitation"]),
+        (CAT_OOS_CEW, "CAGR", _pct(oos_report["oos_cagr"]), ""),
+        (CAT_OOS_CEW, "MDD", _pct(oos_report["oos_mdd"]), ""),
+        (CAT_OOS_CEW, "Sharpe", _dec(oos_report["oos_sharpe"]), ""),
+        (CAT_OOS_CEW, "Calmar", _dec(oos_report["oos_calmar"]), ""),
+        (CAT_OOS_EW, "CAGR", _pct(oos_report["oos_ew_cagr"]), ""),
+        (CAT_OOS_EW, "MDD", _pct(oos_report["oos_ew_mdd"]), ""),
+        (CAT_OOS_EW, "Sharpe", _dec(oos_report["oos_ew_sharpe"]), ""),
+        (CAT_CMP, "Excess CAGR", _pct(oos_report["cew_vs_ew_excess_cagr"]), ""),
+        (CAT_CMP, "Win Rate", _pct(oos_report["cew_vs_ew_win_rate"]), ""),
+        (CAT_CAUTION, "경고", "", oos_report["warning"]),
+        (CAT_CAUTION, "한계점", "", oos_report["limitation"]),
     ]
     diag_df = pd.DataFrame(rows, columns=["Category", "Metric", "Value", "Interpretation"])
     diag_df.to_csv(path, index=False, encoding="utf-8-sig")

@@ -13,6 +13,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from service.report.diagnostics_keys import CAT_CMP, CAT_FUNNEL, CAT_OOS_CEW, METRIC_PATTERN
+
 # service/report/dashboard_data.py -> 프로젝트 루트 / {output, data}
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 OUTPUT_DIR = _PROJECT_ROOT / "output"
@@ -135,8 +137,8 @@ def build_kpis(curves: pd.DataFrame, diag: dict | None = None) -> dict:
     """
     k = compute_kpis(curves)
     diag = diag or {}
-    cew = "OOS 성과 - Constrained EW"
-    cmp_ = "Constrained EW vs EW_Top50 비교"
+    cew = CAT_OOS_CEW
+    cmp_ = CAT_CMP
     overrides = {
         "cagr": _diag_num(diag, cew, "CAGR"),
         "mdd": _diag_num(diag, cew, "MDD"),
@@ -148,7 +150,7 @@ def build_kpis(curves: pd.DataFrame, diag: dict | None = None) -> dict:
     for key, val in overrides.items():
         if val is not None:
             k[key] = val
-    k["funnel_pattern"] = diag.get(("1순위 - Funnel Value-Add", "패턴"), "")
+    k["funnel_pattern"] = diag.get((CAT_FUNNEL, METRIC_PATTERN), "")
     return k
 
 
