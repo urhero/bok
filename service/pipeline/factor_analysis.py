@@ -31,112 +31,6 @@ def prepend_start_zero(series: pd.DataFrame) -> pd.DataFrame:
     return series.sort_index()
 
 
-def calculate_factor_stats(
-    factor_abbr: str,
-    sort_order: int,
-    factor_data_df: pd.DataFrame,
-    test_mode: bool = False,
-    min_sector_stocks: int = 10,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | tuple[None, None, None, None]:
-    """팩터 데이터를 5분위 포트폴리오로 나누고 팩터 스프레드를 계산한다.
-
-    각 섹터-날짜 그룹 내에서 팩터값 기준으로 종목을 Q1(상위20%)~Q5(하위20%)로 분류하고,
-    분위별 평균 수익률과 팩터 스프레드(Q1-Q5)를 산출한다. 1개월 래그를 적용하여 미래 정보 사용을 방지한다.
-
-    Args:
-        factor_abbr: 팩터 약어 (예: "SalesAcc", "ROIC")
-        sort_order: 정렬 방향 (factor_info.csv 의 factorOrder).
-            0 = 높을수록 좋음 (예: ROE, ROIC, CashEV) -> ascending=False 랭킹
-            1 = 낮을수록 좋음 (예: 부채비율 DA, PM6M=Price Reversal) -> ascending=True
-            두 경우 모두 rank 1(=Q1)이 "좋은" 종목.
-        factor_data_df: 팩터 데이터 (gvkeyiid, ticker, ddt, sec, val, M_RETURN 필수)
-        test_mode: True이면 최소 종목수(10개) 검증 생략
-
-    Returns:
-        성공 시: (sector_return_df, quantile_return_df, spread_series, merged_df)
-        실패 시: (None, None, None, None)
-
-    예시 Input:
-        | gvkeyiid | ticker | ddt        | sec      | val  | M_RETURN |
-        |----------|--------|------------|----------|------|----------|
-        | 001      | 600519 | 2024-01-31 | Consumer | 15.2 | 0.03     |
-        | 002      | 000858 | 2024-01-31 | Consumer | 12.8 | -0.01    |
-
-    예시 Output:
-        sector_return_df:
-        | sec      | Q1     | Q2     | Q3     | Q4     | Q5     |
-        |----------|--------|--------|--------|--------|--------|
-        | Consumer | 0.025  | 0.018  | 0.010  | 0.005  | -0.008 |
-
-        spread_series: [0.0, 0.033, 0.028, ...]  (Q1-Q5, 0으로 시작)
-    """
-    logger.debug("[Trace] Processing factor %s. Data shape: %s", factor_abbr, factor_data_df.shape)
-
-    # 데이터 정제
-    factor_data_df = factor_data_df.dropna().reset_index(drop=True)
-
-    # 히스토리 충분성 검사 (최소 3개월)
-    if len(factor_data_df["ddt"].unique()) <= 2:
-        logger.warning("Skipping %s - insufficient history", factor_abbr)
-        return None, None, None, None
-
-    # 1개월 래그 적용 (전월 팩터값으로 당월 투자)
-    factor_data_df[factor_abbr] = factor_data_df.groupby("gvkeyiid")["val"].shift(1)
-
-    # NaN 제거 + 불필요 컬럼 제거
-    merged_df = (
-        factor_data_df.dropna(subset=[factor_abbr, "M_RETURN"])
-        .drop(columns=["val", "factorAbbreviation"])
-        .reset_index(drop=True)
-    )
-
-    # 섹터-날짜 내 순위 계산 (단일 groupby로 rank와 count 동시 처리)
-    grp = merged_df.groupby(["ddt", "sec"])[factor_abbr]
-    merged_df["rank"] = grp.rank(method="average", ascending=bool(sort_order))
-    count_series = grp.transform("count")
-
-    # 순위 -> 백분위(0~100) 변환 (count=1이면 분모=0이므로 NaN 처리)
-    merged_df["percentile"] = np.where(
-        count_series > 1,
-        (merged_df["rank"] - 1) / (count_series - 1) * 100,
-        np.nan,
-    )
-
-    # 종목 수 부족 시 NaN 처리
-    if not test_mode:
-        merged_df.loc[count_series <= min_sector_stocks, "percentile"] = np.nan
-
-    # 백분위 -> 5분위(Q1~Q5) 버킷화
-    labels = ["Q1", "Q2", "Q3", "Q4", "Q5"]
-    merged_df["quantile"] = pd.cut(
-        merged_df["percentile"],
-        bins=[0, 20, 40, 60, 80, 105],
-        labels=labels,
-        include_lowest=True,
-        right=True,
-    )
-
-    merged_df = merged_df.dropna(subset=["quantile"])
-    merged_df = merged_df.drop(columns=["rank", "percentile"])
-
-    # 섹터 × 분위별 평균 수익률
-    sector_return_df = (
-        merged_df.groupby(["ddt", "sec", "quantile"], observed=False)["M_RETURN"]
-        .mean()
-        .unstack(fill_value=0)
-    ).groupby("sec").mean().T
-
-    # 전체 시장 분위별 평균 수익률
-    quantile_return_df = merged_df.groupby(["ddt", "quantile"], observed=False)["M_RETURN"].mean().unstack(fill_value=0)
-
-    # Q1-Q5 스프레드
-    spread_series = pd.DataFrame({factor_abbr: quantile_return_df.iloc[:, 0] - quantile_return_df.iloc[:, -1]})
-    spread_series = prepend_start_zero(spread_series)
-
-    logger.debug("[Trace] Factor %s assigned. Sector Ret Shape: %s, Quantile Ret Shape: %s", factor_abbr, sector_return_df.shape, quantile_return_df.shape)
-    return sector_return_df, quantile_return_df, spread_series, merged_df
-
-
 def filter_and_label_factors(
     factor_abbr_list: list[str],
     factor_name_list: list[str],
@@ -153,7 +47,7 @@ def filter_and_label_factors(
         factor_abbr_list: 팩터 약어 리스트
         factor_name_list: 팩터 이름 리스트
         style_name_list: 스타일 이름 리스트
-        factor_data_list: calculate_factor_stats() 결과 리스트
+        factor_data_list: calculate_factor_stats_batch() 결과 리스트
 
     Returns:
         (kept_abbrs, kept_names, kept_styles, kept_idx, dropped_sec, filtered_data) 튜플
@@ -249,7 +143,7 @@ def calculate_factor_stats_batch(
         test_mode: True이면 최소 종목수 검증 생략
 
     Returns:
-        calculate_factor_stats()와 동일한 형식의 리스트
+        팩터별 5분위 분석 결과 리스트
         각 원소: (sector_return_df, quantile_return_df, spread_series, merged_df) 또는 (None,)*4
     """
     # [1] 팩터 메타 준비

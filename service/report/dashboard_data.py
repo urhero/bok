@@ -283,24 +283,11 @@ def compute_turnover(weight_history: pd.DataFrame) -> pd.Series:
     return turnover
 
 
-def selection_churn(weight_history: pd.DataFrame) -> pd.Series:
-    """매 기간 선정 팩터 집합의 변화 수 = 편입+편출 팩터 수 (대칭차집합 크기). 첫 기간 0.
-
-    가중치 회전율(연속적 |dw|)과 달리, 어떤 팩터가 새로 들어오거나 빠졌는지(이산적)를 센다.
-    """
-    wh = weight_history.apply(pd.to_numeric, errors="coerce").fillna(0.0).sort_index()
-    active = wh.gt(0)  # 팩터별 활성(weight>0) 여부
-    changed = active.ne(active.shift(1)).sum(axis=1).astype(float)
-    if len(changed) > 0:
-        changed.iloc[0] = 0.0  # 첫 기간은 비교 대상 없음
-    return changed
-
-
 def selection_churn_split(weight_history: pd.DataFrame) -> pd.DataFrame:
     """매 기간 편입(entries)/편출(exits) 팩터 수를 분리. 첫 기간 0.
 
     entries = 직전 비활성 -> 활성 된 팩터 수, exits = 활성 -> 비활성 된 팩터 수.
-    (entries + exits == selection_churn 총합)
+    (entries + exits == 선정 집합 대칭차집합 크기)
     """
     wh = weight_history.apply(pd.to_numeric, errors="coerce").fillna(0.0).sort_index()
     active = wh.gt(0)

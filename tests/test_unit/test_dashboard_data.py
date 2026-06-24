@@ -271,24 +271,6 @@ def test_compute_turnover():
     assert t.iloc[3] == pytest.approx(0.0)
 
 
-def test_selection_churn_counts_entries_and_exits():
-    dates = pd.date_range("2020-01-31", periods=3, freq="ME")
-    wh = pd.DataFrame(
-        {"F1": [0.5, 0.5, 0.0],   # period3 에 편출
-         "F2": [0.5, 0.3, 0.5],   # 계속 활성
-         "F3": [0.0, 0.2, 0.5]},  # period2 에 편입
-        index=pd.Index(dates, name="date"),
-    )
-    churn = dd.selection_churn(wh)
-    assert list(churn) == [0.0, 1.0, 1.0]  # p1:0, p2:F3 편입(1), p3:F1 편출(1)
-
-
-def test_selection_churn_zero_when_set_stable():
-    # 가중치는 바뀌어도 활성 집합이 그대로면 churn 0 (회전율과 구분됨)
-    churn = dd.selection_churn(_weight_history())
-    assert churn.sum() == pytest.approx(0.0)
-
-
 def test_selection_churn_split_entries_and_exits():
     dates = pd.date_range("2020-01-31", periods=3, freq="ME")
     wh = pd.DataFrame(
@@ -300,8 +282,6 @@ def test_selection_churn_split_entries_and_exits():
     split = dd.selection_churn_split(wh)
     assert list(split["entries"]) == [0.0, 1.0, 0.0]
     assert list(split["exits"]) == [0.0, 0.0, 1.0]
-    # 합은 selection_churn 총합과 일치
-    assert list(split["entries"] + split["exits"]) == list(dd.selection_churn(wh))
 
 
 def test_style_weight_history_buckets():

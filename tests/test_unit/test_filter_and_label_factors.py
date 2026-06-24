@@ -25,7 +25,7 @@ def _make_sector_return_df(sector_spreads: dict[str, tuple]) -> pd.DataFrame:
     data = {}
     for sec, vals in sector_spreads.items():
         data[sec] = vals
-    # sector_return_df: index=Q1~Q5, columns=섹터 (calculate_factor_stats 출력 형태)
+    # sector_return_df: index=Q1~Q5, columns=섹터 (calculate_factor_stats_batch 출력 형태)
     # columns.name = "sec" 설정 (groupby("sec") 결과의 .T에서 index.name이 "sec"이 됨)
     df = pd.DataFrame(data, index=["Q1", "Q2", "Q3", "Q4", "Q5"])
     df.columns.name = "sec"

@@ -29,7 +29,6 @@ from config import PARAM, PIPELINE_PARAMS
 # 모듈 import
 from service.pipeline.correlation import calculate_downside_correlation
 from service.pipeline.factor_analysis import (
-    calculate_factor_stats,
     calculate_factor_stats_batch,
     filter_and_label_factors,
 )
