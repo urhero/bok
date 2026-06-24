@@ -39,6 +39,7 @@ from service.download.parquet_io import (
     list_yearly_parquets,
     save_factor_parquet_by_year,
 )
+from service.download.paths import mreturn_filename
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +181,7 @@ def run_download_pipeline(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     benchmark = PARAM["benchmark"]
-    mreturn_path = out_dir / f"{benchmark}_mreturn.parquet"
+    mreturn_path = out_dir / mreturn_filename(benchmark)
     factor_info_path = out_dir / "factor_info.csv"
 
     # 증분 모드 진입 조건: 분할 파일 또는 레거시 단일 파일 존재

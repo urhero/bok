@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from service.download.parquet_io import load_factor_parquet
+from service.download.paths import mreturn_filename
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ def validate_parquet_coverage(
         - mret_df: 로드된 M_RETURN DataFrame (재사용 가능)
     """
     if mreturn_path is None:
-        mreturn_path = Path(data_dir) / f"{benchmark}_mreturn.parquet"
+        mreturn_path = Path(data_dir) / mreturn_filename(benchmark)
 
     factor_df = load_factor_parquet(data_dir, benchmark)[["ddt", "factorAbbreviation", "gvkeyiid", "val"]]
     mret_df = pd.read_parquet(mreturn_path, columns=["ddt", "gvkeyiid"])

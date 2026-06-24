@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 class GenerateQueryStructure:
     """Fetch raw factor data from SQL Server between *start* and *end* dates."""
 
-    def __init__(self, start_date: str, end_date: str) -> None:
-        self._param = PARAM
+    def __init__(self, start_date: str, end_date: str, param: dict | None = None) -> None:
+        self._param = param if param is not None else PARAM
         self.start_date = start_date
         self.end_date = end_date
 

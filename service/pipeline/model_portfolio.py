@@ -46,6 +46,7 @@ from service.pipeline.weight_history import (
     save_style_totals,
 )
 from service.download.parquet_io import load_factor_parquet
+from service.download.paths import mreturn_filename
 from utils.validation import validate_output_weights
 
 logger = logging.getLogger(__name__)
@@ -219,7 +220,7 @@ class ModelPortfolioPipeline:
             logger.info("Test data loaded from %s in %.2fs", test_data_path, time.time() - t0)
         else:
             benchmark = self.config["benchmark"]
-            mreturn_path = DATA_DIR / f"{benchmark}_mreturn.parquet"
+            mreturn_path = DATA_DIR / mreturn_filename(benchmark)
 
             try:
                 # 연도별 분할 parquet 또는 단일 파일 로드 (parquet_io가 자동 탐색)
