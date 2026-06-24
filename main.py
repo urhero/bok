@@ -151,7 +151,8 @@ def main(argv: list[str] | None = None) -> int:
 def _run_benchmark_comparison(start_date, end_date, test_file):
     """--benchmark 옵션: 파이프라인 후 벤치마크 비교 실행."""
     from config import PARAM, PIPELINE_PARAMS
-    from service.pipeline.benchmark_comparison import compare_vs_benchmark, print_benchmark_report
+    from service.pipeline.benchmark_comparison import compare_vs_benchmark
+    from service.report.reporting import print_benchmark_report
     from service.pipeline.model_portfolio import DATA_DIR, ModelPortfolioPipeline, OUTPUT_DIR
 
     pp = dict(PIPELINE_PARAMS)
@@ -198,9 +199,9 @@ def _run_backtest(args):
     from config import PIPELINE_PARAMS
     from service.backtest.overfit_diagnostics import (
         generate_overfit_report,
-        print_overfit_report,
         serialize_diagnostics_csv,
     )
+    from service.report.reporting import print_overfit_report
     from service.backtest.walk_forward_engine import WalkForwardEngine
     from service.pipeline.model_portfolio import OUTPUT_DIR
 

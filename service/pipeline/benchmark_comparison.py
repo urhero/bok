@@ -131,30 +131,3 @@ def compare_vs_benchmark(ret_df: pd.DataFrame, weights: dict[str, float]) -> dic
     }
 
     return report
-
-
-def print_benchmark_report(report: dict[str, Any]) -> None:
-    """벤치마크 비교 리포트를 Rich 테이블로 콘솔 출력한다."""
-    from rich.console import Console
-    from rich.table import Table
-
-    console = Console()
-    table = Table(title="MP vs. Equal-Weight Benchmark (IS 전체 기간)", show_header=True)
-    table.add_column("Metric", style="bold")
-    table.add_column("MP (Model Portfolio)", justify="right")
-    table.add_column("EW (1/N)", justify="right")
-
-    table.add_row("CAGR", f"{report['mp_cagr']:.4%}", f"{report['ew_cagr']:.4%}")
-    table.add_row("Excess CAGR", f"{report['excess_cagr']:.4%}", "-")
-    table.add_row("MDD", f"{report['mp_mdd']:.4%}", f"{report['ew_mdd']:.4%}")
-    table.add_row("Sharpe", f"{report['mp_sharpe']:.4f}", f"{report['ew_sharpe']:.4f}")
-    table.add_row("Win Rate", f"{report['win_rate']:.2%}", "-")
-    table.add_row("t-stat (excess)", f"{report['t_statistic']:.4f}", "-")
-    table.add_row("p-value", f"{report['p_value']:.4f}", "-")
-
-    console.print(table)
-
-    if report["excess_cagr"] <= 0:
-        console.print("[yellow]⚠ MP가 동일가중을 이기지 못함 — 모델 점검 권장[/yellow]")
-    else:
-        console.print("[green]✓ MP가 동일가중 대비 초과 성과 확인[/green]")

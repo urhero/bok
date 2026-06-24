@@ -33,10 +33,8 @@ import pandas as pd
 
 from config import PARAM
 from db.factor_query import GenerateQueryStructure
-from service.download.download_validation import (
-    print_coverage_report,
-    validate_parquet_coverage,
-)
+from service.download.download_validation import validate_parquet_coverage
+from service.report.reporting import print_coverage_report
 from service.download.parquet_io import (
     list_yearly_parquets,
     save_factor_parquet_by_year,
