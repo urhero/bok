@@ -115,3 +115,24 @@
 - 문서 갱신: `README.md`(194,307), `research.md`(correlation/calculate_factor_stats + stale `rank_negative_correlation`), **`docs/VARIABLE_FLOW.md`**(load-bearing)
 - `Pipfile [dev-packages]`에 `vulture`, `ruff` 추가 (T1 커밋에 포함)
 - `scripts/build_playground.py:88` correlation 표시문자열은 별도 정리 시 갱신 (생성물 `code_playground.html`)
+
+---
+
+## 검증 결과 (2026-06-24, 실행 완료)
+
+커밋: T1 `cc88e21`, T2 `9d679a0`, T3 `afdd271`, T4 `596606e`, T5 `c1a5a38`, docs `f619048`.
+
+- **unit+integration(non-real_data) pytest: 291 passed** (T3에서 -22, 이후 불변)
+- **mp test + mp 전체범위(2009-2026): 산출물 byte-identical** (A·B 검증 통과)
+- **walk-forward 백테스트 before/after: 차이 발생 → 조사 결과 본 변경과 무관한 기존 비결정성으로 확정**
+
+### 백테스트 비결정성 (별도 이슈, 범위 외)
+
+근본원인: 팩터 선정 경로의 `set()` 연산(`factor_selection.py` 등) + Python 프로세스별 문자열 해시 랜덤화(`PYTHONHASHSEED`)로 `set` 순서가 매 실행 달라짐. 결과:
+- `walk_forward_weight_history.csv` 팩터 컬럼 순서가 실행마다 변동
+- 합산 순서 차이로 `walk_forward_results.csv` 수익률이 float epsilon(약 16번째 자리) 수준 변동
+- 점수/클러스터 타이 경계에서 드물게 팩터 집합도 미세 변동
+
+증명: (1) **동일 코드 2회 실행도 같은 방식으로 다름**, (2) before/after 컬럼집합 동일·수익률 epsilon 차이, (3) `mp`는 출력을 `sort_values`로 정렬해 결정적 → byte-identical. 따라서 미사용 `neg_corr`(계산 후 폐기) 제거가 원인이 아님.
+
+권장(별도 작업): 백테스트 출력의 팩터 컬럼을 정렬하거나 선정 경로 `set`→정렬 리스트로 결정화. 재현성/회귀비교를 위해 가치 있음.
