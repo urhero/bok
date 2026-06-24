@@ -716,6 +716,23 @@ python main.py mp <start> <end> --benchmark
 - `output/walk_forward_weight_history.csv` -- 월별 팩터 가중치 이력 (date x factor; viz 비중 추이/회전율용)
 - `docs/backtest_results_2009_2026.md` -- 136개월 OOS 분석 보고서
 
+**재현성 (결정적 출력, 2026-06-24):** 위 두 CSV(`walk_forward_results.csv`,
+`walk_forward_weight_history.csv`)는 동일 코드라면 실행마다 byte-identical 하다.
+과거에는 선정/스무딩 경로가 `set` 반복에 의존해 `PYTHONHASHSEED`(프로세스별 문자열
+해시 랜덤화)에 따라 ① 가중치 컬럼 순서, ② 합산 순서 차이로 인한 수익률 float 말단자릿수,
+③ 점수 동점 경계의 선정 팩터 집합이 흔들렸다. 다음 4곳을 결정화해 제거:
+- `smoothing.py:step_smooth` -- `union = sorted(set(target)|set(prev))` (반환 dict 키 순서 +
+  내부 합산 `held_sum/free_sum` 순서 고정). **근본원인.** mp 경로도 공유하지만 mp 는 출력 직전
+  `round(12)` 로 이미 말단자릿수를 잘라 byte-identical 이었음.
+- `factor_selection.py:apply_selection_hysteresis` -- 점수 동점 시 팩터명 오름차순 타이브레이크
+  (`exits`/`entries`/반환 정렬에서 `set` 반복 순서 의존 제거).
+- `result_stitcher.py` -- `weight_history` 컬럼 알파벳 정렬.
+- `walk_forward_engine.py` -- `available_factors = sorted(...)` 로 OOS 수익률/정규화 합산 순서 고정.
+
+계약은 `tests/test_unit/test_determinism.py` 가 핀으로 고정한다(서로 다른 `PYTHONHASHSEED`
+하위 프로세스 출력 동일성). 단일 프로세스 내에서는 해시 시드가 고정되어 비결정성이 드러나지
+않으므로 반드시 별도 프로세스로 검증한다.
+
 ---
 
 ## 7. 시각화 대시보드 레이어 (viz)

@@ -45,7 +45,10 @@ def step_smooth(
     overrides = step_overrides or {}
     m = max(1, months)
     current = set(target)
-    union = set(target) | set(prev)
+    # 결정적 출력: union 을 정렬해 dict 삽입 순서와 내부 합산(held_sum/free_sum 등)
+    # 순서를 고정한다. set 반복은 PYTHONHASHSEED 에 따라 순서가 바뀌어 반환 키 순서와
+    # float 말단자릿수가 실행마다 달라진다 (백테스트 출력 비결정성의 근본 원인).
+    union = sorted(set(target) | set(prev))
 
     held: dict[str, float] = {}
     free: dict[str, float] = {}      # |gap| <= max_step: 목표 도달 -> 잔여 흡수 가능

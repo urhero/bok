@@ -136,3 +136,11 @@
 증명: (1) **동일 코드 2회 실행도 같은 방식으로 다름**, (2) before/after 컬럼집합 동일·수익률 epsilon 차이, (3) `mp`는 출력을 `sort_values`로 정렬해 결정적 → byte-identical. 따라서 미사용 `neg_corr`(계산 후 폐기) 제거가 원인이 아님.
 
 권장(별도 작업): 백테스트 출력의 팩터 컬럼을 정렬하거나 선정 경로 `set`→정렬 리스트로 결정화. 재현성/회귀비교를 위해 가치 있음.
+
+**해결됨 (2026-06-24):** 위 권장 작업 완료. 근본원인 2곳 + 출력 경계 2곳을 결정화:
+- `smoothing.py:step_smooth` — `union = sorted(set(target)|set(prev))` (반환 키 순서 + 내부 합산 순서 고정). 가장 핵심.
+- `factor_selection.py:apply_selection_hysteresis` — 동점 정렬 타이브레이크를 팩터명으로 고정 (`set` 반복 의존 제거).
+- `result_stitcher.py` — `weight_history` 컬럼 알파벳 정렬.
+- `walk_forward_engine.py` — `available_factors` 정렬 (OOS 수익률 합산 순서 고정).
+
+검증: `backtest 2009-12-31 2015-12-31` 를 기본 `PYTHONHASHSEED` 로 2회(별도 프로세스) 실행 → `walk_forward_results.csv` / `walk_forward_weight_history.csv` 모두 **byte-identical**. `mp` 산출물 불변(byte-identical). unit 274 passed (`test_determinism.py` 신규: 서로 다른 hash seed 하위 프로세스 출력 동일성 계약). 이제 백테스트도 byte-diff 회귀 비교가 유효함.

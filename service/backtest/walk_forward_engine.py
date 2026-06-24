@@ -537,7 +537,9 @@ class WalkForwardEngine:
                 logger.warning("OOS date %s not in precomputed_ret_df, skipping", oos_date)
                 continue
 
-            available_factors = [f for f in cached_weights if f in precomputed_ret_df.columns]
+            # 결정적 출력: 합산(OOS 수익률/정규화) 순서를 팩터명으로 고정해 float
+            # 말단자릿수까지 안정화한다 (walk_forward_results.csv 재현성).
+            available_factors = sorted(f for f in cached_weights if f in precomputed_ret_df.columns)
             if not available_factors:
                 continue
 

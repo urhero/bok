@@ -85,14 +85,19 @@ class WalkForwardResult:
         self.oos_ew_top50_returns = pd.Series(ew_top50_rets, index=dates, name="oos_ew_top50_return")
         self.oos_ew_top50_cumulative = (1 + self.oos_ew_top50_returns).cumprod()
 
-        # 가중치 이력
+        # 가중치 이력 (결정적 출력: 팩터 컬럼을 알파벳 순으로 고정해 회귀 비교 가능하게.
+        # weights dict 키 순서가 흔들려도 컬럼 순서가 안정적이도록 방어한다.)
         weight_records = []
         for r in results:
             if r.get("weights"):
                 row = {"date": r["date"]}
                 row.update(r["weights"])
                 weight_records.append(row)
-        self.weight_history = pd.DataFrame(weight_records).set_index("date") if weight_records else pd.DataFrame()
+        if weight_records:
+            wh = pd.DataFrame(weight_records).set_index("date")
+            self.weight_history = wh.reindex(sorted(wh.columns), axis=1)
+        else:
+            self.weight_history = pd.DataFrame()
 
         # IS meta 이력 (Tier 2 리밸런싱 시점만)
         self.is_meta_history = [r["is_meta"] for r in results if r.get("is_weight_rebal") and r.get("is_meta") is not None]

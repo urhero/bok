@@ -190,7 +190,7 @@ def apply_selection_hysteresis(
         margin: 교체 요구 점수 격차 (rank_score 단위, 예: tstat 0.25). <=0 이면 no-op.
 
     Returns:
-        조정된 선정 리스트 (rank_score 내림차순, 길이 = len(selected)).
+        조정된 선정 리스트 (rank_score 내림차순, 동점 시 팩터명 오름차순, 길이 = len(selected)).
 
     Note:
         부활한 exit 는 cluster dedup 제약을 우회할 수 있다
@@ -201,13 +201,17 @@ def apply_selection_hysteresis(
 
     sel_set = set(selected)
     candidates = set(scores.index)
+    # 결정적 타이브레이크: 점수 동점 시 팩터명으로 순서를 고정한다. prev_selected/out 이
+    # set 이라 동점 정렬이 PYTHONHASHSEED 의 set 반복 순서에 의존하면 선정 팩터 집합이
+    # 실행마다 미세하게 달라진다. (exits: 점수 desc, 동점 시 이름 asc / entries: 점수
+    # asc, 동점 시 이름 asc — 최저점 entry 부터 희생하는 기존 의도 유지.)
     exits = sorted(
         (f for f in prev_selected if f in candidates and f not in sel_set),
-        key=lambda f: float(scores[f]), reverse=True,
+        key=lambda f: (-float(scores[f]), f),
     )
     entries = sorted(
         (f for f in selected if f not in prev_selected),
-        key=lambda f: float(scores[f]),
+        key=lambda f: (float(scores[f]), f),
     )
 
     out = set(selected)
@@ -222,7 +226,7 @@ def apply_selection_hysteresis(
 
     if n_swapped:
         logger.info("selection_hysteresis: %d swap reverted (margin=%.3f)", n_swapped, margin)
-    return sorted(out, key=lambda f: float(scores[f]), reverse=True)
+    return sorted(out, key=lambda f: (-float(scores[f]), f))
 
 
 def cluster_and_dedup_top_n(
