@@ -90,7 +90,7 @@
 
 ### (b) 팩터 유니버스 최종 선정 (200+ -> Top-50)
 - 랭킹 방식: **t-stat 기반** (기본), `shrunk_tstat` / `cagr` 선택 가능 (`factor_ranking_method`)
-- production `mp`와 walk-forward 백테스트가 `factor_selection.compute_rank_score()`를 공유 — 검증된 config과 배포 전략이 항상 일치
+- production `mp`와 walk-forward 백테스트가 `factor.selection.compute_rank_score()`를 공유 — 검증된 config과 배포 전략이 항상 일치
 - **선정 히스테리시스** (`selection_hysteresis=0.5`): 직전 회차 보유 팩터는 챌린저가 rank_score 격차 0.5 이상 이길 때만 교체 — 노이즈성 교체 차단으로 턴오버 -64%, OOS CAGR +0.6~0.7%p ([실험 근거](docs/experiments/smoothing_cost_experiment_20260612.md))
 - 상위 50개를 후보군으로 선정 → 하락 상관관계 계산
 - 최종 비중 할당은 [6]에서 결정
@@ -167,7 +167,7 @@
 | `[1]` 데이터 로딩 | PIT 기반 종목·팩터 데이터 확보 | `_load_data`, `_prepare_metadata` |
 | `[2]` 5분위 분석 | 팩터별 분위 포트폴리오 구성 | `calculate_factor_stats_batch` |
 | `[3]` 섹터 필터 + 라벨링 | 비효과 섹터 제거, L/N/S 분류 | `filter_and_label_factors` |
-| `[4]` 팩터 유니버스 선정 | 롱-숏 수익률 + rank_score 랭킹 (기본 t-stat) | `_evaluate_universe` |
+| `[4]` 팩터 유니버스 선정 | 롱-숏 수익률 + rank_score 랭킹 (기본 t-stat) | `evaluate_universe` |
 | `[6]` 비중 결정 | 스타일 캡 하 가중치 계산 | `optimize_constrained_weights` |
 | `[7]` MP 구성 + 출력 | 종목별 최종 비중, CSV 저장 | `_construct_and_export` |
 | `[8]` Walk-Forward 백테스트 | OOS 과적합 진단 | `WalkForwardEngine.run` |
@@ -183,6 +183,9 @@
 
 ```
 service/
+├── factor/
+│   └── selection.py            # rank_score 랭킹, 클러스터 dedup, 선정 히스테리시스 (production mp + 백테스트 공유 도메인)
+│
 ├── download/
 │   ├── download_factors.py      # SQL → 연도별 parquet 다운로드
 │   ├── download_validation.py   # 다운로드 후 parquet 커버리지 검증 (validate_parquet_coverage, print_coverage_report)
@@ -190,6 +193,7 @@ service/
 │
 ├── pipeline/
 │   ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
+│   ├── universe.py             # evaluate_universe: 팩터 유니버스 평가 + rank_score 상위 N 선정
 │   ├── factor_analysis.py      # calculate_factor_stats_batch, filter_and_label_factors
 │   ├── optimization.py         # optimize_constrained_weights (hardcoded/equal_weight)
 │   ├── weight_construction.py  # build_factor_weight_frames, aggregate_mp_weights, calculate_style_weights, construct_long_short_df, calculate_vectorized_return
@@ -296,9 +300,9 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `top_factor_count` | 50 | rank_score 기준 상위 팩터 선정 수 | `model_portfolio.py` |
 | `factor_ranking_method` | "tstat" | 팩터 랭킹 방식 (`shrunk_tstat` / `tstat` / `cagr`) | `model_portfolio.py`, `walk_forward_engine.py` (`compute_rank_score` 공유) |
 | `use_cluster_dedup` | True | Top-N Hierarchical Clustering 중복 제거 (Sprint 1-B, production 적용) | `model_portfolio.py`, `walk_forward_engine.py` |
-| `n_clusters` | 18 | 클러스터 수 (`use_cluster_dedup=True`일 때) | `factor_selection.py` |
-| `per_cluster_keep` | 3 | 클러스터당 유지 팩터 수 | `factor_selection.py` |
-| `newey_west_lag` | 3 | Newey-West 보정 lag (meta_data 진단 컬럼) | `factor_selection.py` |
+| `n_clusters` | 18 | 클러스터 수 (`use_cluster_dedup=True`일 때) | `factor/selection.py` |
+| `per_cluster_keep` | 3 | 클러스터당 유지 팩터 수 | `factor/selection.py` |
+| `newey_west_lag` | 3 | Newey-West 보정 lag (meta_data 진단 컬럼) | `factor/selection.py` |
 | `spread_threshold_pct` | 0.10 | L/N/S 라벨링 임계값 | `factor_analysis.py` |
 | `min_sector_stocks` | 10 | 섹터-날짜 최소 종목 수 | `factor_analysis.py` |
 | `max_zero_return_months` | 10 | 0 수익률 허용 최대 월 수 | `model_portfolio.py` |

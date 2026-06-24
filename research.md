@@ -111,7 +111,7 @@ main.py (CLI)
      │         ├─ 음의 팩터 스프레드(Q1<Q5) 섹터 제거      │
      │         └─ 10% 임계값 기반 L(1)/N(0)/S(-1) 라벨    │
      │         │                                         │
-     │    [4] _evaluate_universe()                        │
+     │    [4] evaluate_universe()                        │
      │         │                                         │
      │         ├─ aggregate_factor_returns()              │
      │         │    └─ per-factor: L/S 분리 →             │
@@ -216,7 +216,7 @@ q_mean["label"] = q_mean["long"] + q_mean["short"]
 
 이 로직의 의미: Q1과 Q5 사이 팩터 스프레드의 10%를 허용 범위로 두고, Q1에 가까운 수익률을 보이는 분위도 롱에, Q5에 가까운 분위도 숏에 포함시킨다. 결과적으로 Q1=L, Q2~Q4=일부 L/N/S, Q5=S가 된다.
 
-#### [4] _evaluate_universe: 팩터 유니버스 평가 및 상위 50 선정
+#### [4] evaluate_universe: 팩터 유니버스 평가 및 상위 50 선정
 
 ```python
 # 1. 팩터별 순수익률 행렬 구성
@@ -230,7 +230,7 @@ ret_df.loc[ret_df.index[0]] = 0.0
 valid = ret_df.columns[(ret_df == 0).sum() <= 10]
 
 # 4. CAGR(참조 컬럼) + rank_score 계산 — factor_ranking_method (기본 tstat)
-#    walk-forward Tier 2 와 동일한 factor_selection.compute_rank_score() 공유
+#    walk-forward Tier 2 와 동일한 factor.selection.compute_rank_score() 공유
 meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
 meta["rank_score"] = compute_rank_score(monthly_rets, ranking_method, style_map)
 
@@ -436,7 +436,7 @@ main.py
 `pd.cut(bins=[0, 20, 40, 60, 80, 105])` — 상한이 100이 아닌 105인 이유: 백분위 100%인 종목(섹터-날짜 그룹에서 rank=count)도 Q5에 포함시키기 위함. `right=True`이므로 100은 (80, 105] 구간에 해당.
 
 #### 4.2.4 `ret_df.loc[ret_df.index[0]] = 0.0`
-`_evaluate_universe`에서 수익률 행렬의 첫 행을 0으로 설정한다. 이는 `factor_analysis.prepend_start_zero()`와는 별개의 처리이며, aggregate 이후 첫 날짜의 수익률을 기준점 0으로 강제한다. CAGR 계산의 시작점 역할.
+`evaluate_universe`에서 수익률 행렬의 첫 행을 0으로 설정한다. 이는 `factor_analysis.prepend_start_zero()`와는 별개의 처리이며, aggregate 이후 첫 날짜의 수익률을 기준점 0으로 강제한다. CAGR 계산의 시작점 역할.
 
 #### 4.2.5 categorical 변환 타이밍
 다운로드 시 `object -> categorical` (zstd 최적화), 파이프라인 로드 시 `categorical -> object` (groupby OOM 방지). 상세는 §2.2 [1] 참조. categorical + `observed=False`는 OOM을 유발한다.
@@ -528,7 +528,7 @@ def construct_long_short_df(labeled_data_df, backtest_start="2017-12-31"):
 ```
 CAGR = (cumulative_return)^(12/months) - 1
 # months = len(ret_df) - 1  (첫 행은 기준점 0이므로 제외)
-# _evaluate_universe, optimize_constrained_weights 모두 동일 기준 적용
+# evaluate_universe, optimize_constrained_weights 모두 동일 기준 적용
 ```
 
 ### MDD (최대 낙폭)
@@ -650,7 +650,7 @@ Top-50이 아닌, **실제로 비중이 할당된 최종 팩터**에만 적용.
 
 - **MIN_REQUIRED_FACTORS = 5**: 유효 팩터가 5개 미만이면 Tier 2 스킵, 이전 가중치 유지
 - **Turnover 스무딩 (디폴트 OFF)**: 디폴트는 **무스무딩**(`turnover_step=1.0`, `turnover_deadband=0.0`) — 목표 비중을 그대로 배포(합 1.0, 탈락 factor 즉시 제거). 옵션으로 **절대스텝 밴드형 스무딩**(`turnover_step=0.01`)을 켜면 배포 가중치에 **직접** 적용: 매 회차 각 factor가 목표 쪽으로 **최대 `turnover_step`(예 1%p)/월** 이동, |변화|<`turnover_deadband`(예 0.3%p)면 고정(거래 0), 탈락 factor(목표=0)는 0쪽으로 점진 청산(~3개월, 그동안 배포에 포함). 메모리/배포 구분 없음 — 배포 비중 자체가 스무딩 상태(다음 회차 prev). production `mp`(월간)·백테스트(`months`=weight_rebal_months)가 `service/pipeline/smoothing.py`의 `step_smooth`를 공유. (스무딩 ON 시 월간 cadence turnover ~32% 감소하나, 무비용 가정 OOS 에선 Sharpe 가 소폭 낮아 디폴트는 OFF. 성과 저하가 Price Momentum·Analyst Expectations 등 빠른 신호 스타일에 집중되는 기여도 분해는 [`docs/experiments/absolute_step_attribution_20260607.md`](docs/experiments/absolute_step_attribution_20260607.md) 참조. 과거 EMA 방식은 renorm 으로 유지 factor 가 출렁여 실거래 turnover 를 못 줄였기에 교체됨.)
-- **선정 히스테리시스 / 스타일별 step (백테스트 전용 실험 축, 디폴트 OFF)**: `WalkForwardEngine(selection_hysteresis=...)` 은 챌린저가 직전 보유 factor 를 rank_score 격차 margin 이상 이겨야 교체 (`factor_selection.apply_selection_hysteresis`). `style_step_overrides={"스타일": step}` 은 해당 스타일 factor 만 step 차등 (`step_smooth(step_overrides=...)`). 팩터단 전환비용을 계측한 6-way 비교 결과 — 무스무딩은 비용 인지 기준 최하위, 히스테리시스는 턴오버 -64% 와 gross CAGR +0.6~0.7%p 동시 개선 — 는 [`docs/experiments/smoothing_cost_experiment_20260612.md`](docs/experiments/smoothing_cost_experiment_20260612.md) 참조. **production 적용됨** (`selection_hysteresis=0.5`): `_evaluate_universe` 가 `weight_history.load_prev_selection()` (직전 `factor_styles_*.csv` 의 raw_weight>0 = 직전 선정 집합, 배포 가중치 키가 아님 — 스무딩 청산 중 exit 의 잘못된 incumbency 방지) 으로 incumbents 를 로딩해 동일 함수를 적용. test 모드는 prod history 오염 방지를 위해 skip. backtest CLI 는 `--selection-hysteresis` (미지정 시 config 값). 또한 엔진 Tier 1 이 스무딩 prev/선정 incumbency 를 carry 하도록 변경됨 (기존 6개월마다 리셋 -> production 과 불일치 해소, Tier 2 는 규칙 갱신 시 강제 재실행).
+- **선정 히스테리시스 / 스타일별 step (백테스트 전용 실험 축, 디폴트 OFF)**: `WalkForwardEngine(selection_hysteresis=...)` 은 챌린저가 직전 보유 factor 를 rank_score 격차 margin 이상 이겨야 교체 (`factor.selection.apply_selection_hysteresis`). `style_step_overrides={"스타일": step}` 은 해당 스타일 factor 만 step 차등 (`step_smooth(step_overrides=...)`). 팩터단 전환비용을 계측한 6-way 비교 결과 — 무스무딩은 비용 인지 기준 최하위, 히스테리시스는 턴오버 -64% 와 gross CAGR +0.6~0.7%p 동시 개선 — 는 [`docs/experiments/smoothing_cost_experiment_20260612.md`](docs/experiments/smoothing_cost_experiment_20260612.md) 참조. **production 적용됨** (`selection_hysteresis=0.5`): `evaluate_universe` 가 `weight_history.load_prev_selection()` (직전 `factor_styles_*.csv` 의 raw_weight>0 = 직전 선정 집합, 배포 가중치 키가 아님 — 스무딩 청산 중 exit 의 잘못된 incumbency 방지) 으로 incumbents 를 로딩해 동일 함수를 적용. test 모드는 prod history 오염 방지를 위해 skip. backtest CLI 는 `--selection-hysteresis` (미지정 시 config 값). 또한 엔진 Tier 1 이 스무딩 prev/선정 incumbency 를 carry 하도록 변경됨 (기존 6개월마다 리셋 -> production 과 불일치 해소, Tier 2 는 규칙 갱신 시 강제 재실행).
 
 ### 6.5.1 mp 가중치 history (`output/mp_weight_history/`)
 
@@ -700,7 +700,7 @@ python main.py mp <start> <end> --benchmark
 - `backtest_start = "2009-12-31"`
 
 **Sprint 1 개선 (1-B 는 production 적용, 1-A/1-C 는 실험/진단용):**
-- **1-A `shrunk_tstat`** — `service/backtest/factor_selection.py:compute_shrunk_tstat()`
+- **1-A `shrunk_tstat`** — `service/factor/selection.py:compute_shrunk_tstat()`
   James-Stein 계열 shrinkage로 팩터 t-stat을 스타일 그룹 평균 쪽으로 `lambda` 만큼 축소.
   `lambda = var_within_style / (var_within_style + var_between_styles)` — 데이터 주도 결정.
 - **1-B `use_cluster_dedup`** — `cluster_and_dedup_top_n()`
@@ -724,7 +724,7 @@ python main.py mp <start> <end> --benchmark
 - `smoothing.py:step_smooth` -- `union = sorted(set(target)|set(prev))` (반환 dict 키 순서 +
   내부 합산 `held_sum/free_sum` 순서 고정). **근본원인.** mp 경로도 공유하지만 mp 는 출력 직전
   `round(12)` 로 이미 말단자릿수를 잘라 byte-identical 이었음.
-- `factor_selection.py:apply_selection_hysteresis` -- 점수 동점 시 팩터명 오름차순 타이브레이크
+- `factor/selection.py:apply_selection_hysteresis` -- 점수 동점 시 팩터명 오름차순 타이브레이크
   (`exits`/`entries`/반환 정렬에서 `set` 반복 순서 의존 제거).
 - `result_stitcher.py` -- `weight_history` 컬럼 알파벳 정렬.
 - `walk_forward_engine.py` -- `available_factors = sorted(...)` 로 OOS 수익률/정규화 합산 순서 고정.

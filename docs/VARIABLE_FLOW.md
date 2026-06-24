@@ -50,7 +50,7 @@ graph TD
     Func_Filter --> Var_KeptLists
 
     %% --- [4] Evaluate Universe ---
-    Func_GenMeta{{"[4] _evaluate_universe<br/>(aggregate_factor_returns → CAGR 랭킹 → top 50)"}}:::func
+    Func_GenMeta{{"[4] evaluate_universe<br/>(aggregate_factor_returns → CAGR 랭킹 → top 50)"}}:::func
     Var_FacRet("return_matrix<br/>(pd.DataFrame)"):::data
     Var_Meta("meta<br/>(pd.DataFrame)"):::data
 
@@ -102,8 +102,8 @@ graph TD
 | `[2]` | `factor_stats` | 팩터별 분석 결과 (sector_return, spread, merged_df) | `list[tuple]` | `calculate_factor_stats_batch` |
 | `[3]` | `filtered_data` | 섹터 필터 + label 부여된 종목 데이터 | `List[pd.DataFrame]` | `filter_and_label_factors` |
 | `[3]` | `kept_abbrs/names/styles` | 유지된 팩터 메타 리스트 | `List[str]` | `filter_and_label_factors` |
-| `[4]` | `return_matrix` | 월간 net return 매트릭스 (top 50 팩터) | `pd.DataFrame` | `_evaluate_universe` |
-| `[4]` | `meta` | 팩터 성과/랭크 테이블 (CAGR, rank_style, rank_total) | `pd.DataFrame` | `_evaluate_universe` |
+| `[4]` | `return_matrix` | 월간 net return 매트릭스 (top 50 팩터) | `pd.DataFrame` | `evaluate_universe` |
+| `[4]` | `meta` | 팩터 성과/랭크 테이블 (CAGR, rank_style, rank_total) | `pd.DataFrame` | `evaluate_universe` |
 | `[6]` | `sim_result` | (best_stats, weights_tbl) -- 최적 비중 결과 | `Tuple` | `optimize_constrained_weights` |
 | `[7]` | `weight_raw` | 팩터별 종목 가중치 | `pd.DataFrame` | `_construct_and_export` |
 | `[7]` | `agg_w` | MP (팩터 통합) 가중치 | `pd.DataFrame` | `_construct_and_export` |
