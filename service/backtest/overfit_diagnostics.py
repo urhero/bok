@@ -496,6 +496,56 @@ def generate_overfit_report(walk_forward_result: WalkForwardResult, full_period_
     return report
 
 
+def serialize_diagnostics_csv(oos_report: dict[str, Any], path) -> None:
+    """과적합 진단 리포트를 세로형(Category/Metric/Value/Interpretation) CSV로 저장.
+
+    main.py CLI 표현 로직에서 글자보존 추출(restructure Phase 2). dashboard_data.
+    parse_diagnostics/build_kpis 가 파싱하는 한국어 Category/Metric 키 계약을 그대로
+    유지한다(예: ('OOS 성과 - Constrained EW','CAGR'), ('1순위 - Funnel Value-Add','패턴')).
+    """
+    def _pct(v):
+        """비율 값을 % 포맷으로."""
+        return f"{v:.4%}" if isinstance(v, float) and not np.isnan(v) else "N/A"
+
+    def _dec(v):
+        """소수 값을 그대로 표시."""
+        return f"{v:.4f}" if isinstance(v, float) and not np.isnan(v) else "N/A"
+
+    rows = [
+        # 1순위: Funnel Value-Add Test
+        ("1순위 - Funnel Value-Add", "패턴", oos_report["funnel_pattern"], oos_report["funnel_interpretation"]),
+        ("1순위 - Funnel Value-Add", "EW_All CAGR", _pct(oos_report["funnel_ew_all_cagr"]), "전체 유효 팩터 동일가중"),
+        ("1순위 - Funnel Value-Add", "EW_Top50 CAGR", _pct(oos_report["funnel_ew_top50_cagr"]), "Top-50 후보군 동일가중"),
+        ("1순위 - Funnel Value-Add", "Constrained EW CAGR", _pct(oos_report["funnel_cew_cagr"]), "Constrained EW (Top-N + style_cap)"),
+        ("1순위 - Funnel Value-Add", "EW_All MDD", _pct(oos_report["funnel_ew_all_mdd"]), ""),
+        ("1순위 - Funnel Value-Add", "EW_Top50 MDD", _pct(oos_report["funnel_ew_top50_mdd"]), ""),
+        ("1순위 - Funnel Value-Add", "Constrained EW MDD", _pct(oos_report["funnel_cew_mdd"]), ""),
+        # 2순위: OOS Percentile Tracking
+        ("2순위 - OOS Percentile", "평균 백분위", _pct(oos_report["oos_avg_percentile"]), oos_report["oos_percentile_interpretation"]),
+        # 3순위: Strict Jaccard
+        ("3순위 - Strict Jaccard", "Strict Jaccard", _dec(oos_report["strict_jaccard"]), oos_report["strict_jaccard_interpretation"]),
+        # 4순위 (보조): IS-OOS Rank Correlation
+        ("4순위(보조) - Rank Corr", "IS-OOS Rank Correlation", _dec(oos_report["is_oos_rank_spearman"]), oos_report["rank_corr_interpretation"]),
+        ("4순위(보조) - Rank Corr", "Rank Corr p-value", _dec(oos_report["rank_corr_p_value"]), ""),
+        # 5순위 (보조): Deflation Ratio
+        ("5순위(보조) - Deflation", "Deflation Ratio", _dec(oos_report["deflation_ratio"]), oos_report["deflation_interpretation"]),
+        # OOS 성과
+        ("OOS 성과 - Constrained EW", "CAGR", _pct(oos_report["oos_cagr"]), ""),
+        ("OOS 성과 - Constrained EW", "MDD", _pct(oos_report["oos_mdd"]), ""),
+        ("OOS 성과 - Constrained EW", "Sharpe", _dec(oos_report["oos_sharpe"]), ""),
+        ("OOS 성과 - Constrained EW", "Calmar", _dec(oos_report["oos_calmar"]), ""),
+        ("OOS 성과 - EW", "CAGR", _pct(oos_report["oos_ew_cagr"]), ""),
+        ("OOS 성과 - EW", "MDD", _pct(oos_report["oos_ew_mdd"]), ""),
+        ("OOS 성과 - EW", "Sharpe", _dec(oos_report["oos_ew_sharpe"]), ""),
+        ("Constrained EW vs EW_Top50 비교", "Excess CAGR", _pct(oos_report["cew_vs_ew_excess_cagr"]), ""),
+        ("Constrained EW vs EW_Top50 비교", "Win Rate", _pct(oos_report["cew_vs_ew_win_rate"]), ""),
+        ("주의사항", "경고", "", oos_report["warning"]),
+        ("주의사항", "한계점", "", oos_report["limitation"]),
+    ]
+    diag_df = pd.DataFrame(rows, columns=["Category", "Metric", "Value", "Interpretation"])
+    diag_df.to_csv(path, index=False, encoding="utf-8-sig")
+
+
 def print_overfit_report(report: dict[str, Any]) -> None:
     """과적합 진단 리포트를 Rich 테이블로 콘솔 출력한다."""
     from rich.console import Console
