@@ -335,7 +335,7 @@ main.py
   │    ├→ db/factor_query.py
   │    │    └→ config.py (PARAM)
   │    ├→ service/download/parquet_io.py (save/load/validate)
-  │    └→ service/download/download_validation.py (validate_parquet_coverage, print_coverage_report)
+  │    └→ service/download/download_validation.py (validate_parquet_coverage)  # print_coverage_report -> service/report/reporting.py
   ├→ service/pipeline/model_portfolio.py
   │    ├→ config.py (PARAM)
   │    ├→ service/download/parquet_io.py (load_factor_parquet)
@@ -415,7 +415,7 @@ main.py
 - **이유**: 프로덕션 규제 요건. 단일 스타일 집중 위험 통제
 
 #### 4.1.4 거래비용 30bp
-- **위치**: `config.py:PIPELINE_PARAMS["transaction_cost_bps"]` → `model_portfolio.aggregate_factor_returns()` → `weight_construction.py` 파라미터로 전달
+- **위치**: `config.py:PIPELINE_PARAMS["transaction_cost_bps"]` → `factor_returns.aggregate_factor_returns()` → `weight_construction.py` 파라미터로 전달
 - **이유**: 중국 주식 시장 실거래 비용 추정치. 변경 시 모든 팩터의 순수익률과 순위가 변동
 
 #### 4.1.5 sort_order(factorOrder) 방향 통일

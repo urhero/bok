@@ -86,7 +86,7 @@
 
 ### (a) 롱-숏 수익률
 - 각 팩터별 롱/숏 포트폴리오 구성 → 거래비용(30bp) 차감 → 월간 L-S 수익률 행렬 생성
-- 핵심 함수: `model_portfolio.aggregate_factor_returns()`
+- 핵심 함수: `factor_returns.aggregate_factor_returns()`
 
 ### (b) 팩터 유니버스 최종 선정 (200+ -> Top-50)
 - 랭킹 방식: **t-stat 기반** (기본), `shrunk_tstat` / `cagr` 선택 가능 (`factor_ranking_method`)
@@ -184,12 +184,14 @@
 ```
 service/
 ├── factor/
-│   └── selection.py            # rank_score 랭킹, 클러스터 dedup, 선정 히스테리시스 (production mp + 백테스트 공유 도메인)
+│   ├── selection.py            # rank_score 랭킹, 클러스터 dedup, 선정 히스테리시스 (production mp + 백테스트 공유 도메인)
+│   └── factor_returns.py       # aggregate_factor_returns (팩터 롱-숏 수익률 행렬, mp + 백테스트 공유)
 │
 ├── download/
 │   ├── download_factors.py      # SQL → 연도별 parquet 다운로드
-│   ├── download_validation.py   # 다운로드 후 parquet 커버리지 검증 (validate_parquet_coverage, print_coverage_report)
-│   └── parquet_io.py            # 연도별 분할 저장/로드/검증 유틸리티
+│   ├── download_validation.py   # 다운로드 후 parquet 커버리지 검증 (validate_parquet_coverage)
+│   ├── parquet_io.py            # 연도별 분할 저장/로드/검증 유틸리티
+│   └── paths.py                 # 데이터 파일명 헬퍼 (mreturn_filename)
 │
 ├── pipeline/
 │   ├── model_portfolio.py      # Pipeline 오케스트레이터 (ModelPortfolioPipeline 클래스)
