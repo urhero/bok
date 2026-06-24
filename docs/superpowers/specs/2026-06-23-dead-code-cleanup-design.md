@@ -1,90 +1,117 @@
-# 죽은 코드/미사용 코드 정리 — 설계 문서
+# 죽은 코드/미사용 코드 정리 — 실행 계획 (4-agent 교차검증 완료)
 
-- 날짜: 2026-06-23
-- 범위: 핵심 코드(`service/`, `db/`, `main.py`, `config.py`) + 전체 미사용 코드 스윕
-- 제외: `scripts/`(실험 스크립트), `docs/`(문서) — 별도 작업으로 분리
-- 탐지 도구: `vulture`(미사용 함수/변수), `ruff F401/F811/F841`(미사용 import/변수)
+- 날짜: 2026-06-23 (검증 보강 2026-06-24)
+- 범위: 핵심 코드(`service/`, `db/`, `main.py`, `config.py`) + 전체 미사용 코드 스윕 + 기존 고아 테스트 fixture
+- 제외: `scripts/`(실험 스크립트 본체), `docs/` 일반 문서 (단 load-bearing 문서는 C단계에서 갱신)
+- 탐지: `vulture 2.16`, `ruff 0.15.18` (F401/F811/F841 + RUF059) + 수동 grep
+- 검증: 독립 에이전트 3개 tier별 교차검증 → 종합 에이전트 1개 → 적대적 에이전트 3개(완전성/Tier4 red-team/프로세스)
 
 ## 목표
 
-프로덕션 경로에서 호출되지 않거나 결과가 버려지는 코드를 제거해 가독성과 백테스트 성능을 개선한다. **산출물(`aggregated_weights_*`, `total_aggregated_weights_*`, `meta_data.csv`)은 변경 전후 동일해야 한다.**
+프로덕션 경로에서 호출되지 않거나 결과가 버려지는 코드를 제거한다. **산출물(`aggregated_weights_*`, `total_aggregated_weights_*`, `meta_data.csv`)은 변경 전후 동일해야 한다.**
 
-## Tier 1 — 무손실 자동수정 (behavior 불변)
+## 핵심 교정 사항 (초기 spec 대비)
 
-미사용 import/지역변수. 동작에 영향 없음.
+1. `loop_index`, `factor_name`, `show`는 지역변수가 아니라 **함수 파라미터** — 시그니처 변경 + **호출부 동반 수정** 필수.
+2. `factor_name`은 positional이라 호출부의 대응 positional 인자도 같이 제거해야 shift 버그 방지.
+3. batch/split 테스트 안의 **parity 테스트**가 삭제 대상 단일 함수를 호출 → 콕 집어 제거/편집.
+4. correlation 제거 시 `all_positive_returns` fixture, 통합테스트 `:120` assert도 동반 제거 (초기 누락분).
+5. **keep-list**: `track`(walk_forward:21, @371 사용), `numpy`(model_portfolio:24, @501 np.nan 사용) — 절대 삭제 금지.
 
-| 파일 | 항목 |
-|------|------|
-| `db/factor_query.py:16` | import `Any`, `Dict` |
-| `main.py:153` | import `Path` |
-| `service/backtest/walk_forward_engine.py:19,242` | import `numpy`, 변수 `loop_index` |
-| `service/download/download_validation.py:12` | import `numpy` |
-| `service/pipeline/model_portfolio.py:26,33` | import `track`, `calculate_factor_stats` |
-| `service/report/report_generator.py:9,40` | import `Path`, 변수 `factor_name`/`show` |
+---
 
-## Tier 2 — 확실한 죽은 함수 (참조 0)
+## TIER 1 — 미사용 import / 파라미터 (순수, behavior 불변)
 
-- `generate_stress_test_section` (`service/report/report_generator.py:320`) — 코드/테스트 어디서도 호출 없음. 함수 삭제.
+각 파일 **아래 라인부터 위로** 편집 (라인 drift 방지).
 
-## Tier 3 — 테스트만 살려두는 프로덕션 미사용 함수 (결정: 삭제)
+1. `db/factor_query.py:16` — `from typing import Any, Dict` 줄 삭제
+2. `main.py:153` — 함수내 `from pathlib import Path` 삭제
+3. `service/download/download_validation.py:12` — `import numpy as np` 삭제
+4. `service/backtest/walk_forward_engine.py:19` — `import numpy as np` 삭제 (`track`@21 **유지**)
+5. `service/backtest/walk_forward_engine.py:80` — `kept_idx` 미사용 언팩 변수 → `_`
+6. `service/pipeline/model_portfolio.py:26` — `from rich.progress import track` 삭제 (`numpy`@24 **유지**)
+7. `service/report/report_generator.py:9` — `from pathlib import Path` 삭제
+8. `service/report/report_generator.py:147,148` — `kept_name`, `kept_style` 미사용 언팩 → `_`
+9. **[시그니처]** `service/report/report_generator.py:40` — `factor_name`, `show=False` 제거 → `def plot_factor_returns(data, style_name, name, mode, ax=None, dropped=None):`
+   - **동반 필수** `:300` — positional `factor_abbr` 제거 → `plot_factor_returns(data, style_name, full_name, mode, ax=ax, dropped=drop_set)`
+10. **[시그니처]** `service/backtest/walk_forward_engine.py:242` — 파라미터 `loop_index: int = 0,` 제거
+    - **동반 필수** `:502` — `loop_index=i,` 인자 제거 (루프변수 `i`는 다른 곳에서 사용되므로 유지)
 
-프로덕션 경로는 batch/split 버전만 사용. 단일 버전은 전용 테스트만 호출.
+**T1 완료 게이트**: `ruff check service/ db/ main.py config.py` → F401/F811/F841 0건. 추가로 `mp test test_data.csv` 1회 (런타임 import 해소 확인).
 
-- `calculate_factor_stats` (`service/pipeline/factor_analysis.py:34`) + `tests/test_unit/test_calculate_factor_stats.py`
-  - 프로덕션은 `calculate_factor_stats_batch`만 사용 (batch는 단일 버전을 내부 호출하지 않음)
-  - 단, batch 테스트(`test_calculate_factor_stats_batch...`)는 보존 — 단일 버전 의존 케이스만 제거
-  - conftest의 단일 버전 전용 fixture 정리
-- `selection_churn` (`service/report/dashboard_data.py:286`) + 관련 테스트
-  - 대시보드는 `selection_churn_split`만 사용
-  - `test_dashboard_data.py`의 `selection_churn`(split 아님) 단독 테스트만 제거
+## TIER 2 — 죽은 함수 (참조 0)
 
-## Tier 4 — 죽은 연산: downside correlation (결정: 제거 + 전체 검증)
+11. `service/report/report_generator.py:320-337` — `generate_stress_test_section` 삭제 (지역 `import pandas` 포함). `if __name__` 블록은 유지.
 
-`calculate_downside_correlation` 결과가 포트폴리오 구성에 전혀 사용되지 않음 (계산 후 버려짐). 백테스트 hot loop의 `neg_corr`는 매 루프 낭비.
+## TIER 3 — 테스트 전용 함수 + 테스트/fixture
 
-**제거 대상:**
-- `service/pipeline/correlation.py` — 모듈 삭제
-- `config.py:51` — `min_downside_obs` 파라미터 (correlation 전용)
-- `service/pipeline/model_portfolio.py`
-  - `:13` 주석, `:31` import 제거
-  - `:133` `self.correlation_matrix` 초기화 제거
-  - `:165` 언패킹 `self.return_matrix, self.correlation_matrix, self.meta` → `self.return_matrix, self.meta`
-  - `:463-465` `negative_corr` 계산 제거, `_evaluate_universe` 반환 `(ret_df, negative_corr, meta)` → `(ret_df, meta)`
-- `service/backtest/walk_forward_engine.py:31,496-498` — import + `neg_corr` 블록 제거
-- `tests/test_unit/test_downside_correlation.py` — 삭제 (286줄)
-- `tests/conftest.py:143` — `sample_return_matrix` fixture (삭제 테스트 전용) 제거
-- `tests/test_integration/test_pipeline_real_data.py`
-  - `:120` `correlation_matrix` assertion 제거
-  - `:265-287` `TestRealDataCorrelationMatrix` 클래스 제거
+**Function A: `calculate_factor_stats`**
+12. `service/pipeline/factor_analysis.py:34-137` — 함수 삭제 (다음 def `filter_and_label_factors`@140; batch는 단일 미호출)
+13. `service/pipeline/model_portfolio.py:33` — import tuple에서 `calculate_factor_stats,` 제거 (batch/filter는 유지)
+14. `tests/test_unit/test_calculate_factor_stats.py:21` — import에서 `calculate_factor_stats` 제거
+15. `tests/test_unit/test_calculate_factor_stats.py` — 단일 호출 클래스 전체 삭제: `TestCalculateFactorStatsBasic`(26-107), `...Lag`(110-128), `...SortOrder`(131-157), `...TestMode`(160-202), `...SectorReturn`(205-238), `...EdgeCases`(241-340), `...DataIntegrity`(343-376)
+16. `tests/test_unit/test_calculate_factor_stats.py` — `TestCalculateFactorStatsBatch` 내 **`test_batch_matches_single_version`(@parametrize 407 ~ 430) 삭제** (parity 테스트, 단일 호출). 나머지 batch 테스트(432-461)와 `_make_multi_factor_frame`(383-401) **유지**
+17. `tests/conftest.py` — fixture 삭제: `sample_factor_data`(55), `insufficient_history_data`(91), `small_sector_data`(114)
+18. **[docstring]** `service/pipeline/factor_analysis.py:156,252` — `calculate_factor_stats()` 형식 참조를 batch로 갱신
 
-**기각 근거 메모:** 결과가 downstream에 미사용이므로 산출물 동일성은 논리적으로 보장됨. 검증은 이를 확인하는 절차.
+**Function B: `selection_churn`**
+19. `service/report/dashboard_data.py:286-296` — 함수 삭제 (split은 비의존; dashboard는 `_split`@dashboard.py:139만 사용; scripts의 `"selection_churn"`은 dict 키 문자열로 무관)
+20. `tests/test_unit/test_dashboard_data.py` — `test_selection_churn_counts_entries_and_exits`(274-283), `test_selection_churn_zero_when_set_stable`(286-289) 삭제
+21. `tests/test_unit/test_dashboard_data.py:303-304` — `test_selection_churn_split_entries_and_exits`(292-304)는 **유지하되** 마지막 parity assert(303 주석+304)만 제거 (split의 entries/exits 단언은 유지). `_weight_history()` 헬퍼(258-263) 유지
+
+**T3 게이트**: `pytest tests/test_unit/test_calculate_factor_stats.py tests/test_unit/test_dashboard_data.py -v`
+
+## TIER 4 — downside correlation (산출물 중립, red-team 입증)
+
+> red-team 결론: correlation.py는 순수함수(`dtype=` 강제복사, 메모리 비공유 실증), `.loc[order,order]`는 identity reindex(KeyError 불가, 검증게이트 아님), RNG/global state 없음, `neg_corr`는 try 밖 + walk_forward는 그 3개 CSV 미생성. 결과가 weight/selection/meta 어디에도 안 들어감. 동일성은 by-construction 보장, diff는 확인 절차.
+
+22-25 (model_portfolio.py, **한 커밋에 atomic**):
+22. `:31` — correlation import 삭제
+23. `:133` — `self.correlation_matrix: pd.DataFrame | None = None` 삭제
+24. `:165` — 언팩 → `self.return_matrix, self.meta = self._evaluate_universe(`
+25. `:463` `negative_corr = ...` 줄 삭제 + `:466` return → `return ret_df, meta` (462의 `ret_df = ret_df[order]`는 유지 — 컬럼순서 보존)
+26. `service/backtest/walk_forward_engine.py:31` — correlation import 삭제; `:496-498` — `neg_corr` 블록(3줄) 삭제
+27. `config.py:51` — `"min_downside_obs": 20,` 삭제 (소비처는 위 두 곳뿐)
+28. `service/pipeline/correlation.py` — 모듈 삭제
+29. `tests/test_unit/test_downside_correlation.py` — 파일 삭제
+30. `tests/conftest.py` — `sample_return_matrix`(142), `all_positive_returns`(158) fixture + "상관관계 테스트용" 헤더 주석(137-139) 삭제
+31. `tests/test_integration/test_pipeline_real_data.py:120` — `correlation_matrix` assert 줄만 삭제 (`test_pipeline_stores_intermediate_results` 나머지 유지)
+32. `tests/test_integration/test_pipeline_real_data.py` — 섹션5 헤더(259-261)+`TestRealDataCorrelationMatrix`(263-289) 삭제 (다음 클래스 296)
+33. **[docstring]** `service/pipeline/model_portfolio.py:11-15` — correlation 모듈 줄 제거 + 블록 일관 정리
+
+## TIER 5 — 기존 고아 테스트 fixture (4개 tier 무관, 사용처 0 확인)
+
+34. `tests/conftest.py` — 사용처 0 fixture/헬퍼 7개 **이름 기준 surgical 삭제** (유지 fixture와 interleave됨): `empty_time_series`(38), `test_data_csv`(197), `factor_info_csv`(205), `sample_sector_return_df`(217), `sample_raw_df_for_filter`(230), `assert_dataframe_equal_with_tolerance`(261), `assert_weights_valid`(289)
+    - **유지**: `sample_time_series`(14건), `single_value_time_series`(2건), `sample_style_returns`(16건)
 
 ## 보존 (건드리지 않음)
 
-- `service/pipeline/optimization.py:21` — "DO NOT DELETE THIS COMMENT" 명시적 보호 마커
-- `optimization.py` 모듈 자체 (이름은 레거시지만 `optimize_constrained_weights`로 실사용)
-- `scripts/build_playground.py`의 correlation 참조 — 단순 표시 문자열(import 아님), scripts 범위 외. 별도 정리 시 갱신.
+- `service/pipeline/optimization.py:21` "DO NOT DELETE THIS COMMENT" 마커, `optimization.py` 모듈
+- keep-list: `track`(walk_forward:21), `numpy`(model_portfolio:24)
+- `result_stitcher.py:36 self._raw_results` (scripts에서 사용 — vulture false positive)
 
-## 검증 프로세스 (CLAUDE.md 준수)
+---
 
-### A. 테스트 모드
-1. 변경 전 베이스라인: `python main.py mp test test_data.csv` → 산출물 스냅샷
-2. 변경 적용
-3. 변경 후 재실행 → diff (동일해야 함)
-4. `python -m pytest tests/test_unit/ -v` 통과
+## 실행 순서 & 검증 (CLAUDE.md 준수)
 
-### B. 실제 데이터
-1. 변경 전 베이스라인: `python main.py mp 2009-12-31 2026-03-31` → 산출물 스냅샷
-2. 변경 후 재실행 → diff (동일해야 함)
-3. (Tier 4가 walk_forward도 건드리므로) `python main.py backtest <범위>` 추가 확인 권장
+### 0. 베이스라인 — **첫 T1 편집 전 필수** (T1이 오케스트레이터 모듈 건드림)
+- `mp test test_data.csv` → 산출물을 **`output/` 밖 별도 디렉토리**에 스냅샷 (통합테스트가 output/ 덮어씀)
+- `mp 2009-12-31 2026-03-31` → 별도 스냅샷
+- **walk-forward 백테스트 2009-12-31~2026-03-31 (before)** → 백그라운드로 즉시 시작 (~41분)
 
-### C. 마무리
-- `README.md`, `research.md`에서 correlation/미사용 함수 언급 갱신
-- 비교 대상: `aggregated_weights_*`, `total_aggregated_weights_*`, `meta_data.csv`
+### 1. 커밋 전략 — tier당 1커밋 (총 5), main-ikm, non-FF 머지, no-squash
+- T4를 격리해 문제 시 단독 revert 가능
 
-## 실행 순서
+### 2. 적용: T1 → T2 → T3 → T4 → T5, 각 tier 후 게이트 통과
 
-1. 베이스라인 캡처 (A.1, B.1) — **코드 변경 전 필수**
-2. Tier 1 → 2 → 3 → 4 순차 적용 (각 단계 후 pytest)
-3. 변경 후 검증 (A.3, B.2)
-4. 문서 갱신, 커밋
+### 3. 변경 후 검증
+- `pytest tests/ -m "not real_data" -v` (unit+통합 수집/마커 검증; `--strict-markers` 켜짐)
+- 데이터 있으면 `pytest tests/test_integration/test_pipeline_real_data.py -v`
+- `mp test` + `mp 2009-12-31 2026-03-31` 재실행 → 스냅샷과 diff (**byte-identical**)
+- **walk-forward 백테스트 2009-2026 (after)** → before와 diff (전체 범위 before/after, 사용자 결정)
+- 비교 대상: `aggregated_weights_*`, `total_aggregated_weights_*`, `meta_data.csv`. diff 발생 시 즉시 중단.
+
+### 4. 마무리
+- 문서 갱신: `README.md`(194,307), `research.md`(correlation/calculate_factor_stats + stale `rank_negative_correlation`), **`docs/VARIABLE_FLOW.md`**(load-bearing)
+- `Pipfile [dev-packages]`에 `vulture`, `ruff` 추가 (T1 커밋에 포함)
+- `scripts/build_playground.py:88` correlation 표시문자열은 별도 정리 시 갱신 (생성물 `code_playground.html`)
