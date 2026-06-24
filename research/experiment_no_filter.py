@@ -26,7 +26,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import service.backtest.walk_forward_engine as wf_module
 from service.backtest.walk_forward_engine import _run_rule_learning
 
-from scripts.experiment_base import (
+from research.experiment_base import (
     parse_experiment_args,
     print_comparison_table,
     run_variant,

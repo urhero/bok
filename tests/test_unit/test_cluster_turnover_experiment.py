@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
-"""scripts/run_cluster_turnover_experiment.py 헬퍼 함수 단위 테스트."""
+"""research/run_cluster_turnover_experiment.py 헬퍼 함수 단위 테스트."""
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-# scripts/ 는 패키지가 아니므로 sys.path 에 추가
+# research/ 는 패키지가 아니므로 sys.path 에 추가
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from scripts.run_cluster_turnover_experiment import build_cases
+from research.run_cluster_turnover_experiment import build_cases
 
 
 def test_build_cases_returns_43_cases():
@@ -92,7 +92,7 @@ def test_combo_strong_case():
 import pandas as pd
 import numpy as np
 
-from scripts.run_cluster_turnover_experiment import compute_avg_turnover
+from research.run_cluster_turnover_experiment import compute_avg_turnover
 
 
 def test_compute_avg_turnover_empty_history():
@@ -141,7 +141,7 @@ def test_compute_avg_turnover_with_nan_factors():
     assert abs(result - 0.5) < 1e-9
 
 
-from scripts.run_cluster_turnover_experiment import classify_verdict
+from research.run_cluster_turnover_experiment import classify_verdict
 
 
 def test_verdict_ok_when_normal_and_low_pctile():
@@ -181,7 +181,7 @@ def test_verdict_boundary_at_0_60_is_warn():
     assert classify_verdict("NORMAL", 0.60) == "PERCENTILE_WARN"
 
 
-from scripts.run_cluster_turnover_experiment import build_summary_row
+from research.run_cluster_turnover_experiment import build_summary_row
 
 
 def _fake_overfit_report() -> dict:
@@ -307,7 +307,7 @@ def test_build_summary_row_failed_has_nan_net_cagr():
 
 import tempfile
 
-from scripts.run_cluster_turnover_experiment import render_markdown_report
+from research.run_cluster_turnover_experiment import render_markdown_report
 
 
 def _fake_summary_df():
@@ -391,7 +391,7 @@ def test_render_markdown_report_recommendation_picks_highest_sharpe_ok():
         assert "cluster_18" in rec_section
 
 
-from scripts.run_cluster_turnover_experiment import pick_recommendation
+from research.run_cluster_turnover_experiment import pick_recommendation
 
 
 def test_pick_recommendation_returns_none_when_no_ok_rows():

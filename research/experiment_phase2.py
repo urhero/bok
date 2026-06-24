@@ -20,7 +20,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.experiment_base import (
+from research.experiment_base import (
     parse_experiment_args,
     print_comparison_table,
     run_variant,
