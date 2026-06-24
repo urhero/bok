@@ -21,7 +21,7 @@ from rich.progress import track
 
 from config import PARAM, PIPELINE_PARAMS
 from service.backtest.data_slicer import get_oos_dates, slice_data_by_date
-from service.backtest.factor_selection import (
+from service.factor.selection import (
     apply_selection_hysteresis,
     cluster_and_dedup_top_n,
     compute_rank_score,

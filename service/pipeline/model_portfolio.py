@@ -377,7 +377,7 @@ class ModelPortfolioPipeline:
         meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
 
         # Sprint 1-C: Newey-West 보정 t-stat 진단 컬럼 (관찰용)
-        from service.backtest.factor_selection import (
+        from service.factor.selection import (
             compute_newey_west_tstat,
             compute_rank_score,
             compute_tstat,
@@ -417,7 +417,7 @@ class ModelPortfolioPipeline:
         # Sprint 1-B: Hierarchical Clustering 기반 Top-N dedup (선택적)
         # use_cluster_dedup=False 일 때는 단순 rank_score 상위 N
         if self.pipeline_params.get("use_cluster_dedup", False):
-            from service.backtest.factor_selection import cluster_and_dedup_top_n
+            from service.factor.selection import cluster_and_dedup_top_n
             score_series = meta.set_index("factorAbbreviation")["rank_score"]
             selected = cluster_and_dedup_top_n(
                 monthly_rets,
@@ -436,7 +436,7 @@ class ModelPortfolioPipeline:
         # margin 미만 격차의 챌린저로부터 보호. test 모드는 prod history 오염 방지 skip.
         margin = float(self.pipeline_params.get("selection_hysteresis", 0.0))
         if margin > 0 and not test_file:
-            from service.backtest.factor_selection import apply_selection_hysteresis
+            from service.factor.selection import apply_selection_hysteresis
             prev_selected, prev_sel_date = load_prev_selection(HISTORY_DIR, end_date)
             if prev_selected:
                 score_full = meta_full.set_index("factorAbbreviation")["rank_score"]

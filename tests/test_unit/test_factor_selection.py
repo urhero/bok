@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from service.backtest.factor_selection import (
+from service.factor.selection import (
     apply_selection_hysteresis,
     cluster_and_dedup_top_n,
     compute_newey_west_tstat,

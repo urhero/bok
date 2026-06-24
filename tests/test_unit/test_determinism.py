@@ -30,7 +30,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _PROBE = r"""
 import pandas as pd
 from service.pipeline.smoothing import step_smooth
-from service.backtest.factor_selection import apply_selection_hysteresis
+from service.factor.selection import apply_selection_hysteresis
 
 # 1) step_smooth: union = set(target)|set(prev) 반복 순서가 반환 dict 키 순서와
 #    내부 float 합산 순서(=값 말단자릿수)에 영향. 14개 팩터로 set 순서 변동을 노출.
