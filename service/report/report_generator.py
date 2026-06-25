@@ -13,20 +13,12 @@ import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Rectangle
 
+from service.factor.factor_returns import aggregate_factor_returns
+from service.paths import OUTPUT_DIR
 from service.pipeline.factor_analysis import filter_and_label_factors
-from service.pipeline.model_portfolio import OUTPUT_DIR, aggregate_factor_returns
+from service.report.style_colors import STYLE_COLORS, _DEFAULT_COLOR
 
 logger = logging.getLogger(__name__)
-
-STYLE_COLORS = {
-    "Valuation": "#d62728",  # Red
-    "Price Momentum": "#ff7f0e",  # Orange
-    "Earnings Quality": "#e377c2",  # Bright Pink
-    "Size": "#2ca02c",  # Green
-    "Analyst Expectations": "#17becf",  # Cyan / Teal
-    "Historical Growth": "#8c564b",  # Brown
-    "Capital Efficiency": "#bcbd22",  # Olive (high-contrast yellow-green)
-}
 
 RENAME_SECTORS = {
     "Communication Services": "CS",
@@ -41,7 +33,7 @@ def plot_factor_returns(
     if dropped is None:
         dropped = set()
 
-    colour = STYLE_COLORS.get(style_name, "black")
+    colour = STYLE_COLORS.get(style_name, _DEFAULT_COLOR)
 
     if data is None:
         return None

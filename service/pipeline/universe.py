@@ -7,8 +7,10 @@ model_portfolio 오케스트레이터의 _evaluate_universe 메서드를 추출�
 service.factor.selection 함수 레벨에서 공유된다.
 
 수치 동일성: 함수 본문은 기존 메서드에서 self.pipeline_params -> pipeline_params
-치환 외 변경 없음(글자보존). OUTPUT_DIR / HISTORY_DIR / aggregate_factor_returns 는
-순환참조 회피를 위해 호출 시점 lazy import 한다(model_portfolio 가 정의 소유).
+치환 외 변경 없음(글자보존). 경로 상수와 aggregate_factor_returns 는 각자의
+실제 소유 모듈(service.paths / service.factor.factor_returns)에서 직접 import 한다
+(과거 model_portfolio 경유 lazy import 로 model_portfolio<->universe 순환을 회피했으나,
+실제 소유 모듈이 분리되며 순환이 사라져 모듈 최상위 import 로 정리).
 """
 from __future__ import annotations
 
@@ -17,6 +19,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from service.factor.factor_returns import aggregate_factor_returns
+from service.paths import HISTORY_DIR, OUTPUT_DIR
 from service.pipeline.weight_history import load_prev_selection
 from utils.validation import validate_return_matrix
 
@@ -30,12 +34,6 @@ def evaluate_universe(kept_abbrs, kept_names, kept_styles, filtered_data, end_da
     factor_styles raw_weight > 0)를 incumbent 로 보호 — 챌린저가 margin
     이상 이겨야 교체된다 (walk-forward 엔진과 동일 로직 공유).
     """
-    from service.pipeline.model_portfolio import (
-        HISTORY_DIR,
-        OUTPUT_DIR,
-        aggregate_factor_returns,
-    )
-
     logger.info("Building monthly return matrix")
     ret_df = aggregate_factor_returns(
         filtered_data, kept_abbrs,

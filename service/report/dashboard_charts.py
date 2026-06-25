@@ -10,19 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from service.report.dashboard_data import compute_drawdown
-
-# report_generator.STYLE_COLORS 미러 + Volatility 보강
-STYLE_COLORS = {
-    "Valuation": "#d62728",
-    "Price Momentum": "#ff7f0e",
-    "Earnings Quality": "#e377c2",
-    "Size": "#2ca02c",
-    "Analyst Expectations": "#17becf",
-    "Historical Growth": "#8c564b",
-    "Capital Efficiency": "#bcbd22",
-    "Volatility": "#9467bd",
-}
-_DEFAULT_COLOR = "#7f7f7f"
+from service.report.style_colors import STYLE_COLORS, _DEFAULT_COLOR
 
 # 전략별 색/라벨 (누적수익 비교). 본전략(CEW)은 브랜드 옐로로 가장 굵게.
 _STRAT = [

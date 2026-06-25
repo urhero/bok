@@ -105,7 +105,7 @@ def _equal_weight_allocation(
 def optimize_constrained_weights(
     rtn_df: pd.DataFrame,
     style_list: list[str],
-    mode: str = "hardcoded",
+    mode: str = "equal_weight",
     style_cap: float = 0.25,
     tol: float = 1e-12,
     test_mode: bool = False,
@@ -123,7 +123,7 @@ def optimize_constrained_weights(
     Args:
         rtn_df: (날짜 x 팩터) 월간 수익률 행렬
         style_list: 각 팩터의 스타일명 (rtn_df 컬럼 순서와 동일)
-        mode: "hardcoded" / "equal_weight"
+        mode: "equal_weight"(기본, config.py 기본값) / "hardcoded"
         style_cap: 스타일별 최대 비중 (기본 0.25 = 25%)
         tol: 제약 검사 허용 오차
         test_mode: True이면 style_cap을 1.0으로 완화

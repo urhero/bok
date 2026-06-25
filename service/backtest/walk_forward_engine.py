@@ -28,6 +28,7 @@ from service.factor.selection import (
 )
 from service.backtest.result_stitcher import WalkForwardResult
 from service.pipeline.factor_analysis import (
+    ANALYZE_COLS,
     calculate_factor_stats_batch,
     filter_and_label_factors,
 )
@@ -64,8 +65,7 @@ def _run_rule_learning(
     )
 
     # [2] 5분위 분석
-    analyze_cols = ["gvkeyiid", "ticker", "isin", "ddt", "sec", "val", "M_RETURN", "factorAbbreviation", "factorOrder"]
-    slim_data = merged_data[[c for c in analyze_cols if c in merged_data.columns]]
+    slim_data = merged_data[[c for c in ANALYZE_COLS if c in merged_data.columns]]
     factor_stats = calculate_factor_stats_batch(
         slim_data, factor_abbr_list, orders,
         test_mode=bool(test_file),
@@ -140,8 +140,7 @@ def _apply_rules_and_aggregate(
     )
 
     # [2] 전체 데이터에서 횡단면 5분위 랭킹 (시계열 오염 없음, 안전)
-    analyze_cols = ["gvkeyiid", "ticker", "isin", "ddt", "sec", "val", "M_RETURN", "factorAbbreviation", "factorOrder"]
-    slim_data = merged_data_full[[c for c in analyze_cols if c in merged_data_full.columns]]
+    slim_data = merged_data_full[[c for c in ANALYZE_COLS if c in merged_data_full.columns]]
     factor_stats_full = calculate_factor_stats_batch(
         slim_data, factor_abbr_list, orders,
         test_mode=bool(test_file),

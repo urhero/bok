@@ -40,11 +40,10 @@ from service.download.parquet_io import (
     save_factor_parquet_by_year,
 )
 from service.download.paths import mreturn_filename
+from service.paths import DATA_DIR as _DEFAULT_DATA_DIR, PROJECT_ROOT as _PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_DEFAULT_DATA_DIR = _PROJECT_ROOT / "data"
 _BACKUP_DIR = _PROJECT_ROOT / "data_backup"
 
 

@@ -19,11 +19,11 @@ PARAM = {
 }
 
 if not PARAM["user_pwd"]:
-    logger.warning("USER_PWD not set in .env — DB connections will fail")
+    logger.warning("USER_PWD not set in .env - DB connections will fail")
 if not PARAM["server_name"]:
-    logger.warning("SERVER_NAME not set in .env — DB connections will fail")
+    logger.warning("SERVER_NAME not set in .env - DB connections will fail")
 if not PARAM["user_name"]:
-    logger.warning("USER_NAME not set in .env — DB connections will fail")
+    logger.warning("USER_NAME not set in .env - DB connections will fail")
 
 # ── 파이프라인 비즈니스 파라미터 ──────────────────────────────────────────────
 #

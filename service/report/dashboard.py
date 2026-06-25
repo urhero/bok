@@ -165,7 +165,7 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
         from config import PARAM, PIPELINE_PARAMS
         style_cap = float(PIPELINE_PARAMS.get("style_cap", 0.25))
         benchmark = PARAM.get("benchmark", "MXCN1A")
-    except Exception:  # noqa: BLE001 - config 없어도 기본값으로 진행
+    except (ImportError, AttributeError):  # config 없어도 기본값으로 진행 (그 외 오류는 전파)
         pass
 
     cards = [

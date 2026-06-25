@@ -244,6 +244,6 @@ def print_benchmark_report(report: dict[str, Any]) -> None:
     console.print(table)
 
     if report["excess_cagr"] <= 0:
-        console.print("[yellow]⚠ MP가 동일가중을 이기지 못함 — 모델 점검 권장[/yellow]")
+        console.print("[yellow][!] MP가 동일가중을 이기지 못함 - 모델 점검 권장[/yellow]")
     else:
-        console.print("[green]✓ MP가 동일가중 대비 초과 성과 확인[/green]")
+        console.print("[green]OK MP가 동일가중 대비 초과 성과 확인[/green]")

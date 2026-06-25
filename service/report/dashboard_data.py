@@ -13,12 +13,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from service.paths import DATA_DIR, OUTPUT_DIR
 from service.report.diagnostics_keys import CAT_CMP, CAT_FUNNEL, CAT_OOS_CEW, METRIC_PATTERN
-
-# service/report/dashboard_data.py -> 프로젝트 루트 / {output, data}
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-OUTPUT_DIR = _PROJECT_ROOT / "output"
-DATA_DIR = _PROJECT_ROOT / "data"
 
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 

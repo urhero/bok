@@ -14,6 +14,13 @@ from rich.progress import track
 
 logger = logging.getLogger(__name__)
 
+# 5분위 분석 입력 컬럼 (calculate_factor_stats_batch 입력 스키마 단일 출처).
+# model_portfolio / walk_forward_engine 가 동일 projection 에 사용한다.
+ANALYZE_COLS = [
+    "gvkeyiid", "ticker", "isin", "ddt", "sec", "val",
+    "M_RETURN", "factorAbbreviation", "factorOrder",
+]
+
 
 def prepend_start_zero(series: pd.DataFrame) -> pd.DataFrame:
     """시계열 데이터 맨 앞에 0을 추가한다 (누적 수익률 계산의 기준선).

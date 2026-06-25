@@ -183,7 +183,13 @@ class WalkForwardResult:
             return {"cagr": 0.0, "mdd": 0.0, "sharpe": 0.0, "calmar": 0.0}
 
         months = len(returns)
-        cagr = cumulative.iloc[-1] ** (12 / months) - 1 if months > 0 else 0.0
+        final = cumulative.iloc[-1]
+        # 터미널 누적이 비양수(전손)면 음수 밑^비정수 거듭제곱이 nan이 되어
+        # Funnel Value-Add 비교(`>`)를 오염시키므로 -1.0(전손)으로 고정한다.
+        if final <= 0:
+            cagr = -1.0
+        else:
+            cagr = final ** (12 / months) - 1 if months > 0 else 0.0
 
         running_max = cumulative.cummax()
         drawdown = (cumulative - running_max) / running_max

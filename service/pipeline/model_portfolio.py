@@ -27,6 +27,7 @@ from config import PARAM, PIPELINE_PARAMS
 
 # 모듈 import
 from service.pipeline.factor_analysis import (
+    ANALYZE_COLS,
     calculate_factor_stats_batch,
     filter_and_label_factors,
 )
@@ -47,17 +48,15 @@ from service.pipeline.weight_history import (
 )
 from service.download.parquet_io import load_factor_parquet
 from service.download.paths import mreturn_filename
+from service.paths import DATA_DIR, HISTORY_DIR, OUTPUT_DIR, PROJECT_ROOT as _PROJECT_ROOT
 from utils.validation import validate_output_weights
 
 logger = logging.getLogger(__name__)
 
-# 경로 설정 (__file__ 기준으로 프로젝트 루트 계산)
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = _PROJECT_ROOT / "data"
+# 경로 상수는 service.paths 단일 출처에서 re-export(하위호환). 디렉터리 생성
+# 부작용은 오케스트레이터인 이 모듈이 책임진다 (leaf paths 모듈은 부작용 없음).
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_DIR = _PROJECT_ROOT / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-HISTORY_DIR = OUTPUT_DIR / "mp_weight_history"
 
 
 def _months_between(prev_date: str, end_date: str) -> int:
@@ -107,8 +106,7 @@ class ModelPortfolioPipeline:
         # [2] 메타데이터 병합 + 5분위 분석 — README [1], [2]
         factor_metadata, merged_data, factor_abbr_list, orders = self._prepare_metadata(raw_data, market_return_df)
         self.factor_metadata = factor_metadata
-        analyze_cols = ["gvkeyiid", "ticker", "isin", "ddt", "sec", "val", "M_RETURN", "factorAbbreviation", "factorOrder"]
-        slim_data = merged_data[[c for c in analyze_cols if c in merged_data.columns]]
+        slim_data = merged_data[[c for c in ANALYZE_COLS if c in merged_data.columns]]
         self.factor_stats = self._analyze_factors(slim_data, factor_abbr_list, orders, test_file)
 
         if report:

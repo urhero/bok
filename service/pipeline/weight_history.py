@@ -136,7 +136,6 @@ def _build_factor_style_df(
     prev_weights: dict[str, float] | None,
     new_weights: dict[str, float],
     style_map: dict[str, str],
-    deployed_weights: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """factor union DataFrame 을 만든다 (save 함수들이 공유).
 
@@ -145,10 +144,9 @@ def _build_factor_style_df(
         prev_weights: 직전 회차 배포 가중치 (None 이면 prev_weight 컬럼 NaN).
         new_weights: 실제 배포될 최종 가중치 (smoothing 적용 결과).
         style_map: {factor_abbr: style_name}. 매핑 실패 시 "(unmapped)".
-        deployed_weights: 현재 선정 종목 기준 renorm 된 실제 배포 가중치 (None 이면 컬럼 미추가).
 
     Returns:
-        columns = [factor, style, raw_weight, prev_weight, new_weight, [deployed_weight,] weight_within_style]
+        columns = [factor, style, raw_weight, prev_weight, new_weight, weight_within_style]
         정렬: (style asc, new_weight desc).
     """
     factors = sorted(set(raw_weights) | set(new_weights) | set(prev_weights or {}))
@@ -164,8 +162,6 @@ def _build_factor_style_df(
         ),
         "new_weight": [float(new_weights.get(f, 0.0)) for f in factors],
     }
-    if deployed_weights is not None:
-        data["deployed_weight"] = [float(deployed_weights.get(f, 0.0)) for f in factors]
 
     df = pd.DataFrame(data)
 
@@ -184,7 +180,6 @@ def save_factor_styles(
     prev_weights: dict[str, float] | None,
     new_weights: dict[str, float],
     style_map: dict[str, str],
-    deployed_weights: dict[str, float] | None = None,
 ) -> Path:
     """factor x style 분해 + raw/prev/new 가중치를 CSV 로 저장.
 
@@ -195,7 +190,6 @@ def save_factor_styles(
         prev_weights: 직전 회차 배포 가중치, 또는 None.
         new_weights: 실제 배포 가중치 (smoothing 적용 결과, 또는 raw).
         style_map: {factor_abbr: style_name}.
-        deployed_weights: 현재 선정 종목 기준 renorm 된 실제 배포 가중치 (None 이면 컬럼 미추가).
 
     Returns:
         저장된 파일 경로.
@@ -203,7 +197,7 @@ def save_factor_styles(
     history_dir = Path(history_dir)
     history_dir.mkdir(parents=True, exist_ok=True)
 
-    df = _build_factor_style_df(raw_weights, prev_weights, new_weights, style_map, deployed_weights)
+    df = _build_factor_style_df(raw_weights, prev_weights, new_weights, style_map)
 
     ddt_str = pd.Timestamp(end_date).strftime("%Y-%m-%d")
     out_path = history_dir / f"factor_styles_{ddt_str}.csv"
@@ -219,14 +213,12 @@ def save_style_totals(
     prev_weights: dict[str, float] | None,
     new_weights: dict[str, float],
     style_map: dict[str, str],
-    deployed_weights: dict[str, float] | None = None,
 ) -> Path:
     """style 단위 합계 + factor 개수/목록을 CSV 로 저장.
 
     Args:
         history_dir, end_date, raw_weights, prev_weights, new_weights, style_map:
             save_factor_styles 와 동일.
-        deployed_weights: 현재 선정 종목 기준 renorm 된 실제 배포 가중치 (None 이면 컬럼 미추가).
 
     Returns:
         저장된 파일 경로.
@@ -234,7 +226,7 @@ def save_style_totals(
     history_dir = Path(history_dir)
     history_dir.mkdir(parents=True, exist_ok=True)
 
-    factor_df = _build_factor_style_df(raw_weights, prev_weights, new_weights, style_map, deployed_weights)
+    factor_df = _build_factor_style_df(raw_weights, prev_weights, new_weights, style_map)
 
     # factor_df 는 이미 (style asc, new_weight desc) 정렬됨 -> factors 문자열 순서 유지
     grouped = factor_df.groupby("style", sort=False)
@@ -255,8 +247,6 @@ def save_style_totals(
             "factor_count": int(len(active)),
             "factors": ";".join(active["factor"].tolist()),
         }
-        if deployed_weights is not None:
-            row["deployed_weight"] = float(sub["deployed_weight"].sum())
         rows.append(row)
     df = pd.DataFrame(rows).sort_values("new_weight", ascending=False).reset_index(drop=True)
 
