@@ -309,6 +309,7 @@ def test_factor_style_map(tmp_path):
 # ── build_dashboard 스모크 ─────────────────────────────────────────────────
 
 def test_build_dashboard_smoke(tmp_path):
+    pytest.importorskip("plotly")  # viz 레이어(dashboard) 의존 — 미설치 CI 에서는 skip
     # 백테스트 + 현재 포트 픽스처를 tmp output 디렉토리에 기록
     _curves().reset_index().to_csv(tmp_path / "walk_forward_results.csv", index=False)
     _weight_history().to_csv(tmp_path / "walk_forward_weight_history.csv")

@@ -1,16 +1,32 @@
 # -*- coding: utf-8 -*-
 """STYLE_COLORS 단일 출처(single source of truth) 테스트."""
+import pytest
 
 
-def test_style_colors_single_source_of_truth():
-    """report_generator 와 dashboard_charts 가 동일한 STYLE_COLORS 매핑을 공유해야 한다.
+def test_style_colors_leaf_is_single_source():
+    """단일 출처 service.report.style_colors 가 8개 스타일(Volatility 포함) + 기본색을 갖는다.
 
-    과거 두 모듈이 STYLE_COLORS를 각각 정의해 발산했다
-    (report_generator에 Volatility 누락). 단일 출처로 통합되어야 한다.
+    matplotlib/plotly 무의존이라 헤드리스 CI 에서도 항상 실행된다.
     """
-    from service.report.report_generator import STYLE_COLORS as rg_colors
-    from service.report.dashboard_charts import STYLE_COLORS as dc_colors
+    from service.report.style_colors import STYLE_COLORS, _DEFAULT_COLOR
 
-    assert rg_colors == dc_colors, "두 모듈의 STYLE_COLORS가 일치해야 함"
-    assert "Volatility" in rg_colors, "Volatility 스타일이 누락되면 안 됨"
-    assert rg_colors["Volatility"] == "#9467bd"
+    assert "Volatility" in STYLE_COLORS, "Volatility 스타일이 누락되면 안 됨"
+    assert STYLE_COLORS["Volatility"] == "#9467bd"
+    assert len(STYLE_COLORS) == 8
+    assert _DEFAULT_COLOR == "#7f7f7f"
+
+
+def test_report_and_dashboard_reexport_single_source():
+    """report_generator(matplotlib)·dashboard_charts(plotly) 가 동일 STYLE_COLORS 객체를 re-export.
+
+    과거 두 모듈이 각각 정의해 발산했었다(report_generator에 Volatility 누락).
+    viz 의존(matplotlib/plotly) 모듈이라 미설치 환경(CI)에서는 skip 한다.
+    """
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("plotly")
+    from service.report.style_colors import STYLE_COLORS as src
+    from service.report.report_generator import STYLE_COLORS as rg
+    from service.report.dashboard_charts import STYLE_COLORS as dc
+
+    assert rg is src, "report_generator 가 단일 출처를 re-export 해야 함"
+    assert dc is src, "dashboard_charts 가 단일 출처를 re-export 해야 함"
