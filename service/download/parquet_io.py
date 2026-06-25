@@ -85,6 +85,7 @@ def load_factor_parquet(
     end_year: int | None = None,
     *,
     validate: bool = False,
+    columns: list[str] | None = None,
 ) -> pd.DataFrame:
     """연도별 분할 parquet을 로드하여 하나의 DataFrame으로 반환.
 
@@ -99,6 +100,8 @@ def load_factor_parquet(
         start_year: 시작 연도. 주어지면 해당 연도부터만 로드
         end_year: 종료 연도. 주어지면 해당 연도까지만 로드
         validate: True이면 로드 후 데이터 무결성 검증. ERROR 발견 시 RuntimeError.
+        columns: 읽을 컬럼 목록 (pyarrow column pushdown). None이면 전체 컬럼.
+            validate=True와 함께 쓸 땐 검증에 필요한 컬럼을 포함해야 한다.
 
     Returns:
         병합된 factor DataFrame
@@ -129,7 +132,7 @@ def load_factor_parquet(
                 f"{start_year}~{end_year} at {data_dir}"
             )
 
-        frames = [pd.read_parquet(f) for f in split_files]
+        frames = [pd.read_parquet(f, columns=columns) for f in split_files]
         result = pd.concat(frames, ignore_index=True)
         logger.info(
             "Loaded %d yearly parquets (%s rows)",
@@ -140,7 +143,7 @@ def load_factor_parquet(
         single_path = data_dir / f"{benchmark}_factor.parquet"
         if single_path.exists():
             logger.info("Fallback: loading single parquet %s", single_path.name)
-            result = pd.read_parquet(single_path)
+            result = pd.read_parquet(single_path, columns=columns)
         else:
             raise FileNotFoundError(f"No factor parquet found at {data_dir}")
 

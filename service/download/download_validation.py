@@ -53,7 +53,9 @@ def validate_parquet_coverage(
     if mreturn_path is None:
         mreturn_path = Path(data_dir) / mreturn_filename(benchmark)
 
-    factor_df = load_factor_parquet(data_dir, benchmark)[["ddt", "factorAbbreviation", "gvkeyiid", "val"]]
+    factor_df = load_factor_parquet(
+        data_dir, benchmark, columns=["ddt", "factorAbbreviation", "gvkeyiid", "val"]
+    )
     mret_df = pd.read_parquet(mreturn_path, columns=["ddt", "gvkeyiid"])
 
     warnings_list = _validate_parquet_coverage_impl(factor_df, mret_df, gap_threshold_days, factor_drop_pct, stock_drop_pct)

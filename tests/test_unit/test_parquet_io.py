@@ -179,6 +179,25 @@ class TestLoadFactorParquet:
         result = load_factor_parquet(tmp_path, "TEST", validate=True)
         assert len(result) == len(sample_factor_df)
 
+    def test_load_columns_pushdown_split(self, sample_factor_df, tmp_path):
+        """columns= 지정 시 해당 컬럼만 지정 순서로 반환, 값은 full load 와 동일 (분할 파일)."""
+        save_factor_parquet_by_year(sample_factor_df, tmp_path, "TEST")
+        cols = ["ddt", "factorAbbreviation", "gvkeyiid", "val"]
+        full = load_factor_parquet(tmp_path, "TEST")
+        subset = load_factor_parquet(tmp_path, "TEST", columns=cols)
+        assert list(subset.columns) == cols
+        pd.testing.assert_frame_equal(
+            subset.reset_index(drop=True), full[cols].reset_index(drop=True),
+        )
+
+    def test_load_columns_pushdown_single(self, sample_factor_df, tmp_path):
+        """columns= 가 단일 파일 fallback 경로에도 적용된다."""
+        sample_factor_df.to_parquet(tmp_path / "TEST_factor.parquet", index=False)
+        cols = ["ddt", "gvkeyiid", "val"]
+        subset = load_factor_parquet(tmp_path, "TEST", columns=cols)
+        assert list(subset.columns) == cols
+        assert len(subset) == len(sample_factor_df)
+
 
 class TestListYearlyParquets:
     """list_yearly_parquets 함수 테스트."""
