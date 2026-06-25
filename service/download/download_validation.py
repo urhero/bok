@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from service.download.parquet_io import load_factor_parquet
+from service.download.parquet_io import load_factor_parquet, month_gap_issues
 from service.download.paths import mreturn_filename
 
 logger = logging.getLogger(__name__)
@@ -78,14 +78,7 @@ def _validate_parquet_coverage_impl(
         return warnings_list
 
     # ─── [1] 빈 월 감지 ───
-    for i in range(1, len(dates)):
-        gap = (dates[i] - dates[i - 1]).days
-        if gap > gap_threshold_days:
-            warnings_list.append({
-                "level": "ERROR",
-                "type": "MONTH_GAP",
-                "message": f"Gap: {pd.Timestamp(dates[i-1]).strftime('%Y-%m')} → {pd.Timestamp(dates[i]).strftime('%Y-%m')} ({gap}d)",
-            })
+    warnings_list.extend(month_gap_issues(dates, gap_threshold_days))
 
     # ─── [2] 월별 팩터 수 ───
     monthly_factors = factor_df.groupby("ddt")["factorAbbreviation"].nunique().sort_index()

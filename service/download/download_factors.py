@@ -83,7 +83,8 @@ def _backup_existing_parquets(
         else:
             dates = pd.Series(dtype="datetime64[ns]")
         max_date = dates.max().strftime("%Y%m%d") if not dates.empty else "unknown"
-    except Exception:
+    except (OSError, KeyError, ValueError) as e:
+        logger.warning("백업 파일명용 max_date 추출 실패 (%s) - 'unknown' 사용", e)
         max_date = "unknown"
 
     op = shutil.move if move else shutil.copy2

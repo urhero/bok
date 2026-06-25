@@ -178,6 +178,29 @@ def list_yearly_parquets(
 # 검증
 # ═══════════════════════════════════════════════════════════════════════════════
 
+_MONTH_GAP_THRESHOLD_DAYS = 35  # 연속 월 간격이 이보다 크면 데이터 누락(gap)으로 간주
+
+
+def month_gap_issues(sorted_months, threshold_days: int = _MONTH_GAP_THRESHOLD_DAYS) -> list[dict]:
+    """오름차순 월 시퀀스에서 threshold_days 초과 간격을 MONTH_GAP ERROR 이슈로 만든다.
+
+    validate_loaded_factor_data 와 download_validation 이 공유한다 (동일 로직 중복 제거).
+    (cp949 호환: 메시지 화살표는 ASCII '->' 사용.)
+    """
+    issues: list[dict] = []
+    for i in range(1, len(sorted_months)):
+        gap = (sorted_months[i] - sorted_months[i - 1]).days
+        if gap > threshold_days:
+            issues.append({
+                "level": "ERROR", "type": "MONTH_GAP",
+                "message": (
+                    f"Gap: {pd.Timestamp(sorted_months[i-1]).strftime('%Y-%m')} -> "
+                    f"{pd.Timestamp(sorted_months[i]).strftime('%Y-%m')} ({gap}d)"
+                ),
+            })
+    return issues
+
+
 def validate_loaded_factor_data(
     df: pd.DataFrame,
     *,
@@ -270,17 +293,7 @@ def validate_loaded_factor_data(
         })
 
     # [7] 월 gap 검사 (35일 초과)
-    if len(months) >= 2:
-        for i in range(1, len(months)):
-            gap = (months[i] - months[i - 1]).days
-            if gap > 35:
-                issues.append({
-                    "level": "ERROR", "type": "MONTH_GAP",
-                    "message": (
-                        f"Gap: {pd.Timestamp(months[i-1]).strftime('%Y-%m')} → "
-                        f"{pd.Timestamp(months[i]).strftime('%Y-%m')} ({gap}d)"
-                    ),
-                })
+    issues.extend(month_gap_issues(months))
 
     # [8] 중복 행 검사
     dup_count = df.duplicated(subset=["gvkeyiid", "ddt", "factorAbbreviation"]).sum()

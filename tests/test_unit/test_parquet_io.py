@@ -12,6 +12,7 @@ import pytest
 from service.download.parquet_io import (
     list_yearly_parquets,
     load_factor_parquet,
+    month_gap_issues,
     save_factor_parquet_by_year,
     validate_loaded_factor_data,
 )
@@ -328,6 +329,17 @@ class TestValidateLoadedFactorData:
         })
         issues = validate_loaded_factor_data(df, min_stocks_per_month=5, min_factors_per_month=1)
         assert any(i["type"] == "LOW_STOCK_COUNT" and i["level"] == "WARN" for i in issues)
+
+    def test_month_gap_issues_helper(self):
+        """공유 month_gap_issues: gap 감지 + cp949 안전(ASCII '->') 메시지."""
+        months = sorted(pd.to_datetime(["2023-01-31", "2023-02-28", "2023-05-31"]))  # 2->5월 gap
+        issues = month_gap_issues(months, threshold_days=35)
+        assert len(issues) == 1
+        assert issues[0]["type"] == "MONTH_GAP" and issues[0]["level"] == "ERROR"
+        assert "->" in issues[0]["message"]
+        assert "→" not in issues[0]["message"]  # cp949 깨짐 유발하는 em-arrow 없어야 함
+        # 연속 월이면 빈 리스트
+        assert month_gap_issues(sorted(pd.to_datetime(["2023-01-31", "2023-02-28"]))) == []
 
     def test_load_with_validate_error_raises(self, tmp_path):
         """validate=True + ERROR → RuntimeError."""
