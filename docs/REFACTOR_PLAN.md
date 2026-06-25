@@ -177,12 +177,17 @@ PY main.py backtest 2009-12-31 2026-03-31     # ~41분/회
 
 검증: W12/W13 은 dtype·행순서가 downstream 결정성 가드(`model_portfolio.py:321-323`)에 영향 가능 → **full A+B diff 필수**. W14 는 진단 출력만이므로 빠른 테스트 + overfit_diagnostics.csv 비교.
 
-### Phase 4 — 대형 분해 (SENSITIVE, 마지막)
-- **W16** `_construct_and_export` 분해 (MP 핵심 산출물 — full diff)
-- **W17** `run()` 분해 (백테스트 + OOS 순수성 — full diff + `test_oos_purity.py`/`test_determinism.py`)
-- **W18** `__init__` dataclass (W17 후행, 호출부 동반)
+### Phase 4 — 대형 분해 (SENSITIVE)  ✅ 핵심 추출 완료 (2026-06-25)
+- **W16** [완료] `_construct_and_export` 의 피벗 단계 -> `weight_construction.build_pivoted_export`. mp 경로 전용이라 `mp test` 28종 byte-identical 로 검증(백테스트 불필요).
+- **W17** [완료] `run()` 277줄에서 순수계산 2블록 추출: `_rank_and_select`(랭킹/dedup/히스테리시스), `_assemble_oos_record`(OOS 수익+레코드). **제어흐름(continue/keep-cached)은 의도적으로 미변경** — 버그 위험 회피, 순수계산만 verbatim 이동. full backtest 산출물 3종 커밋기준선과 git diff 공집합 + md5 일치로 검증.
+- **W17b 보류 (가드절 평탄화):** Tier2 의 6단 중첩 if/else 를 early-return 가드절로 펴는 제어흐름 리팩토링은 byte-diff 검증이 어렵고(상태 carry/skip 경로) 41분/회 비용이라 별도 집중 작업으로 분리.
+- **W18** [미실행] `__init__` 9-knob -> dataclass (research 호출부 동반 수정 필요).
 
-검증: full A+B diff + OOS/결정성 테스트.
+검증 결과: backtest baseline 확보(/tmp/bt_baseline) + 커밋기준선 갱신(43f5ea0) 후,
+W16=mp test 28 byte-identical, W17=full backtest 3산출물 git diff 공집합. pytest 280 passed.
+
+> **검증 인프라 발견:** 커밋된 walk-forward 산출물이 56fc16e 이후 stale 였음 -> 43f5ea0 에서
+> 현재 결정론적 출력으로 갱신. 이제 backtest-path 변경은 output/ 3파일의 git diff 로 회귀 검증 가능.
 ```
 PY -m pytest tests/test_unit/test_oos_purity.py tests/test_unit/test_determinism.py -v
 PY main.py backtest 2009-12-31 2026-03-31     # 변경 전/후 byte-diff (float tol)
