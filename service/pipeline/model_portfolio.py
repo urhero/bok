@@ -364,15 +364,26 @@ class ModelPortfolioPipeline:
         validate_output_weights(weight_raw, ticker_column="ticker", weight_column="mp_ls_weight", df_name="weight_raw")
 
 
-def run_model_portfolio_pipeline(start_date, end_date, report: bool = False, test_file: str | None = None) -> None:
+def run_model_portfolio_pipeline(
+    start_date, end_date, report: bool = False, test_file: str | None = None,
+    pipeline_params: dict | None = None,
+) -> ModelPortfolioPipeline:
     """Model Portfolio 파이프라인 실행 래퍼.
 
     main.py의 CLI 엔트리 포인트.
     내부적으로 ModelPortfolioPipeline 클래스를 생성하고 run()을 호출한다.
+
+    Args:
+        pipeline_params: 오버라이드할 파라미터 (None 이면 config PIPELINE_PARAMS).
+
+    Returns:
+        실행 완료된 ModelPortfolioPipeline 인스턴스 (benchmark 비교 등에서 재사용).
     """
     pipeline = ModelPortfolioPipeline(
         config=PARAM,
         factor_info_path=DATA_DIR / "factor_info.csv",
         is_test=bool(test_file),
+        pipeline_params=pipeline_params,
     )
     pipeline.run(start_date, end_date, report=report, test_file=test_file)
+    return pipeline

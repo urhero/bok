@@ -216,3 +216,6 @@ output/experiments/
 
 # viz 대시보드 HTML 은 생성물 (python main.py viz 로 재생성) - 추적 안 함
 output/dashboard_*.html
+
+# benchmark 비교는 mp --benchmark 진단 산출물 (재생성 가능) - 추적 안 함
+output/benchmark_comparison.csv

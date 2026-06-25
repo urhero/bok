@@ -128,13 +128,13 @@ def main(argv: list[str] | None = None) -> int:
                 validate=not args.no_validate,
             )
         elif args.command == "mp":
-            run_model_portfolio_pipeline(
+            pipeline = run_model_portfolio_pipeline(
                 args.start_date, args.end_date,
                 report=args.report,
                 test_file=args.test_file,
             )
             if args.benchmark:
-                _run_benchmark_comparison(args.start_date, args.end_date, args.test_file)
+                _run_benchmark_comparison(pipeline, args.start_date, args.end_date, args.test_file)
 
         elif args.command == "backtest":
             _run_backtest(args)
@@ -148,25 +148,30 @@ def main(argv: list[str] | None = None) -> int:
     return 1
 
 
-def _run_benchmark_comparison(start_date, end_date, test_file):
-    """--benchmark 옵션: 파이프라인 후 벤치마크 비교 실행."""
+def _run_benchmark_comparison(pipeline, start_date, end_date, test_file):
+    """--benchmark 옵션: 파이프라인 후 벤치마크(MP equal_weight vs 1/N) 비교 실행.
+
+    벤치마크는 equal_weight MP 기준이다. config optimization_mode 가 이미
+    equal_weight 면 직전 mp 실행(pipeline)을 그대로 재사용하고, 아니면
+    equal_weight 로 1회만 재실행한다 (불필요한 전체 파이프라인 재실행 방지).
+    """
     from config import PARAM, PIPELINE_PARAMS
     from service.pipeline.benchmark_comparison import compare_vs_benchmark
     from service.report.reporting import print_benchmark_report
     from service.pipeline.model_portfolio import DATA_DIR, ModelPortfolioPipeline, OUTPUT_DIR
 
-    pp = dict(PIPELINE_PARAMS)
-    pp["optimization_mode"] = "equal_weight"
+    if PIPELINE_PARAMS.get("optimization_mode") != "equal_weight":
+        pp = dict(PIPELINE_PARAMS)
+        pp["optimization_mode"] = "equal_weight"
+        pipeline = ModelPortfolioPipeline(
+            config=PARAM,
+            factor_info_path=DATA_DIR / "factor_info.csv",
+            is_test=bool(test_file),
+            pipeline_params=pp,
+        )
+        pipeline.run(start_date, end_date, test_file=test_file)
 
-    pipeline = ModelPortfolioPipeline(
-        config=PARAM,
-        factor_info_path=DATA_DIR / "factor_info.csv",
-        is_test=bool(test_file),
-        pipeline_params=pp,
-    )
-    pipeline.run(start_date, end_date, test_file=test_file)
-
-    if pipeline.return_matrix is None or pipeline.weights is None:
+    if pipeline is None or pipeline.return_matrix is None or pipeline.weights is None:
         logging.getLogger(__name__).warning("Pipeline results unavailable for benchmark comparison")
         return
 

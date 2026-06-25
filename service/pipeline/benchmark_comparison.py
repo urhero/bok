@@ -17,20 +17,19 @@ from scipy import stats
 logger = logging.getLogger(__name__)
 
 
-def create_equal_weight_benchmark(ret_df: pd.DataFrame) -> dict[str, Any]:
-    """동일가중(1/N) 벤치마크 성과를 계산한다.
+def _perf_from_return_series(return_series: pd.Series, months: int) -> dict[str, Any]:
+    """월간 수익률 시리즈로부터 {return_series, cumulative, cagr, mdd} 를 만든다.
+
+    create_equal_weight_benchmark / create_mp_portfolio_return 가 공유한다
+    (두 함수는 return_series 구성만 다르고 누적/CAGR/MDD 계산은 동일).
+    연산 순서는 기존 구현과 동일하게 보존한다 (수치 동일성).
 
     Args:
-        ret_df: [4]에서 산출된 팩터별 수익률 행렬 (Date × Factor).
-                첫 행은 0.0 (기준점).
-
-    Returns:
-        return_series, cumulative, cagr, mdd를 포함하는 dict.
+        return_series: 월간 수익률 (첫 행은 0.0 기준점).
+        months: 연율화 개월 수 (첫 행 기준점 제외 = len(ret_df) - 1).
     """
-    return_series = ret_df.mean(axis=1)
     cumulative = (1 + return_series).cumprod()
 
-    months = len(ret_df) - 1  # 첫 행 기준점 제외
     if months <= 0:
         return {"return_series": return_series, "cumulative": cumulative, "cagr": 0.0, "mdd": 0.0}
 
@@ -45,6 +44,20 @@ def create_equal_weight_benchmark(ret_df: pd.DataFrame) -> dict[str, Any]:
         "cagr": cagr,
         "mdd": mdd,
     }
+
+
+def create_equal_weight_benchmark(ret_df: pd.DataFrame) -> dict[str, Any]:
+    """동일가중(1/N) 벤치마크 성과를 계산한다.
+
+    Args:
+        ret_df: [4]에서 산출된 팩터별 수익률 행렬 (Date × Factor).
+                첫 행은 0.0 (기준점).
+
+    Returns:
+        return_series, cumulative, cagr, mdd를 포함하는 dict.
+    """
+    return_series = ret_df.mean(axis=1)
+    return _perf_from_return_series(return_series, len(ret_df) - 1)  # 첫 행 기준점 제외
 
 
 def create_mp_portfolio_return(ret_df: pd.DataFrame, weights: dict[str, float]) -> dict[str, Any]:
@@ -63,23 +76,7 @@ def create_mp_portfolio_return(ret_df: pd.DataFrame, weights: dict[str, float]) 
 
     w_series = pd.Series(matched)
     return_series = (ret_df[w_series.index] * w_series).sum(axis=1)
-    cumulative = (1 + return_series).cumprod()
-
-    months = len(ret_df) - 1
-    if months <= 0:
-        return {"return_series": return_series, "cumulative": cumulative, "cagr": 0.0, "mdd": 0.0}
-
-    cagr = cumulative.iloc[-1] ** (12 / months) - 1
-    running_max = cumulative.cummax()
-    drawdown = (cumulative - running_max) / running_max
-    mdd = drawdown.min()
-
-    return {
-        "return_series": return_series,
-        "cumulative": cumulative,
-        "cagr": cagr,
-        "mdd": mdd,
-    }
+    return _perf_from_return_series(return_series, len(ret_df) - 1)
 
 
 def compare_vs_benchmark(ret_df: pd.DataFrame, weights: dict[str, float]) -> dict[str, Any]:

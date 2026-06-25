@@ -155,13 +155,14 @@ PY main.py mp test test_data.csv && <diff _test 산출물 vs 베이스라인>
 PY -c "import main, service.pipeline.universe, service.report.report_generator"   # 순환 import smoke
 ```
 
-### Phase 2 — float-SENSITIVE 중복 제거 (각 항목 A+B 수치 diff gating)
-- **W10** 공유 perf 헬퍼 (CAGR/MDD/Sharpe/Calmar) — operand order 보존, float32 site 제외
-- **W11** L/N/S 라벨 헬퍼 (차트 라벨; CSV 산출물 무관하나 안전위해 diff)
-- **W8** pipeline_params 전달 + benchmark 인스턴스 재사용 (benchmark CSV diff)
-- (선택) **W20** cagr-method 중복연산 — **기본 tstat 라 비활성; cumprod vs prod 차이로 최저 우선**
+### Phase 2 — float-SENSITIVE 중복 제거  ✅ 안전 부분집합 완료 (2026-06-25)
+- **W10** [완료, 범위 축소] `benchmark_comparison.py` 두 near-clone(`create_equal_weight_benchmark`/`create_mp_portfolio_return`)을 `_perf_from_return_series` 헬퍼로 통합. operand order 보존 -> byte-identical.
+- **W8** [완료] `run_model_portfolio_pipeline` 가 pipeline 인스턴스 반환 + optional `pipeline_params` 수신. `_run_benchmark_comparison` 은 config mode==equal_weight 면 재사용, 아니면 forced equal_weight 재실행 유지. `mp --benchmark` 파이프라인 실행 2회->1회, benchmark_comparison.csv byte-identical.
+- **W10 교차모듈 통합은 보류 (중요):** `_calc_perf`/benchmark 는 `(cum - running_max)/running_max`, `compute_kpis` 는 `cum/running_max - 1.0` 로 **drawdown 연산 순서가 다르다**(대수적으로 동일하나 float 말단 상이). 단일 헬퍼로 강제 통합하면 한쪽 산출물의 float 가 바뀐다. 따라서 synthesis 의 D-F6 "float LOW" 는 **실제로는 통합 비권장** — 각 사이트 operand order 보존이 우선. cross-module perf 통합은 별도 검증(대시보드 KPI float diff 허용 여부 확인) 후.
+- **W11** [미실행] L/N/S 라벨 헬퍼.
+- **W20** [미실행] cagr-method 중복연산 (기본 tstat 라 비활성).
 
-검증: 각 항목 단독 커밋 + **full backtest A+B diff** (W10/W8 은 산출물 영향 가능).
+검증 결과: pytest 280 passed, `benchmark_comparison.csv` byte-identical(reuse 경로), `mp test` 28 artifacts byte-identical. **walk-forward 미접촉이라 41분 백테스트 불필요** — fast track 으로 충분히 검증됨.
 ```
 # 베이스라인(변경 전): aggregated_weights_* / total_aggregated_weights_* / meta_data.csv / walk_forward_results.csv 보존
 PY main.py mp 2009-12-31 2026-03-31           # (또는 config PIPELINE_PARAMS backtest_start/end)
