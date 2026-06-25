@@ -128,6 +128,44 @@ def calculate_style_weights(
     return weight_raw
 
 
+def build_pivoted_export(final_weights: pd.DataFrame, sim_result) -> pd.DataFrame:
+    """MP factor_weight 백필 후 (style, factor_weight, factor) 피벗 테이블을 만든다.
+
+    _construct_and_export 의 피벗 단계를 추출한 것이다. round(12) 와 MP 컬럼
+    후위 재정렬은 결정적 출력(git diff 안정화)을 위한 load-bearing 가드이므로
+    연산 순서를 그대로 보존한다.
+
+    Args:
+        final_weights: weight_raw + agg_w 결합 프레임 (style/factor/ls_weight 등 포함).
+        sim_result: (best_stats, weights_tbl) 튜플. weights_tbl(=sim_result[1])의
+            fitted_weight 합으로 MP 행 factor_weight 를 채운다.
+
+    Returns:
+        피벗 테이블 (MP 컬럼이 맨 뒤로 재정렬됨).
+    """
+    mp_mask = final_weights["style"] == "MP"
+    factors_in_data = final_weights.loc[~mp_mask, "factor"].unique()
+    matched_weights = sim_result[1][sim_result[1]["factor"].isin(factors_in_data)]
+    final_weights.loc[mp_mask, "factor_weight"] = matched_weights["fitted_weight"].sum()
+    final_weights = final_weights.replace(0, np.nan)
+    # 결정적 출력: factor_weight(피벗 컬럼 키)의 말단 부동소수점 표기 변동 제거.
+    # MP factor_weight = 37개 가중치 합 ~= 1.0 인데 합산 순서에 따라 0.999..98 / 1.000..02 로
+    # 흔들려 피벗 헤더가 실행마다 달라짐 -> 12자리 반올림으로 고정 (값 영향 무시 가능).
+    final_weights["factor_weight"] = final_weights["factor_weight"].round(12)
+
+    pivoted_final = final_weights.pivot_table(
+        index=["ddt", "ticker", "isin", "gvkeyiid"],
+        columns=["style", "factor_weight", "factor"],
+        values="ls_weight",
+        aggfunc="sum",
+    ).reset_index()
+
+    cols = pivoted_final.columns
+    mp_mask = cols.get_level_values("style") == "MP"
+    new_order = cols[~mp_mask].tolist() + cols[mp_mask].tolist()
+    return pivoted_final.loc[:, new_order]
+
+
 def construct_long_short_df(
     labeled_data_df: pd.DataFrame,
     backtest_start: str = "2017-12-31",

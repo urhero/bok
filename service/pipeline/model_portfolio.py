@@ -20,7 +20,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from config import PARAM, PIPELINE_PARAMS
@@ -35,6 +34,7 @@ from service.pipeline.optimization import optimize_constrained_weights
 from service.pipeline.weight_construction import (
     aggregate_mp_weights,
     build_factor_weight_frames,
+    build_pivoted_export,
     calculate_style_weights,
 )
 from service.factor.factor_returns import aggregate_factor_returns  # re-export (하위호환)
@@ -335,29 +335,8 @@ class ModelPortfolioPipeline:
         final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test{suffix}.csv")
         final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_test{suffix}.csv")
 
-        # 피벗 테이블 생성: MP의 factor_weight 설정
-        mp_mask = final_weights["style"] == "MP"
-        factors_in_data = final_weights.loc[~mp_mask, "factor"].unique()
-        matched_weights = sim_result[1][sim_result[1]["factor"].isin(factors_in_data)]
-        final_weights.loc[mp_mask, "factor_weight"] = matched_weights["fitted_weight"].sum()
-        final_weights = final_weights.replace(0, np.nan)
-        # 결정적 출력: factor_weight(피벗 컬럼 키)의 말단 부동소수점 표기 변동 제거.
-        # MP factor_weight = 37개 가중치 합 ~= 1.0 인데 합산 순서에 따라 0.999..98 / 1.000..02 로
-        # 흔들려 피벗 헤더가 실행마다 달라짐 -> 12자리 반올림으로 고정 (값 영향 무시 가능).
-        final_weights["factor_weight"] = final_weights["factor_weight"].round(12)
-
-        pivoted_final = final_weights.pivot_table(
-            index=["ddt", "ticker", "isin", "gvkeyiid"],
-            columns=["style", "factor_weight", "factor"],
-            values="ls_weight",
-            aggfunc="sum",
-        ).reset_index()
-
-        cols = pivoted_final.columns
-        mp_mask = cols.get_level_values("style") == "MP"
-        new_order = cols[~mp_mask].tolist() + cols[mp_mask].tolist()
-        pivoted_final = pivoted_final.loc[:, new_order]
-
+        # 피벗 테이블 (MP factor_weight 백필 + 결정적 출력 가드는 헬퍼에 보존)
+        pivoted_final = build_pivoted_export(final_weights, sim_result)
         pivoted_final.to_csv(OUTPUT_DIR / f"pivoted_total_agg_wgt_{end_date}{suffix}.csv")
 
         # 출력 데이터 품질 검증
