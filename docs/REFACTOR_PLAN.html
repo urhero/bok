@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BOK 리팩토링 계획 — Synthesis (4 reviewer / 36 findings)</title>
+<meta name="description" content="4명 리뷰어 + 종합 에이전트가 검증한 BOK 파이프라인 단계별 리팩토링 계획 및 실행 결과">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://code.iconify.design/iconify-icon/2.3.0/iconify-icon.min.js"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
+          mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        },
+        colors: {
+          canvas: '#0b0e11',
+          ink: '#181a20',
+          card: '#1e2329',
+          elevated: '#2b3139',
+          hairline: '#2b3139',
+          body: '#eaecef',
+          muted: '#707a8a',
+          mutedstrong: '#929aa5',
+          brand: '#fcd535',
+          brandactive: '#f0b90b',
+          up: '#0ecb81',
+          down: '#f6465d',
+          info: '#3b82f6',
+          turq: '#2dbdb6',
+        },
+      },
+    },
+  }
+</script>
+<style>
+  html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+  body { font-family: 'Pretendard', system-ui, sans-serif; }
+  .kr { word-break: keep-all; }
+  code, .mono { font-family: 'JetBrains Mono', monospace; }
+  /* inline code chip */
+  .c { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; background: #11151a; color: #cdd1d6;
+       border: 1px solid #2b3139; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+  .c-brand { color: #fcd535; }
+  /* status badges */
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600;
+           padding: 2px 9px; border-radius: 9999px; line-height: 1.6; white-space: nowrap; }
+  .b-green { background: rgba(14,203,129,.12); color: #0ecb81; border: 1px solid rgba(14,203,129,.3); }
+  .b-amber { background: rgba(252,213,53,.10); color: #fcd535; border: 1px solid rgba(252,213,53,.28); }
+  .b-red   { background: rgba(246,70,93,.12); color: #f6465d; border: 1px solid rgba(246,70,93,.3); }
+  .b-mut   { background: rgba(112,122,138,.12); color: #929aa5; border: 1px solid rgba(112,122,138,.3); }
+  .b-info  { background: rgba(59,130,246,.12); color: #3b82f6; border: 1px solid rgba(59,130,246,.3); }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; vertical-align: top; padding: 11px 14px; border-bottom: 1px solid #2b3139; }
+  th { font-size: 12px; font-weight: 600; color: #929aa5; text-transform: none; letter-spacing: 0; white-space: nowrap;
+       position: sticky; top: 0; background: #15181d; }
+  tbody tr:hover { background: rgba(255,255,255,.02); }
+  .reveal { opacity: 0; transform: translateY(16px); transition: opacity .6s cubic-bezier(.16,1,.3,1), transform .6s cubic-bezier(.16,1,.3,1); }
+  .reveal.in { opacity: 1; transform: none; }
+  ::-webkit-scrollbar { height: 10px; width: 10px; }
+  ::-webkit-scrollbar-track { background: #0b0e11; }
+  ::-webkit-scrollbar-thumb { background: #2b3139; border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a424c; }
+  #toc a.active { color: #fcd535; border-color: #fcd535; }
+</style>
+</head>
+<body class="bg-canvas text-body antialiased min-h-[100dvh]">
+
+<!-- scroll progress -->
+<div id="progress" class="fixed top-0 left-0 h-[2px] bg-brand z-[60]" style="width:0%"></div>
+
+<!-- top nav -->
+<header class="sticky top-0 z-40 bg-canvas/90 backdrop-blur-md border-b border-hairline">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3 min-w-0">
+      <span class="inline-flex items-center justify-center w-8 h-8 rounded-md bg-brand text-ink shrink-0">
+        <iconify-icon icon="solar:layers-minimalistic-bold" width="18"></iconify-icon>
+      </span>
+      <div class="min-w-0">
+        <div class="font-bold text-sm leading-tight truncate">BOK 리팩토링 계획</div>
+        <div class="text-[11px] text-muted leading-tight truncate mono">synthesis · 4 reviewer / 36 findings</div>
+      </div>
+    </div>
+    <nav id="toc" class="hidden lg:flex items-center gap-1 text-[13px] text-muted">
+      <a href="#status" class="px-3 py-1.5 rounded-md border border-transparent hover:text-body transition">현황</a>
+      <a href="#ledger" class="px-3 py-1.5 rounded-md border border-transparent hover:text-body transition">검증 원장</a>
+      <a href="#items" class="px-3 py-1.5 rounded-md border border-transparent hover:text-body transition">작업 항목</a>
+      <a href="#phases" class="px-3 py-1.5 rounded-md border border-transparent hover:text-body transition">단계별</a>
+      <a href="#protocol" class="px-3 py-1.5 rounded-md border border-transparent hover:text-body transition">검증 프로토콜</a>
+    </nav>
+    <a href="https://github.com/urhero/bok/pull/7" target="_blank" rel="noopener"
+       class="inline-flex items-center gap-1.5 bg-brand hover:bg-brandactive text-ink font-semibold text-[13px] px-4 py-2 rounded-md transition-transform hover:scale-[1.02] active:scale-[0.98] shrink-0">
+      <iconify-icon icon="solar:git-branch-bold" width="16"></iconify-icon>
+      <span class="hidden sm:inline">PR #7</span>
+    </a>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+  <!-- HERO / HEADER -->
+  <section class="pt-16 pb-12 border-b border-hairline">
+    <div class="flex flex-wrap items-center gap-2 mb-5">
+      <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon>실행 16건 완료</span>
+      <span class="badge b-amber"><iconify-icon icon="solar:pause-circle-bold" width="13"></iconify-icon>보류 6 · 미실행 3</span>
+      <span class="badge b-info"><iconify-icon icon="solar:test-tube-bold" width="13"></iconify-icon>pytest 277 → 284</span>
+      <span class="badge b-green"><iconify-icon icon="solar:copy-bold" width="13"></iconify-icon>산출물 byte-identical</span>
+    </div>
+    <h1 class="kr text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-tight max-w-4xl">
+      4명 리뷰어가 찾고,<br><span class="text-brand">한 명이 검증</span>한 리팩토링.
+    </h1>
+    <p class="kr mt-6 text-base md:text-lg text-muted leading-relaxed max-w-[60ch]">
+      독립 리뷰어 4명(superpowers code-reviewer ×2 · general-purpose · codex)이 제출한 36개 finding을
+      종합 에이전트가 <span class="text-body font-semibold">현재 코드에 대해 1건씩 검증</span>하고, 중복을 통합해
+      단계별 실행 계획으로 정리했다. 모든 작업은 <span class="text-body font-semibold">변경 전/후 산출물 검증</span>을 통과한다.
+    </p>
+
+    <!-- governance callout -->
+    <div class="mt-8 rounded-xl border border-hairline bg-card p-5 md:p-6 flex gap-4">
+      <iconify-icon icon="solar:shield-keyhole-bold" width="26" class="text-brand shrink-0 mt-0.5"></iconify-icon>
+      <div class="kr text-sm md:text-[15px] leading-relaxed">
+        <span class="font-bold text-brand">거버넌스 규칙(신규).</span>
+        함수 본문 변경을 허용한다 — 단 byte-identical은 불필요하고 float 말단 자릿수 차이는 용인한다.
+        각 작업에 <span class="text-body font-semibold">FLOAT/OOS 민감도</span>와 그에 맞는 검증을 명시한다.
+        본 문서는 <span class="text-body font-semibold">분석/계획 전용</span>이며, 검증 과정에서 소스는 일절 수정하지 않았다.
+      </div>
+    </div>
+  </section>
+
+  <!-- 0. 핵심 발견 -->
+  <section class="py-12 border-b border-hairline reveal">
+    <div class="flex items-baseline gap-3 mb-2">
+      <span class="mono text-brand text-sm font-semibold">00</span>
+      <h2 class="kr text-2xl md:text-3xl font-bold tracking-tight">핵심 발견 — 검증의 큰 그림</h2>
+    </div>
+    <p class="kr text-muted text-[15px] leading-relaxed max-w-[68ch] mb-6">
+      이 코드베이스는 이미 <span class="text-body">"restructure 2차" / "Sprint 1"</span> 리팩토링을 상당 부분 거쳤다.
+      그 결과 리뷰어가 제기한 일부 finding은 <span class="text-down font-semibold">이미 해결됨(stale)</span>이다.
+    </p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="rounded-xl border border-down/30 bg-card p-5">
+        <div class="badge b-red mb-3"><iconify-icon icon="solar:close-circle-bold" width="13"></iconify-icon>REJECTED — 위험 표시였으나 거짓</div>
+        <p class="kr text-sm text-body leading-relaxed">
+          <span class="c c-brand">service/factor/selection.py</span> 가 이미 존재하고
+          <span class="c">compute_rank_score</span>·<span class="c">cluster_and_dedup_top_n</span>·<span class="c">apply_selection_hysteresis</span>
+          를 production과 walk-forward 엔진이 공유한다. → <span class="text-down font-semibold">B-F2(“가장 위험한 Tier2 중복”)는 이미 해소</span>. D-F7(report 이중호출)도 거짓.
+        </p>
+      </div>
+      <div class="rounded-xl border border-hairline bg-card p-5">
+        <div class="badge b-amber mb-3"><iconify-icon icon="solar:tuning-2-bold" width="13"></iconify-icon>부분 stale</div>
+        <p class="kr text-sm text-body leading-relaxed">
+          <span class="c c-brand">service/factor/factor_returns.py</span> 가 <span class="c">aggregate_factor_returns</span> 의 실제 home이며 model_portfolio는 re-export만 한다.
+          <span class="c c-brand">service/download/paths.py</span> 는 <span class="c">mreturn_filename()</span> 하나뿐 — 경로 상수는 미이주(→ W4).
+          Rich 출력은 <span class="c">service/report/reporting.py</span> 로 분리 완료.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATUS -->
+  <section id="status" class="py-12 border-b border-hairline reveal">
+    <div class="flex items-baseline gap-3 mb-6">
+      <iconify-icon icon="solar:chart-2-bold" width="22" class="text-brand"></iconify-icon>
+      <h2 class="kr text-2xl md:text-3xl font-bold tracking-tight">실행 현황</h2>
+    </div>
+
+    <!-- metrics -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+      <div class="rounded-xl border border-hairline bg-card p-5">
+        <div class="mono text-3xl font-bold text-up">284</div>
+        <div class="text-xs text-muted mt-1 kr">pytest passed (277 → 284, 신규 +7)</div>
+      </div>
+      <div class="rounded-xl border border-hairline bg-card p-5">
+        <div class="mono text-3xl font-bold text-brand">28</div>
+        <div class="text-xs text-muted mt-1 kr">mp test 산출물 byte-identical</div>
+      </div>
+      <div class="rounded-xl border border-hairline bg-card p-5">
+        <div class="mono text-3xl font-bold text-up">∅</div>
+        <div class="text-xs text-muted mt-1 kr">full backtest git diff 공집합 (162 OOS)</div>
+      </div>
+      <div class="rounded-xl border border-hairline bg-card p-5">
+        <div class="mono text-3xl font-bold text-body">10</div>
+        <div class="text-xs text-muted mt-1 kr">commits → <span class="c">main-ikm</span> · PR #7</div>
+      </div>
+    </div>
+
+    <!-- phase progress cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <!-- P0 -->
+      <div class="rounded-xl border border-up/30 bg-card p-5">
+        <div class="flex items-center justify-between mb-2">
+          <span class="mono text-xs text-muted">PHASE 0</span>
+          <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon>완료</span>
+        </div>
+        <h3 class="kr font-bold text-[15px] mb-1">긴급 정합성</h3>
+        <p class="kr text-xs text-muted leading-relaxed">W1 cp949 크래시 · W2 nan 오분류 결함 · W3 STYLE_COLORS</p>
+      </div>
+      <!-- P1 -->
+      <div class="rounded-xl border border-up/30 bg-card p-5">
+        <div class="flex items-center justify-between mb-2">
+          <span class="mono text-xs text-muted">PHASE 1</span>
+          <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon>핵심 완료</span>
+        </div>
+        <h3 class="kr font-bold text-[15px] mb-1">float 위험 0 구조 정리</h3>
+        <p class="kr text-xs text-muted leading-relaxed">W4 paths · W5 순환import · W6 dead코드 · W9 · W19 · W7a</p>
+      </div>
+      <!-- P2 -->
+      <div class="rounded-xl border border-up/30 bg-card p-5">
+        <div class="flex items-center justify-between mb-2">
+          <span class="mono text-xs text-muted">PHASE 2</span>
+          <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon>안전 부분집합</span>
+        </div>
+        <h3 class="kr font-bold text-[15px] mb-1">float-SENSITIVE 중복 제거</h3>
+        <p class="kr text-xs text-muted leading-relaxed">W10 benchmark 헬퍼 · W8 재실행 2→1</p>
+      </div>
+      <!-- P3 -->
+      <div class="rounded-xl border border-up/30 bg-card p-5">
+        <div class="flex items-center justify-between mb-2">
+          <span class="mono text-xs text-muted">PHASE 3</span>
+          <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon>완료</span>
+        </div>
+        <h3 class="kr font-bold text-[15px] mb-1">데이터 I/O 효율</h3>
+        <p class="kr text-xs text-muted leading-relaxed">W12 columns 푸시다운 · W14 month_gap · W13 save copy 회피</p>
+      </div>
+      <!-- P4 -->
+      <div class="rounded-xl border border-up/30 bg-card p-5">
+        <div class="flex items-center justify-between mb-2">
+          <span class="mono text-xs text-muted">PHASE 4</span>
+          <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon>핵심 추출</span>
+        </div>
+        <h3 class="kr font-bold text-[15px] mb-1">대형 분해</h3>
+        <p class="kr text-xs text-muted leading-relaxed">W16 build_pivoted_export · W17 run() 순수계산 2블록</p>
+      </div>
+      <!-- deferred -->
+      <div class="rounded-xl border border-hairline bg-card/50 p-5">
+        <div class="flex items-center justify-between mb-2">
+          <span class="mono text-xs text-muted">보류 / 미실행</span>
+          <span class="badge b-mut"><iconify-icon icon="solar:pause-circle-bold" width="13"></iconify-icon>9건</span>
+        </div>
+        <h3 class="kr font-bold text-[15px] mb-1">의도적 제외</h3>
+        <p class="kr text-xs text-muted leading-relaxed">W7b·W15·W11·W20·W18·run() 평탄화 · C-F3/C-F2b/C-F4</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- LEDGER -->
+  <section id="ledger" class="py-12 border-b border-hairline reveal">
+    <div class="flex items-baseline gap-3 mb-2">
+      <span class="mono text-brand text-sm font-semibold">01</span>
+      <h2 class="kr text-2xl md:text-3xl font-bold tracking-tight">검증 원장 (Verification Ledger)</h2>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 mb-6">
+      <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon>CONFIRMED 27 — 주장·라인 정확</span>
+      <span class="badge b-amber"><iconify-icon icon="solar:tuning-2-bold" width="13"></iconify-icon>ADJUSTED 5 — 사실이나 라인/세부 수정</span>
+      <span class="badge b-red"><iconify-icon icon="solar:close-circle-bold" width="13"></iconify-icon>REJECTED 2 — 거짓·stale·이미수정</span>
+    </div>
+
+    <!-- Reviewer A -->
+    <h3 class="kr font-bold text-lg mb-3 flex items-center gap-2"><span class="text-brand mono text-sm">A</span> Pipeline numerical core</h3>
+    <div class="overflow-x-auto rounded-xl border border-hairline mb-8">
+      <table class="text-sm">
+        <thead><tr><th class="w-20">ID</th><th class="w-32">판정</th><th>검증 노트 (현재 코드 기준)</th></tr></thead>
+        <tbody class="kr text-[13px] leading-relaxed">
+          <tr><td class="mono font-semibold">A1-F1</td><td><span class="badge b-amber">ADJUSTED</span></td><td>CAGR/MDD 3중복 확인. <span class="c">benchmark_comparison.py:37-40</span> &amp; <span class="c">:72-75</span>(두 복사본), <span class="c">optimization.py:88-94</span>(<span class="c">np.float32</span>+matmul — <strong>별도 유지</strong>), <span class="c">universe.py:65</span>. 추가로 <span class="c">result_stitcher.py:186</span>, <span class="c">dashboard_data.py:81-86</span> 도 동일 공식(→ D-F6과 통합).</td></tr>
+          <tr><td class="mono font-semibold">A1-F2</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">_construct_and_export</span> god-method <span class="c">model_portfolio.py:312-366</span>. pivot/MP-backfill 블록 <span class="c">:340-363</span>. 결정성 가드 <span class="c">:321-323</span>(sort)·<span class="c">:346-349</span>(round(12)) load-bearing 확인.</td></tr>
+          <tr><td class="mono font-semibold">A1-F3</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">deployed_weights</span> optional 파라미터가 <span class="c">weight_history.py:139,187,222</span> 에 thread. production 호출부는 <strong>미전달 → 휴면</strong>, 테스트만 사용. <span class="c">dashboard_data.py</span> 는 <span class="c">new_weight</span> 만 읽음 → 삭제 안전. 단, 테스트 3개 동반 삭제 필요.</td></tr>
+          <tr><td class="mono font-semibold">A1-F4</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">ranking_method=="cagr"</span> 시 중복 cagr 연산(<span class="c">universe.py:65</span> vs <span class="c">selection.py:161-166</span>). 기본 tstat이라 휴면. <span class="text-down font-semibold">Float HIGH</span>: <span class="c">cumprod().iloc[-1]</span> vs <span class="c">prod()</span> 말단 상이 — 단순 통합 위험.</td></tr>
+          <tr><td class="mono font-semibold">A1-F5</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">prepend_start_zero</span> 가 입력을 in-place 변형 <span class="c">factor_analysis.py:30</span>. 테스트가 동작 고정.</td></tr>
+          <tr><td class="mono font-semibold">A1-F6</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">calculate_vectorized_return</span> 내 <span class="c">w0</span> 별칭 혼동 <span class="c">weight_construction.py:213</span>. 순수 리네임 가능하나 reindex/shift/groupby-cumprod 체인은 손대지 말 것.</td></tr>
+          <tr><td class="mono font-semibold">A1-F7</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">optimize_constrained_weights</span> 기본 <span class="c">mode="hardcoded"</span> 가 config 기본 <span class="c">equal_weight</span> 와 모순. 파이프라인은 항상 명시 전달 → 무해하나 함정.</td></tr>
+          <tr><td class="mono font-semibold">A1-F8</td><td><span class="badge b-green">CONFIRMED</span></td><td>손수 짠 <span class="c">_months_between</span> <span class="c">model_portfolio.py:63-67</span>. step_smooth 입력 — int 동일성 필요. 최저 가치.</td></tr>
+          <tr><td class="mono font-semibold">A1-F9</td><td><span class="badge b-amber">ADJUSTED</span></td><td><span class="c">universe.py:33-37</span> 이 model_portfolio에서 lazy-import. 그러나 <span class="c">aggregate_factor_returns</span> 실제 home은 이미 <span class="c">service/factor/factor_returns.py</span> → 직접 import 가능. 경로 상수는 leaf paths 모듈 이주 후 해소.</td></tr>
+          <tr><td class="mono font-semibold">A1-F10</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">create_equal_weight_benchmark</span> vs <span class="c">create_mp_portfolio_return</span> 준-클론. return_series 구성만 상이. A1-F1 헬퍼로 흡수 가능.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Reviewer B -->
+    <h3 class="kr font-bold text-lg mb-3 flex items-center gap-2"><span class="text-brand mono text-sm">B</span> Backtest</h3>
+    <div class="overflow-x-auto rounded-xl border border-hairline mb-8">
+      <table class="text-sm">
+        <thead><tr><th class="w-20">ID</th><th class="w-32">판정</th><th>검증 노트</th></tr></thead>
+        <tbody class="kr text-[13px] leading-relaxed">
+          <tr><td class="mono font-semibold">B-F1</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">WalkForwardEngine.run()</span> <span class="c">:302-578</span>(≈277줄). Tier2 블록 6단 중첩. IS-슬라이스 경계 <span class="c">:409</span>, 결정성 <span class="c">sorted(...)</span> <span class="c">:542</span> 모두 load-bearing.</td></tr>
+          <tr><td class="mono font-semibold">B-F2</td><td><span class="badge b-red">REJECTED</span></td><td><strong>이미 해소됨.</strong> <span class="c">walk_forward_engine.py:430-491</span> 은 inline 복사본이 아니라 <span class="c">selection.py</span> 공유 함수를 호출. "subtly diverged" 발산 없음. Sprint 1 리팩토링이 이미 처리.</td></tr>
+          <tr><td class="mono font-semibold">B-F3</td><td><span class="badge b-amber">ADJUSTED</span></td><td>팩터별 기하복리 루프 중복: <span class="c">overfit_diagnostics.py:186-190</span> &amp; <span class="c">:336-340</span>. 라인이 finding보다 좁음. <span class="c">overfit_diagnostics.csv</span> 전용.</td></tr>
+          <tr><td class="mono font-semibold">B-F4</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">analyze_cols</span> slim 블록 <span class="c">walk_forward_engine.py:67-68</span> &amp; <span class="c">:143-144</span> 동일(model_portfolio <span class="c">:110</span>). 상수 추출 대상.</td></tr>
+          <tr><td class="mono font-semibold">B-F5</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">_calc_perf</span> <span class="c">result_stitcher.py:186</span> 에 final&lt;=0 가드 없음 → nan. funnel <span class="c">&gt;</span> 비교에서 <span class="c">nan&gt;x=False</span> → <strong>재앙적 DD를 조용히 NORMAL로 오분류</strong>. 엣지케이스지만 무방비.</td></tr>
+          <tr><td class="mono font-semibold">B-F6</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">WalkForwardEngine.__init__</span> <span class="c">:280-300</span>, 위치 인자 9개. 모두 default 있음.</td></tr>
+          <tr><td class="mono font-semibold">B-F7</td><td><span class="badge b-amber">ADJUSTED</span></td><td><span class="c">oos_ew_return = oos_factor_returns.mean()</span> 은 <span class="c">available_factors</span> 에 대한 EW. 버그 아님 — 명확화 주석/리네임 정도. 최저 가치.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Reviewer C -->
+    <h3 class="kr font-bold text-lg mb-3 flex items-center gap-2"><span class="text-brand mono text-sm">C</span> Data I/O</h3>
+    <div class="overflow-x-auto rounded-xl border border-hairline mb-8">
+      <table class="text-sm">
+        <thead><tr><th class="w-20">ID</th><th class="w-32">판정</th><th>검증 노트</th></tr></thead>
+        <tbody class="kr text-[13px] leading-relaxed">
+          <tr><td class="mono font-semibold">C-F1</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">download_validation.py:56</span> 전체 로드 후 4컬럼 슬라이스. <span class="c">load_factor_parquet</span> 가 <span class="c">columns=</span> 미지원. TOP 효율 pick.</td></tr>
+          <tr><td class="mono font-semibold">C-F2</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">model_portfolio.py:227</span> 전체 history 로드, <span class="c">:231-234</span> 전 프레임 category→object 캐스팅(OOM 근거 문서화). (a)columns= 저위험 / (b)캐스팅 축소 = <span class="text-down">MEDIUM</span> 위험.</td></tr>
+          <tr><td class="mono font-semibold">C-F3</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">parquet_io.py:132-133</span> eager read + concat → category 업캐스트 + 전 프레임 메모리 상주.</td></tr>
+          <tr><td class="mono font-semibold">C-F4</td><td><span class="badge b-amber">CONFIRMED(약화)</span></td><td>glob 후 파일명 int-parse 연도 필터. 파일시스템 numeric predicate 불가 — <strong>현 방식 적절</strong>. 연도 추출 중앙화만 유효.</td></tr>
+          <tr><td class="mono font-semibold">C-F5</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">db/factor_query.py:49-86</span> <span class="c">fetch_snp</span> 가 매 호출 engine+query 재생성. allowlist 존재 — 안전. 쿼리 템플릿 상수화 + (선택)풀링.</td></tr>
+          <tr><td class="mono font-semibold">C-F6</td><td><span class="badge b-green">CONFIRMED</span></td><td>35일 gap / 월별 count / NaN-ratio 가 <span class="c">parquet_io.py</span> 와 <span class="c">download_validation.py</span> 양쪽 중복. 목적은 다르나 로직 중복 실재.</td></tr>
+          <tr><td class="mono font-semibold">C-F7</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">validate_loaded_factor_data</span> 가 매 mp 로드마다 4회 전 history 스캔. 의도적 무결성 체크지만 gating/재사용 여지.</td></tr>
+          <tr><td class="mono font-semibold">C-F8</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">save_factor_parquet_by_year</span> <span class="c">:54-55</span> 전 프레임 <span class="c">.copy()</span> + <span class="c">_year</span> 임시 컬럼. 대용량 메모리 영향 실재.</td></tr>
+          <tr><td class="mono font-semibold">C-F9</td><td><span class="badge b-amber">CONFIRMED(부분)</span></td><td>bare <span class="c">except Exception:</span> <span class="c">download_factors.py:87</span> → 무음. <span class="c">pd.to_datetime</span> 반복은 패턴 상이(literal 3중복 아님).</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Reviewer D -->
+    <h3 class="kr font-bold text-lg mb-3 flex items-center gap-2"><span class="text-brand mono text-sm">D</span> Cross-cutting</h3>
+    <div class="overflow-x-auto rounded-xl border border-hairline mb-4">
+      <table class="text-sm">
+        <thead><tr><th class="w-20">ID</th><th class="w-32">판정</th><th>검증 노트</th></tr></thead>
+        <tbody class="kr text-[13px] leading-relaxed">
+          <tr><td class="mono font-semibold">D-F1</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">STYLE_COLORS</span> 2중정의: <span class="c">report_generator.py:21-29</span>(7개, Volatility 없음) vs <span class="c">dashboard_charts.py:15-24</span>(8개). 발산 실재 → 단일 출처화.</td></tr>
+          <tr><td class="mono font-semibold">D-F2</td><td><span class="badge b-amber">ADJUSTED(분리)</span></td><td><strong>진짜 크래시:</strong> <span class="c">reporting.py:247</span>(<span class="c">⚠</span>+em-dash), <span class="c">:249</span>(<span class="c">✓</span>) <span class="c">console.print()</span> — cp949에서 UnicodeEncodeError. 로그 문자열: <span class="c">config.py:22-26</span> em-dash. 코스메틱: <span class="c">main.py</span> 주석 화살표.</td></tr>
+          <tr><td class="mono font-semibold">D-F3</td><td><span class="badge b-green">CONFIRMED</span></td><td>경로 재유도: <span class="c">model_portfolio.py:55-60</span>, <span class="c">dashboard_data.py:19-21</span>, <span class="c">download_factors.py:46-48</span>. <strong>A1-F9와 통합.</strong></td></tr>
+          <tr><td class="mono font-semibold">D-F4</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">run_model_portfolio_pipeline()</span> 가 <span class="c">pipeline_params</span> 미수신/미전달. 생성자는 이미 수신. benchmark 경로만 override.</td></tr>
+          <tr><td class="mono font-semibold">D-F5</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">report_generator.py:17</span> 가 model_portfolio에서 순환 import. <span class="c">aggregate_factor_returns</span> 실제 home은 factor_returns. <strong>A1-F9와 통합.</strong></td></tr>
+          <tr><td class="mono font-semibold">D-F6</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">compute_kpis</span> 가 <span class="c">_calc_perf</span> CAGR/MDD/Sharpe/Calmar 공식 중복. <strong>A1-F1과 통합.</strong></td></tr>
+          <tr><td class="mono font-semibold">D-F7</td><td><span class="badge b-red">REJECTED</span></td><td>"filter_and_label 두 번 호출" 거짓. <span class="c">--report</span> 시 <span class="c">:114-116</span> early-return → 메인 미호출. <span class="c">generate_report</span> 가 1회만 호출.</td></tr>
+          <tr><td class="mono font-semibold">D-F8</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">dashboard.py:162-169</span> <span class="c">try/except Exception: pass</span>(noqa BLE001). except 좁히기.</td></tr>
+          <tr><td class="mono font-semibold">D-F9</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">report_generator.py:99-108</span> L/N/S 라벨 로직을 하드코딩 0.10으로 inline 재구현. 차트 라벨 전용.</td></tr>
+          <tr><td class="mono font-semibold">D-F10</td><td><span class="badge b-green">CONFIRMED</span></td><td><span class="c">_run_benchmark_comparison</span> 이 새 파이프라인 + <span class="c">run()</span> 재실행 → <span class="c">mp --benchmark</span> 2배. <strong>D-F4와 통합.</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="kr text-sm text-muted leading-relaxed"><span class="text-body font-semibold">판정 요약:</span> CONFIRMED 27 · ADJUSTED 5 (A1-F1, A1-F9, B-F3, B-F7, D-F2) · <span class="text-down font-semibold">REJECTED 2 (B-F2, D-F7)</span>. 가장 위험하다던 B-F2가 이미 해소된 것이 핵심.</p>
+  </section>
+
+  <!-- WORK ITEMS -->
+  <section id="items" class="py-12 border-b border-hairline reveal">
+    <div class="flex items-baseline gap-3 mb-2">
+      <span class="mono text-brand text-sm font-semibold">02</span>
+      <h2 class="kr text-2xl md:text-3xl font-bold tracking-tight">통합 작업 항목 (W1–W20)</h2>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 mb-6 text-xs">
+      <span class="badge b-green"><iconify-icon icon="solar:shield-check-bold" width="12"></iconify-icon>SAFE — 수치/행순서 위험 없음</span>
+      <span class="badge b-amber"><iconify-icon icon="solar:danger-triangle-bold" width="12"></iconify-icon>SENSITIVE — 수치 diff 필요</span>
+      <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="12"></iconify-icon>완료</span>
+      <span class="badge b-mut"><iconify-icon icon="solar:pause-circle-bold" width="12"></iconify-icon>보류/미실행</span>
+    </div>
+    <div class="overflow-x-auto rounded-xl border border-hairline">
+      <table class="text-sm">
+        <thead><tr>
+          <th class="w-14">WI</th><th class="min-w-[180px]">제목</th><th class="min-w-[240px]">변경 내용</th>
+          <th>민감도</th><th>노력</th><th>가치</th><th>상태</th>
+        </tr></thead>
+        <tbody class="kr text-[13px] leading-relaxed">
+          <tr><td class="mono font-bold text-brand">W1</td><td>cp949 콘솔 크래시 제거</td><td><span class="c">reporting.py</span>/<span class="c">config.py</span> 이모지·em-dash → ASCII</td><td><span class="badge b-green">SAFE</span></td><td class="mono">S</td><td class="text-down font-semibold">높음</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W2</td><td><span class="c">_calc_perf</span> nan 가드</td><td>final&lt;=0 → cagr=-1.0. funnel 오분류 차단</td><td><span class="badge b-amber">SENSITIVE</span></td><td class="mono">S</td><td>중(정합성)</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W3</td><td>STYLE_COLORS 단일화</td><td>신규 <span class="c">style_colors.py</span>, 양쪽 import</td><td><span class="badge b-green">SAFE</span></td><td class="mono">S</td><td>중</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W4</td><td>leaf paths 모듈</td><td>경로 상수 <span class="c">service/paths.py</span> 단일화, 재유도 제거</td><td><span class="badge b-green">SAFE</span></td><td class="mono">M</td><td>높음</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W5</td><td>순환 import 정리</td><td><span class="c">aggregate_factor_returns</span> 직접 import, lazy 제거</td><td><span class="badge b-green">SAFE</span></td><td class="mono">S</td><td>중</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W6</td><td>dead <span class="c">deployed_weights</span> 제거</td><td>휴면 파라미터/분기 + 테스트 2 삭제</td><td><span class="badge b-green">SAFE</span></td><td class="mono">S</td><td>중</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W7</td><td>optimizer mode + w0 + months</td><td>기본 mode <span class="c">equal_weight</span> / <span class="c">w0</span> 리네임 / months util</td><td><span class="badge b-green">SAFE</span></td><td class="mono">S</td><td>낮음</td><td><span class="badge b-green">W7a 완료</span> <span class="badge b-mut">W7b 보류</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W8</td><td><span class="c">pipeline_params</span> + benchmark 재사용</td><td>wrapper 인스턴스 반환, 재실행 제거 (2→1)</td><td><span class="badge b-amber">SENSITIVE</span></td><td class="mono">M</td><td class="text-down font-semibold">높음</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W9</td><td><span class="c">ANALYZE_COLS</span> 상수 추출</td><td>3곳 동일 리스트 단일화</td><td><span class="badge b-green">SAFE</span></td><td class="mono">S</td><td>낮음</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W10</td><td>공유 성과 헬퍼</td><td>benchmark near-clone 2개 → <span class="c">_perf_from_return_series</span></td><td><span class="badge b-amber">SENSITIVE</span></td><td class="mono">M</td><td class="text-down font-semibold">높음</td><td><span class="badge b-green">완료(범위축소)</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W11</td><td>L/N/S 라벨 로직 공유</td><td>라벨 헬퍼 추출, 하드코딩 0.10 제거</td><td><span class="badge b-amber">SENSITIVE</span></td><td class="mono">S</td><td>중</td><td><span class="badge b-mut">미실행</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W12</td><td><span class="c">load_factor_parquet(columns=)</span></td><td>pyarrow column pushdown + validation 적용</td><td><span class="badge b-amber">SENSITIVE</span></td><td class="mono">S</td><td class="text-down font-semibold">높음</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W13</td><td>parquet 병합 메모리/dtype</td><td>save full-frame copy 회피 (C-F8). C-F3/C-F4 보류</td><td><span class="badge b-amber">SENSITIVE</span></td><td class="mono">M</td><td>중</td><td><span class="badge b-green">완료(C-F8)</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W14</td><td>validation 중복 헬퍼화</td><td><span class="c">month_gap_issues</span> 공유 + cp949 화살표 + bare except</td><td><span class="badge b-green">SAFE</span></td><td class="mono">M</td><td>중</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W15</td><td>factor_query 템플릿/엔진</td><td>쿼리 템플릿 상수화, (선택)풀링</td><td><span class="badge b-green">SAFE</span></td><td class="mono">S</td><td>낮음</td><td><span class="badge b-mut">보류</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W16</td><td><span class="c">_construct_and_export</span> 분해</td><td>pivot 블록 → <span class="c">build_pivoted_export</span></td><td><span class="badge b-amber">SENSITIVE</span></td><td class="mono">L</td><td>중</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W17</td><td><span class="c">run()</span> 분해</td><td><span class="c">_rank_and_select</span> + <span class="c">_assemble_oos_record</span> 추출</td><td><span class="badge b-amber">SENSITIVE</span></td><td class="mono">L</td><td>중</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W18</td><td><span class="c">__init__</span> dataclass</td><td>9 knob → config dataclass</td><td><span class="badge b-green">SAFE</span></td><td class="mono">M</td><td>낮음</td><td><span class="badge b-mut">미실행</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W19</td><td>dashboard except 좁히기</td><td><span class="c">except Exception</span> → <span class="c">(ImportError, AttributeError)</span></td><td><span class="badge b-green">SAFE</span></td><td class="mono">S</td><td>낮음</td><td><span class="badge b-green">완료</span></td></tr>
+          <tr><td class="mono font-bold text-brand">W20</td><td><span class="c">cagr</span> 중복연산 정리</td><td>cagr 경로일 때만 공유. 기본 tstat라 휴면</td><td><span class="badge b-amber">SENSITIVE(HIGH)</span></td><td class="mono">M</td><td>낮음</td><td><span class="badge b-mut">미실행</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- PHASES -->
+  <section id="phases" class="py-12 border-b border-hairline reveal">
+    <div class="flex items-baseline gap-3 mb-6">
+      <span class="mono text-brand text-sm font-semibold">03</span>
+      <h2 class="kr text-2xl md:text-3xl font-bold tracking-tight">단계별 계획 &amp; 실행 결과</h2>
+    </div>
+    <p class="kr text-muted text-sm mb-6">인터프리터: <span class="c">C:\Users\IKM\.virtualenvs\bok-ZkEKkwfv\Scripts\python.exe</span> (이하 <span class="c">PY</span>)</p>
+
+    <div class="space-y-5">
+      <!-- Phase 0 -->
+      <div class="rounded-xl border border-hairline bg-card overflow-hidden">
+        <div class="px-5 py-4 border-b border-hairline flex items-center justify-between gap-3 bg-elevated/40">
+          <div class="flex items-center gap-3"><span class="mono text-xs text-muted">PHASE 0</span><h3 class="kr font-bold">긴급 정합성</h3></div>
+          <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon>완료 · 2026-06-25</span>
+        </div>
+        <div class="p-5 kr text-[13px] leading-relaxed space-y-2">
+          <p><span class="badge b-green">W1</span> cp949 크래시 — <span class="c">reporting.py:247,249</span>·<span class="c">config.py</span> ASCII화. 테스트 <span class="c">test_reporting.py</span>.</p>
+          <p><span class="badge b-green">W2</span> <span class="c">_calc_perf</span> nan 가드 — final&lt;=0 → cagr=-1.0. 테스트 <span class="c">test_result_stitcher_perf.py</span>(전손+정상경로 회귀).</p>
+          <p><span class="badge b-green">W3</span> STYLE_COLORS 단일화 — 신규 <span class="c">style_colors.py</span>. 테스트 <span class="c">test_style_colors.py</span>.</p>
+          <div class="mt-3 rounded-lg bg-up/10 border border-up/25 px-4 py-3 text-up text-xs flex gap-2">
+            <iconify-icon icon="solar:verified-check-bold" width="15" class="shrink-0 mt-0.5"></iconify-icon>
+            <span>pytest 277 → 282 passed. <span class="c">mp test</span> 산출물 28개 byte-identical. W2 정상경로 회귀 통과 — 전손 regime 외 실데이터 영향 없음.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 1 -->
+      <div class="rounded-xl border border-hairline bg-card overflow-hidden">
+        <div class="px-5 py-4 border-b border-hairline flex items-center justify-between gap-3 bg-elevated/40">
+          <div class="flex items-center gap-3"><span class="mono text-xs text-muted">PHASE 1</span><h3 class="kr font-bold">float 위험 0 구조 정리</h3></div>
+          <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon>핵심 배치 완료</span>
+        </div>
+        <div class="p-5 kr text-[13px] leading-relaxed space-y-2">
+          <p><span class="badge b-green">W4</span> 신규 <span class="c">service/paths.py</span>(순수 상수, mkdir 부작용은 model_portfolio 유지). 재유도 제거, re-export 유지.</p>
+          <p><span class="badge b-green">W5</span> <span class="c">universe.py</span>/<span class="c">report_generator.py</span> 가 실제 소유 모듈에서 직접 import. <span class="c">model_portfolio ↔ universe</span> 순환 해소.</p>
+          <p><span class="badge b-green">W6</span> dead <span class="c">deployed_weights</span> 3함수/분기 제거 + 테스트 2 삭제(가드 1 유지).</p>
+          <p><span class="badge b-green">W9</span> <span class="c">ANALYZE_COLS</span> 단일 출처화 · <span class="badge b-green">W19</span> dashboard except 축소 · <span class="badge b-green">W7a</span> optimizer 기본 mode <span class="c">equal_weight</span>.</p>
+          <p class="text-muted"><span class="badge b-mut">W7b</span> <span class="c">w0</span> 리네임 보류(최고 float 민감 함수, 격리 검증) · <span class="badge b-mut">W15</span> factor_query 보류(live-SQL 무테스트).</p>
+          <div class="mt-3 rounded-lg bg-up/10 border border-up/25 px-4 py-3 text-up text-xs flex gap-2">
+            <iconify-icon icon="solar:verified-check-bold" width="15" class="shrink-0 mt-0.5"></iconify-icon>
+            <span>pytest 280 passed (obsolete 2 제거), import smoke(순환 없음·re-export 일관), <span class="c">mp test</span> 28개 byte-identical.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 2 -->
+      <div class="rounded-xl border border-hairline bg-card overflow-hidden">
+        <div class="px-5 py-4 border-b border-hairline flex items-center justify-between gap-3 bg-elevated/40">
+          <div class="flex items-center gap-3"><span class="mono text-xs text-muted">PHASE 2</span><h3 class="kr font-bold">float-SENSITIVE 중복 제거</h3></div>
+          <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon>안전 부분집합</span>
+        </div>
+        <div class="p-5 kr text-[13px] leading-relaxed space-y-2">
+          <p><span class="badge b-green">W10</span> benchmark near-clone 2개 → <span class="c">_perf_from_return_series</span>. operand order 보존 → byte-identical.</p>
+          <p><span class="badge b-green">W8</span> wrapper 인스턴스 반환 + config mode==equal_weight 면 재사용. <span class="c">mp --benchmark</span> 실행 2→1회.</p>
+          <div class="mt-2 rounded-lg bg-down/10 border border-down/25 px-4 py-3 text-xs flex gap-2 text-body">
+            <iconify-icon icon="solar:info-circle-bold" width="15" class="shrink-0 mt-0.5 text-down"></iconify-icon>
+            <span><span class="font-semibold text-down">교차모듈 통합 보류:</span> <span class="c">_calc_perf</span> 는 <span class="c">(cum-rm)/rm</span>, <span class="c">compute_kpis</span> 는 <span class="c">cum/rm - 1.0</span> 로 drawdown 연산 순서가 달라 강제 통합 시 float 변동. synthesis의 "D-F6 float LOW"는 실제로는 통합 비권장.</span>
+          </div>
+          <div class="mt-2 rounded-lg bg-up/10 border border-up/25 px-4 py-3 text-up text-xs flex gap-2">
+            <iconify-icon icon="solar:verified-check-bold" width="15" class="shrink-0 mt-0.5"></iconify-icon>
+            <span>pytest 280 passed, <span class="c">benchmark_comparison.csv</span> + 28 artifacts byte-identical. walk-forward 미접촉 → 41분 백테스트 불필요.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 3 -->
+      <div class="rounded-xl border border-hairline bg-card overflow-hidden">
+        <div class="px-5 py-4 border-b border-hairline flex items-center justify-between gap-3 bg-elevated/40">
+          <div class="flex items-center gap-3"><span class="mono text-xs text-muted">PHASE 3</span><h3 class="kr font-bold">데이터 I/O 효율</h3></div>
+          <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon>완료</span>
+        </div>
+        <div class="p-5 kr text-[13px] leading-relaxed space-y-2">
+          <p><span class="badge b-green">W12</span> <span class="c">columns=</span> pyarrow 푸시다운 + validation 적용. mp/backtest 무영향(default None), 신규 테스트로 byte-identity 증명.</p>
+          <p><span class="badge b-green">W14</span> <span class="c">month_gap_issues</span> 공유 헬퍼 + 35d 상수 + cp949 화살표(U+2192 → '->') + bare except 축소.</p>
+          <p><span class="badge b-green">W13</span> <span class="c">save_factor_parquet_by_year</span> full-frame copy 회피(외부 연도 Series groupby). save 경로라 무영향.</p>
+          <div class="mt-1 rounded-lg bg-down/10 border border-down/25 px-4 py-3 text-xs flex gap-2 text-body">
+            <iconify-icon icon="solar:info-circle-bold" width="15" class="shrink-0 mt-0.5 text-down"></iconify-icon>
+            <span><span class="font-semibold text-down">C-F3/C-F2b 보류:</span> <span class="c">_load_data</span> 가 OOM 방지로 category→object 강제 캐스팅 → load dtype 보존 net 효과 미미. 캐스팅 제거는 <span class="c">groupby(observed=False)</span> 미관측 조합 행 생성 → 산출물 변경 위험. C-F4도 보류(현 파일명 방식 적절).</span>
+          </div>
+          <div class="mt-2 rounded-lg bg-up/10 border border-up/25 px-4 py-3 text-up text-xs flex gap-2">
+            <iconify-icon icon="solar:verified-check-bold" width="15" class="shrink-0 mt-0.5"></iconify-icon>
+            <span>pytest 284 passed (parquet_io +4). Phase 3 전 항목 mp/backtest 수치 경로 미접촉 → fast track 검증.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 4 -->
+      <div class="rounded-xl border border-hairline bg-card overflow-hidden">
+        <div class="px-5 py-4 border-b border-hairline flex items-center justify-between gap-3 bg-elevated/40">
+          <div class="flex items-center gap-3"><span class="mono text-xs text-muted">PHASE 4</span><h3 class="kr font-bold">대형 분해</h3></div>
+          <span class="badge b-green"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon>핵심 추출 완료</span>
+        </div>
+        <div class="p-5 kr text-[13px] leading-relaxed space-y-2">
+          <p><span class="badge b-green">W16</span> <span class="c">_construct_and_export</span> 피벗 단계 → <span class="c">build_pivoted_export</span>. mp 경로 전용이라 <span class="c">mp test</span> 28종 byte-identical.</p>
+          <p><span class="badge b-green">W17</span> <span class="c">run()</span> 277줄에서 순수계산 2블록(<span class="c">_rank_and_select</span>·<span class="c">_assemble_oos_record</span>) 추출. <strong>제어흐름(continue/keep-cached)은 의도적 미변경</strong> — 버그 위험 회피.</p>
+          <p class="text-muted"><span class="badge b-mut">W17b</span> Tier2 6단 중첩 가드절 평탄화 보류(byte-diff 검증 난이도·41분/회 비용) · <span class="badge b-mut">W18</span> <span class="c">__init__</span> dataclass 미실행.</p>
+          <div class="mt-3 rounded-lg bg-up/10 border border-up/25 px-4 py-3 text-up text-xs flex gap-2">
+            <iconify-icon icon="solar:verified-check-bold" width="15" class="shrink-0 mt-0.5"></iconify-icon>
+            <span>W16 = mp test 28 byte-identical. W17 = <strong>full backtest 산출물 3종 git diff 공집합 + md5 일치</strong> (162 OOS). pytest 280 passed.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- infra finding -->
+    <div class="mt-6 rounded-xl border border-info/30 bg-info/5 p-5 flex gap-4">
+      <iconify-icon icon="solar:bug-minimalistic-bold" width="24" class="text-info shrink-0 mt-0.5"></iconify-icon>
+      <div class="kr text-sm leading-relaxed">
+        <span class="font-bold text-info">검증 인프라 발견.</span>
+        커밋된 walk-forward 산출물이 <span class="c">56fc16e</span> 이후 stale였음 → <span class="c">43f5ea0</span> 에서 현재 결정론적 출력으로 갱신.
+        이제 backtest-path 변경은 <span class="c">output/</span> 3파일의 <span class="c">git diff</span> 로 회귀 검증 가능하다.
+      </div>
+    </div>
+  </section>
+
+  <!-- PROTOCOL -->
+  <section id="protocol" class="py-12 border-b border-hairline reveal">
+    <div class="flex items-baseline gap-3 mb-6">
+      <span class="mono text-brand text-sm font-semibold">04</span>
+      <h2 class="kr text-2xl md:text-3xl font-bold tracking-tight">전역 검증 프로토콜</h2>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <!-- tracks -->
+      <div class="rounded-xl border border-hairline bg-card p-5">
+        <h3 class="kr font-bold mb-4 flex items-center gap-2"><iconify-icon icon="solar:routing-2-bold" class="text-brand"></iconify-icon>검증 트랙</h3>
+        <div class="space-y-4 text-[13px] kr leading-relaxed">
+          <div>
+            <div class="badge b-green mb-2"><iconify-icon icon="solar:bolt-bold" width="12"></iconify-icon>A. 테스트 트랙 (빠름, 모든 작업)</div>
+            <pre class="mono text-[12px] bg-canvas border border-hairline rounded-lg p-3 overflow-x-auto text-mutedstrong"><span class="text-up">PY</span> main.py mp test test_data.csv
+<span class="text-up">PY</span> -m pytest tests/test_unit/ -v</pre>
+          </div>
+          <div>
+            <div class="badge b-amber mb-2"><iconify-icon icon="solar:clock-circle-bold" width="12"></iconify-icon>B. 실데이터 트랙 (~41분 · SENSITIVE 한정)</div>
+            <pre class="mono text-[12px] bg-canvas border border-hairline rounded-lg p-3 overflow-x-auto text-mutedstrong"><span class="text-up">PY</span> main.py mp 2009-12-31 2026-03-31
+<span class="text-up">PY</span> main.py backtest 2009-12-31 2026-03-31</pre>
+            <p class="text-muted text-xs mt-2">비교: <span class="c">aggregated_weights_*</span>, <span class="c">total_aggregated_weights_*</span>, <span class="c">meta_data.csv</span>, <span class="c">walk_forward_results.csv</span>, <span class="c">overfit_diagnostics.csv</span>, <span class="c">benchmark_comparison.csv</span></p>
+          </div>
+        </div>
+      </div>
+      <!-- float policy -->
+      <div class="rounded-xl border border-hairline bg-card p-5">
+        <h3 class="kr font-bold mb-4 flex items-center gap-2"><iconify-icon icon="solar:ruler-cross-pen-bold" class="text-brand"></iconify-icon>float 허용 정책</h3>
+        <ul class="space-y-3 text-[13px] kr leading-relaxed">
+          <li class="flex gap-2"><iconify-icon icon="solar:check-circle-bold" class="text-up shrink-0 mt-0.5" width="16"></iconify-icon><span><span class="text-up font-semibold">허용:</span> float 말단(≈1e-9 이하) 차이 — 합산 순서/재배열 기인. 행 개수·순서·키·부호·선정 팩터 집합은 동일해야 함.</span></li>
+          <li class="flex gap-2"><iconify-icon icon="solar:close-circle-bold" class="text-down shrink-0 mt-0.5" width="16"></iconify-icon><span><span class="text-down font-semibold">불허:</span> 행 수 변화, 선정 팩터 집합 변화, 부호 변화, 1e-6 이상 값 차이(의도된 변경 제외).</span></li>
+          <li class="flex gap-2"><iconify-icon icon="solar:magnifer-bold" class="text-info shrink-0 mt-0.5" width="16"></iconify-icon><span>byte-diff 광범위 시 <span class="c">numpy.isclose(atol=1e-9, rtol=1e-7)</span> 로 수치 동등성 확인.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- track assignment -->
+    <div class="mt-5 overflow-x-auto rounded-xl border border-hairline">
+      <table class="text-sm">
+        <thead><tr><th>작업류</th><th class="text-center">A (빠름)</th><th class="text-center">B (full ~41분)</th></tr></thead>
+        <tbody class="kr text-[13px]">
+          <tr><td>SAFE (W1,W3,W4,W5,W6,W7,W9,W14,W15,W19)</td><td class="text-center text-up font-semibold">필수</td><td class="text-center text-muted">불필요</td></tr>
+          <tr><td>SENSITIVE-차트/진단 (W11, W14-overfit)</td><td class="text-center text-up font-semibold">필수</td><td class="text-center text-mutedstrong"><span class="c">overfit_diagnostics.csv</span> 만</td></tr>
+          <tr><td>SENSITIVE-산출물 (W2,W8,W10,W12,W13,W16,W17,W20)</td><td class="text-center text-up font-semibold">필수</td><td class="text-center text-brand font-semibold">필수</td></tr>
+          <tr><td>W17/W16 (OOS·결정성)</td><td class="text-center text-up font-semibold">필수</td><td class="text-center text-brand font-semibold">필수 + oos_purity/determinism</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- FIRST BATCH -->
+  <section class="py-12 reveal">
+    <div class="flex items-baseline gap-3 mb-6">
+      <span class="mono text-brand text-sm font-semibold">05</span>
+      <h2 class="kr text-2xl md:text-3xl font-bold tracking-tight">권장 첫 배치 <span class="text-muted text-lg font-normal">(전부 실행 완료)</span></h2>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div class="rounded-lg border border-hairline bg-card p-4 flex items-start gap-3"><span class="badge b-green shrink-0"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon></span><div class="kr text-sm"><span class="font-semibold">W1 cp949 크래시</span> — <span class="c">mp --benchmark</span> 실제 크래시. SAFE/S.</div></div>
+      <div class="rounded-lg border border-hairline bg-card p-4 flex items-start gap-3"><span class="badge b-green shrink-0"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon></span><div class="kr text-sm"><span class="font-semibold">W2 nan 가드</span> — 재앙적 DD 오분류 silent 버그.</div></div>
+      <div class="rounded-lg border border-hairline bg-card p-4 flex items-start gap-3"><span class="badge b-green shrink-0"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon></span><div class="kr text-sm"><span class="font-semibold">W3 STYLE_COLORS</span> — 발산하는 2중정의.</div></div>
+      <div class="rounded-lg border border-hairline bg-card p-4 flex items-start gap-3"><span class="badge b-green shrink-0"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon></span><div class="kr text-sm"><span class="font-semibold">W4 paths 모듈</span> — 키스톤(W5 등 해금). SAFE/M.</div></div>
+      <div class="rounded-lg border border-hairline bg-card p-4 flex items-start gap-3"><span class="badge b-green shrink-0"><iconify-icon icon="solar:check-circle-bold" width="13"></iconify-icon></span><div class="kr text-sm"><span class="font-semibold">W5 순환 import</span> · <span class="font-semibold">W6 dead코드</span> · <span class="font-semibold">W9 ANALYZE_COLS</span> · <span class="font-semibold">W19 except</span></div></div>
+      <div class="rounded-lg border border-brand/30 bg-brand/5 p-4 flex items-start gap-3"><iconify-icon icon="solar:danger-triangle-bold" class="text-brand shrink-0 mt-0.5" width="18"></iconify-icon><div class="kr text-sm"><span class="font-semibold text-brand">주의:</span> B-F2·D-F7은 이미 해소/거짓 → 전체 계획에서 제외. 잘못된 전제로 SENSITIVE 변경 착수 금지.</div></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="border-t border-hairline">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div class="kr text-sm text-muted">
+      <span class="text-body font-semibold">BOK 리팩토링 계획</span> · synthesis agent · 4 reviewer / 36 findings<br>
+      <span class="text-xs">source: <span class="c">docs/REFACTOR_PLAN.md</span></span>
+    </div>
+    <a href="https://github.com/urhero/bok/pull/7" target="_blank" rel="noopener"
+       class="inline-flex items-center gap-2 text-brand hover:text-brandactive text-sm font-semibold transition">
+      <iconify-icon icon="solar:square-arrow-right-up-bold" width="16"></iconify-icon> github.com/urhero/bok · PR #7
+    </a>
+  </div>
+</footer>
+
+<script>
+  // scroll progress bar
+  const prog = document.getElementById('progress');
+  const onScroll = () => {
+    const h = document.documentElement;
+    const max = h.scrollHeight - h.clientHeight;
+    prog.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + '%';
+  };
+  document.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // reveal on view
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, { threshold: 0.08 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // active TOC highlight
+  const links = Array.from(document.querySelectorAll('#toc a'));
+  const map = links.map(a => ({ a, sec: document.querySelector(a.getAttribute('href')) })).filter(x => x.sec);
+  const spy = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const hit = map.find(m => m.sec === e.target);
+        if (hit) hit.a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  map.forEach(m => spy.observe(m.sec));
+</script>
+</body>
+</html>
