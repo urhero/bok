@@ -426,14 +426,6 @@ class WalkForwardEngine:
                         if cached_weights is None:
                             continue
                     else:
-                        # 팩터 랭킹 계산
-                        months = len(ret_df_is) - 1
-                        cum = (1 + ret_df_is).cumprod().iloc[-1]
-                        cagr_series = cum ** (12 / months) - 1
-
-                        ranking_method = pp.get("factor_ranking_method", "cagr")
-                        monthly_rets = ret_df_is.iloc[1:]  # 첫 행(기준점 0) 제외
-
                         # 스타일 맵 구성 (IS 전용 rule_bundle 기반)
                         style_map_full: dict[str, str] = {}
                         if cached_rule_bundle:
@@ -442,50 +434,10 @@ class WalkForwardEngine:
                             for abbr, style in zip(kept_abbrs, kept_styles):
                                 style_map_full[abbr] = style
 
-                        # production mp (_evaluate_universe) 와 동일 로직 공유
-                        rank_score = compute_rank_score(monthly_rets, ranking_method, style_map_full)
-
-                        meta_df = pd.DataFrame({
-                            "factorAbbreviation": ret_df_is.columns,
-                            "cagr": cagr_series.values,
-                            "rank_score": rank_score.reindex(ret_df_is.columns).values,
-                        })
-
-                        meta_df["styleName"] = meta_df["factorAbbreviation"].map(style_map_full).fillna("Unknown")
-                        meta_df["factorName"] = meta_df["factorAbbreviation"]
-
-                        meta_df["rank_style"] = meta_df.groupby("styleName")["rank_score"].rank(ascending=False)
-                        meta_df["rank_total"] = meta_df["rank_score"].rank(ascending=False)
-                        meta_df = meta_df.sort_values("rank_score", ascending=False).reset_index(drop=True)
-
-                        top_n = min(pp["top_factor_count"], len(meta_df))
-
-                        # Sprint 1-B: Hierarchical Clustering 기반 중복 제거
-                        if pp.get("use_cluster_dedup", False):
-                            score_series = meta_df.set_index("factorAbbreviation")["rank_score"]
-                            selected = cluster_and_dedup_top_n(
-                                monthly_rets,
-                                score_series,
-                                n_clusters=int(pp.get("n_clusters", 18)),
-                                per_cluster_keep=int(pp.get("per_cluster_keep", 3)),
-                                top_n=top_n,
-                            )
-                            meta_top = meta_df.set_index("factorAbbreviation").loc[selected].reset_index()
-                        else:
-                            meta_top = meta_df.head(top_n)
-                            selected = meta_top["factorAbbreviation"].tolist()
-
-                        # 선정 히스테리시스: 직전 보유 팩터를 margin 미만 격차의
-                        # 챌린저로부터 보호 (노이즈성 교체 churn 절감)
-                        if self.selection_hysteresis > 0 and cached_selected_factors:
-                            score_full = meta_df.set_index("factorAbbreviation")["rank_score"]
-                            adjusted = apply_selection_hysteresis(
-                                list(selected), score_full,
-                                set(cached_selected_factors), self.selection_hysteresis,
-                            )
-                            if set(adjusted) != set(selected):
-                                selected = adjusted
-                                meta_top = meta_df.set_index("factorAbbreviation").loc[selected].reset_index()
+                        # 팩터 랭킹 + Top-N 선정 (production mp 와 동일 로직 공유)
+                        selected, meta_top = self._rank_and_select(
+                            ret_df_is, style_map_full, pp, cached_selected_factors,
+                        )
                         cached_top50_factors = list(selected)
                         ret_df_selected = ret_df_is[selected]
 
@@ -536,42 +488,119 @@ class WalkForwardEngine:
                 logger.warning("OOS date %s not in precomputed_ret_df, skipping", oos_date)
                 continue
 
-            # 결정적 출력: 합산(OOS 수익률/정규화) 순서를 팩터명으로 고정해 float
-            # 말단자릿수까지 안정화한다 (walk_forward_results.csv 재현성).
-            available_factors = sorted(f for f in cached_weights if f in precomputed_ret_df.columns)
-            if not available_factors:
+            record = self._assemble_oos_record(
+                oos_date, precomputed_ret_df, cached_weights, cached_meta,
+                cached_top50_factors, cached_is_cew_cagr, is_rule_rebal, is_weight_rebal,
+            )
+            if record is None:
                 continue
-
-            oos_factor_returns = precomputed_ret_df.loc[oos_date, available_factors]
-
-            # 전체 팩터 OOS 수익률 (Funnel Value-Add + Percentile Tracking용)
-            oos_all_factor_returns = precomputed_ret_df.loc[oos_date]
-
-            # 가용 팩터에 맞춰 가중치 정규화 (production mp 와 공유 로직)
-            avail_weights = deploy_weights(cached_weights, available_factors)
-            if not avail_weights:
-                logger.warning("OOS %s: deploy_weights 빈 결과 (available_factors=%d) - 0%% 수익월로 처리",
-                               oos_date, len(available_factors))
-
-            oos_return = sum(oos_factor_returns[f] * avail_weights.get(f, 0) for f in available_factors)
-            oos_ew_return = oos_factor_returns.mean()
-
-            results.append({
-                "date": oos_date,
-                "oos_return": oos_return,
-                "oos_ew_return": oos_ew_return,
-                "oos_factor_returns": oos_factor_returns.to_dict(),
-                "weights": dict(cached_weights),
-                "is_meta": cached_meta.copy() if cached_meta is not None else None,
-                "is_rule_rebal": is_rule_rebal,
-                "is_weight_rebal": is_weight_rebal,
-                "oos_all_factor_returns": oos_all_factor_returns.to_dict(),
-                "top50_factors": list(cached_top50_factors) if cached_top50_factors else [],
-                "active_factors": [f for f, w in cached_weights.items() if w > 0],
-                "is_cew_cagr": cached_is_cew_cagr,
-            })
+            results.append(record)
 
         elapsed = time.time() - t0
         logger.info("Walk-Forward completed: %d OOS months in %.1fs", len(results), elapsed)
 
         return WalkForwardResult(results)
+
+    def _rank_and_select(self, ret_df_is, style_map_full, pp, incumbents):
+        """IS 구간 팩터 랭킹 + Top-N 선정 (cluster dedup + 히스테리시스).
+
+        production mp(evaluate_universe)와 동일 로직을 공유한다. 순수 계산이며
+        연산 순서를 run() 의 기존 인라인 블록과 동일하게 보존한다(수치 동일성).
+
+        Returns:
+            (selected, meta_top): 선정 팩터 리스트와 선정 메타 DataFrame.
+        """
+        months = len(ret_df_is) - 1
+        cum = (1 + ret_df_is).cumprod().iloc[-1]
+        cagr_series = cum ** (12 / months) - 1
+
+        ranking_method = pp.get("factor_ranking_method", "cagr")
+        monthly_rets = ret_df_is.iloc[1:]  # 첫 행(기준점 0) 제외
+
+        # production mp (_evaluate_universe) 와 동일 로직 공유
+        rank_score = compute_rank_score(monthly_rets, ranking_method, style_map_full)
+
+        meta_df = pd.DataFrame({
+            "factorAbbreviation": ret_df_is.columns,
+            "cagr": cagr_series.values,
+            "rank_score": rank_score.reindex(ret_df_is.columns).values,
+        })
+
+        meta_df["styleName"] = meta_df["factorAbbreviation"].map(style_map_full).fillna("Unknown")
+        meta_df["factorName"] = meta_df["factorAbbreviation"]
+
+        meta_df["rank_style"] = meta_df.groupby("styleName")["rank_score"].rank(ascending=False)
+        meta_df["rank_total"] = meta_df["rank_score"].rank(ascending=False)
+        meta_df = meta_df.sort_values("rank_score", ascending=False).reset_index(drop=True)
+
+        top_n = min(pp["top_factor_count"], len(meta_df))
+
+        # Sprint 1-B: Hierarchical Clustering 기반 중복 제거
+        if pp.get("use_cluster_dedup", False):
+            score_series = meta_df.set_index("factorAbbreviation")["rank_score"]
+            selected = cluster_and_dedup_top_n(
+                monthly_rets,
+                score_series,
+                n_clusters=int(pp.get("n_clusters", 18)),
+                per_cluster_keep=int(pp.get("per_cluster_keep", 3)),
+                top_n=top_n,
+            )
+            meta_top = meta_df.set_index("factorAbbreviation").loc[selected].reset_index()
+        else:
+            meta_top = meta_df.head(top_n)
+            selected = meta_top["factorAbbreviation"].tolist()
+
+        # 선정 히스테리시스: 직전 보유 팩터를 margin 미만 격차의
+        # 챌린저로부터 보호 (노이즈성 교체 churn 절감)
+        if self.selection_hysteresis > 0 and incumbents:
+            score_full = meta_df.set_index("factorAbbreviation")["rank_score"]
+            adjusted = apply_selection_hysteresis(
+                list(selected), score_full,
+                set(incumbents), self.selection_hysteresis,
+            )
+            if set(adjusted) != set(selected):
+                selected = adjusted
+                meta_top = meta_df.set_index("factorAbbreviation").loc[selected].reset_index()
+        return selected, meta_top
+
+    def _assemble_oos_record(self, oos_date, precomputed_ret_df, cached_weights, cached_meta,
+                             cached_top50_factors, cached_is_cew_cagr, is_rule_rebal, is_weight_rebal):
+        """단일 OOS 시점 수익률을 계산하고 결과 레코드 dict 를 만든다.
+
+        가용 팩터가 없으면 None 반환(호출부에서 continue). 연산 순서는 기존
+        인라인 블록과 동일하게 보존한다 (walk_forward_results.csv 재현성).
+        """
+        # 결정적 출력: 합산(OOS 수익률/정규화) 순서를 팩터명으로 고정해 float
+        # 말단자릿수까지 안정화한다.
+        available_factors = sorted(f for f in cached_weights if f in precomputed_ret_df.columns)
+        if not available_factors:
+            return None
+
+        oos_factor_returns = precomputed_ret_df.loc[oos_date, available_factors]
+
+        # 전체 팩터 OOS 수익률 (Funnel Value-Add + Percentile Tracking용)
+        oos_all_factor_returns = precomputed_ret_df.loc[oos_date]
+
+        # 가용 팩터에 맞춰 가중치 정규화 (production mp 와 공유 로직)
+        avail_weights = deploy_weights(cached_weights, available_factors)
+        if not avail_weights:
+            logger.warning("OOS %s: deploy_weights 빈 결과 (available_factors=%d) - 0%% 수익월로 처리",
+                           oos_date, len(available_factors))
+
+        oos_return = sum(oos_factor_returns[f] * avail_weights.get(f, 0) for f in available_factors)
+        oos_ew_return = oos_factor_returns.mean()
+
+        return {
+            "date": oos_date,
+            "oos_return": oos_return,
+            "oos_ew_return": oos_ew_return,
+            "oos_factor_returns": oos_factor_returns.to_dict(),
+            "weights": dict(cached_weights),
+            "is_meta": cached_meta.copy() if cached_meta is not None else None,
+            "is_rule_rebal": is_rule_rebal,
+            "is_weight_rebal": is_weight_rebal,
+            "oos_all_factor_returns": oos_all_factor_returns.to_dict(),
+            "top50_factors": list(cached_top50_factors) if cached_top50_factors else [],
+            "active_factors": [f for f, w in cached_weights.items() if w > 0],
+            "is_cew_cagr": cached_is_cew_cagr,
+        }
