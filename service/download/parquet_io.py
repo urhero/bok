@@ -51,16 +51,19 @@ def save_factor_parquet_by_year(
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    df = df.copy()
-    df["_year"] = pd.to_datetime(df["ddt"]).dt.year
+    # 전체 프레임 copy + 임시 _year 컬럼 없이, 외부 연도 Series 로 그룹화한다
+    # (대용량(19M행) 다운로드 시 불필요한 full-frame copy 회피, 입력 df 불변).
+    year_ser = pd.to_datetime(df["ddt"]).dt.year
 
     if years is not None:
-        df = df[df["_year"].isin(years)]
+        mask = year_ser.isin(years)
+        df = df[mask]
+        year_ser = year_ser[mask]
 
     saved: list[Path] = []
-    for year, group in df.groupby("_year"):
+    for year, group in df.groupby(year_ser):
         out = data_dir / f"{benchmark}_factor_{year}.parquet"
-        group.drop(columns=["_year"]).to_parquet(
+        group.to_parquet(
             out, index=False, compression=compression,
         )
         size_mb = out.stat().st_size / (1024 * 1024)

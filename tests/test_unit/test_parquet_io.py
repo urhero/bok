@@ -125,6 +125,15 @@ class TestSaveFactorParquetByYear:
         loaded = pd.read_parquet(tmp_path / "TEST_factor_2023.parquet")
         assert "_year" not in loaded.columns
 
+    def test_input_df_not_mutated(self, sample_factor_df, tmp_path):
+        """copy 회피 후에도 입력 df 는 변형되지 않아야 한다 (no _year, 컬럼/길이 불변)."""
+        before_cols = list(sample_factor_df.columns)
+        before_len = len(sample_factor_df)
+        save_factor_parquet_by_year(sample_factor_df, tmp_path, "TEST")
+        assert list(sample_factor_df.columns) == before_cols
+        assert "_year" not in sample_factor_df.columns
+        assert len(sample_factor_df) == before_len
+
 
 class TestLoadFactorParquet:
     """load_factor_parquet 함수 테스트."""
