@@ -170,12 +170,14 @@ PY main.py backtest 2009-12-31 2026-03-31     # ~41분/회
 # 변경 후 동일 명령 → diff. float 말단 자릿수만 차이는 허용(§4).
 ```
 
-### Phase 3 — 데이터 I/O 효율 (SENSITIVE: dtype/행순서)
-- **W12** `load_factor_parquet(columns=)` 푸시다운
-- **W13** parquet 병합 메모리/dtype + 연도추출 중앙화 (W4 선행)
-- **W14** validation 중복 헬퍼화 + gating + bare except (진단 전용이라 SAFE 에 가까움)
+### Phase 3 — 데이터 I/O 효율  ✅ 완료 (2026-06-25)
+- **W12** [완료] `load_factor_parquet(columns=)` pyarrow 컬럼 푸시다운 + validate_parquet_coverage 적용. mp/backtest 무영향(default None), 신규 테스트로 byte-identity 증명.
+- **W14** [완료] `month_gap_issues` 공유 헬퍼(두 validator 중복 제거) + 35d 상수 + cp949 화살표(U+2192->'->') + download_factors bare except 축소. 진단 로직이라 산출물 무영향.
+- **W13** [완료, C-F8 한정] `save_factor_parquet_by_year` full-frame copy 회피(외부 연도 Series groupby). save 경로라 mp/backtest 무영향.
+  - **C-F3/C-F2b 보류(중요):** `_load_data` 가 OOM 방지로 category->object 강제 캐스팅(model_portfolio.py:228). 따라서 load dtype 보존(C-F3)은 net 효과 미미(즉시 상쇄). 캐스팅 제거(C-F2b)는 category groupby(observed=False) 미관측 조합 행 생성 -> 산출물 변경 위험이라 미실행.
+  - **C-F4 보류:** 연도 추출은 현 파일명 방식 적절(reviewer 판단).
 
-검증: W12/W13 은 dtype·행순서가 downstream 결정성 가드(`model_portfolio.py:321-323`)에 영향 가능 → **full A+B diff 필수**. W14 는 진단 출력만이므로 빠른 테스트 + overfit_diagnostics.csv 비교.
+검증 결과: pytest 284 passed (parquet_io +4: columns split/single, month_gap helper, no-mutation). Phase 3 전 항목이 mp/backtest 수치 경로 미접촉(W12 opt-in, W14 진단, W13 save) -> fast track 검증. 세션 종료 전 누적 full backtest 회귀 게이트로 최종 확인.
 
 ### Phase 4 — 대형 분해 (SENSITIVE)  ✅ 핵심 추출 완료 (2026-06-25)
 - **W16** [완료] `_construct_and_export` 의 피벗 단계 -> `weight_construction.build_pivoted_export`. mp 경로 전용이라 `mp test` 28종 byte-identical 로 검증(백테스트 불필요).
