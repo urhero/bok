@@ -337,3 +337,110 @@ def test_build_dashboard_smoke(tmp_path):
     assert "백테스트" in html
     assert "현재 포트" in html
     assert "Plotly" in html  # plotly.js 인라인 임베드 확인
+
+
+def test_diagnostics_table_pivots_variants_and_escapes(tmp_path):
+    """Funnel 변형 행(EW_All/EW_Top50/Constrained EW)은 한 행 3열로 피벗되고,
+    단일값 행은 colspan, Interpretation 의 '>'는 escape 된다."""
+    pytest.importorskip("plotly")  # dashboard import 가 plotly(dashboard_charts)를 끌어옴
+    from service.report.dashboard import _diagnostics_table
+
+    pd.DataFrame(
+        {
+            "Category": ["Funnel", "Funnel", "Funnel", "Funnel"],
+            "Metric": ["패턴", "EW_All CAGR", "EW_Top50 CAGR", "Constrained EW CAGR"],
+            "Value": ["DRAG", "0.84%", "2.79%", "2.17%"],
+            "Interpretation": ["B > C > A", "", "", ""],
+        }
+    ).to_csv(tmp_path / "overfit_diagnostics.csv", index=False, encoding="utf-8-sig")
+
+    html = _diagnostics_table(tmp_path)
+    # 세 변형 -> CAGR 한 행으로 피벗, 세 값 모두 존재
+    assert html.count("<td>CAGR</td>") == 1
+    assert "0.84%" in html and "2.79%" in html and "2.17%" in html
+    assert "EW_All CAGR" not in html  # 원본 접두 지표명은 피벗되어 사라짐
+    # 단일값(패턴) 행은 colspan, 해석의 '>'는 escape 되어 raw 누출 없음
+    assert 'colspan="3"' in html
+    assert "&gt;" in html and "B > C" not in html
+
+
+def test_diagnostics_table_missing_file(tmp_path):
+    pytest.importorskip("plotly")
+    from service.report.dashboard import _diagnostics_table
+    assert _diagnostics_table(tmp_path) == ""
+
+
+def test_compute_series_perf_reads_named_columns():
+    """곡선쌍 perf 가 지정 컬럼을 읽어 변형별로 다른 값을 낸다."""
+    c = _curves()
+    cew = dd.compute_series_perf(c, "cew_return", "cew_cumulative")
+    ew_all = dd.compute_series_perf(c, "ew_all_return", "ew_all_cumulative")
+    assert set(cew) == {"cagr", "mdd", "sharpe", "calmar"}
+    assert cew["cagr"] > ew_all["cagr"]  # cew > 약한(0.5x) ew_all
+    # n=12 이라 CAGR = 누적 마지막값 - 1
+    assert cew["cagr"] == pytest.approx(float(c["cew_cumulative"].iloc[-1]) - 1.0)
+
+
+def test_compute_drawdown_episodes():
+    """고점->저점->회복 episode 추출 + ONGOING + 1% 임계값 필터."""
+    dates = pd.date_range("2020-01-31", periods=6, freq="ME")
+    cum = pd.Series([1.00, 1.20, 0.96, 1.20, 1.30, 1.17], index=dates)
+    eps = dd.compute_drawdown_episodes(cum, min_depth=0.01)
+    assert len(eps) == 2
+    a, b = eps  # 깊은 순(가장 깊은 게 먼저)
+    assert a["depth"] == pytest.approx(-0.20)
+    assert a["peak"].strftime("%Y-%m") == "2020-02"
+    assert a["trough"].strftime("%Y-%m") == "2020-03"
+    assert a["recovery"].strftime("%Y-%m") == "2020-04"
+    assert (a["peak_to_trough"], a["trough_to_recovery"], a["total"]) == (1, 1, 2)
+    # 두번째 episode 는 회복 전(ONGOING)
+    assert b["depth"] == pytest.approx(-0.10)
+    assert b["recovery"] is None and b["trough_to_recovery"] is None
+    assert b["total"] == 1
+    # 1% 미만 dip 은 제외, 빈/단일 시리즈는 빈 리스트
+    shallow = pd.Series([1.0, 0.995, 1.0], index=pd.date_range("2021-01-31", periods=3, freq="ME"))
+    assert dd.compute_drawdown_episodes(shallow, min_depth=0.01) == []
+    assert dd.compute_drawdown_episodes(pd.Series([], dtype=float)) == []
+
+
+def test_drawdown_episodes_section_renders():
+    """곡선별 낙폭 episode 표 렌더 (헤더/캡션 포함). 곡선 없으면 빈 문자열."""
+    pytest.importorskip("plotly")  # dashboard import 가 plotly 끌어옴
+    from service.report.dashboard import _drawdown_episodes_section
+    html = _drawdown_episodes_section(_curves())
+    assert "peak→trough" in html and "episodes, MDD" in html
+    bare = _curves().drop(columns=["cew_cumulative", "ew_all_cumulative", "ew_top50_cumulative"])
+    assert _drawdown_episodes_section(bare) == ""
+
+
+def test_oos_rows_three_variants():
+    """OOS 성과 행은 4지표 x EW/Top50/CEW. 곡선/컬럼 없으면 빈 리스트."""
+    pytest.importorskip("plotly")  # dashboard import 가 plotly 끌어옴
+    from service.report.dashboard import _oos_rows
+    rows = _oos_rows(_curves())
+    assert [r["metric"] for r in rows] == ["CAGR", "MDD", "Sharpe", "Calmar"]
+    assert all(r["single"] is None and r["ew"] and r["top50"] and r["cew"] for r in rows)
+    assert _oos_rows(_curves().drop(columns=["ew_all_return"])) == []
+    assert _oos_rows(None) == []
+
+
+def test_diagnostics_table_folds_oos_and_hides_funnel_variants(tmp_path):
+    """곡선이 있으면 OOS 성과 블록으로 통합 + funnel 변형/CSV OOS 행 숨김(패턴 유지)."""
+    pytest.importorskip("plotly")
+    from service.report.dashboard import _diagnostics_table
+    pd.DataFrame(
+        {
+            "Category": ["1순위 - Funnel Value-Add", "1순위 - Funnel Value-Add",
+                         "1순위 - Funnel Value-Add", "OOS 성과 - Constrained EW"],
+            "Metric": ["패턴", "EW_All CAGR", "Constrained EW CAGR", "Sharpe"],
+            "Value": ["NORMAL", "0.8%", "2.2%", "0.73"],
+            "Interpretation": ["C > B > A", "", "", ""],
+        }
+    ).to_csv(tmp_path / "overfit_diagnostics.csv", index=False, encoding="utf-8-sig")
+
+    html = _diagnostics_table(tmp_path, curves=_curves())
+    assert "OOS 성과 (EW/Top50/CEW)" in html      # 통합 블록 등장
+    assert "<td>Sharpe</td>" in html and "<td>Calmar</td>" in html
+    assert "NORMAL" in html                        # 패턴 행 유지
+    assert "&gt;" in html and "C > B" not in html  # 패턴 해석 escape
+    assert "0.8%" not in html                      # funnel 변형 CSV 행은 숨김(곡선값으로 대체)

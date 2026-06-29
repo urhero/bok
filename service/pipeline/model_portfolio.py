@@ -38,7 +38,6 @@ from service.pipeline.weight_construction import (
     calculate_style_weights,
 )
 from service.factor.factor_returns import aggregate_factor_returns  # re-export (하위호환)
-from service.pipeline.smoothing import step_smooth
 from service.pipeline.universe import evaluate_universe
 from service.pipeline.weight_history import (
     load_prev_factor_weights,
@@ -57,13 +56,6 @@ logger = logging.getLogger(__name__)
 # 부작용은 오케스트레이터인 이 모듈이 책임진다 (leaf paths 모듈은 부작용 없음).
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def _months_between(prev_date: str, end_date: str) -> int:
-    """두 YYYY-MM-DD 문자열 간 개월 수 (최소 1)."""
-    p, e = pd.Timestamp(prev_date), pd.Timestamp(end_date)
-    months = (e.year - p.year) * 12 + (e.month - p.month)
-    return max(1, months)
 
 
 class ModelPortfolioPipeline:
@@ -139,29 +131,21 @@ class ModelPortfolioPipeline:
             style_cap=self.pipeline_params["style_cap"],
         )
 
-        # [6.5] 절대스텝 스무딩 -> 배포 가중치 (메모리/배포 구분 없음, 탈락 factor 점진 청산)
+        # [6.5] 배포 가중치 = 목표 가중치 (스무딩 제거: production 은 항상 목표 그대로 배포)
         weights_tbl = sim_result[1]
         target_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
-        step = float(self.pipeline_params.get("turnover_step", 1.0))
-        deadband = float(self.pipeline_params.get("turnover_deadband", 0.0))
+        # 구 step_smooth(step=1.0) 동작 보존(출력 byte 동일): 정렬 순서 + 합 1.0 재정규화.
+        _order = sorted(target_weights)
+        _scale = 1.0 / sum(target_weights[f] for f in _order)
+        deployed = {f: target_weights[f] * _scale for f in _order}
 
         # full_style_map: factor_info.csv 전체 -> 탈락(선정 외) factor 도 style 매핑
         factor_info = pd.read_csv(self.factor_info_path)
         full_style_map = dict(zip(factor_info["factorAbbreviation"], factor_info["styleName"]))
 
-        if test_file:
-            deployed = target_weights                       # 테스트 모드: target 그대로, history 저장 skip
-        else:
-            prev_weights, prev_date = load_prev_factor_weights(HISTORY_DIR, end_date)
-            months = _months_between(prev_date, end_date) if prev_date else 1
-            deployed = step_smooth(target_weights, prev_weights, step, deadband, months)
-
-            if prev_weights is None:
-                logger.info("step_smooth: first run (no prev) - target deployed")
-            else:
-                logger.info("step_smooth applied (step=%.4f, deadband=%.4f, months=%d): "
-                            "%d deployed (current=%d)", step, deadband, months,
-                            len(deployed), len(target_weights))
+        if not test_file:                                   # 테스트 모드는 history 저장 skip
+            # prev_weights 는 델타 리포트(factor_styles/style_totals)용으로 로드
+            prev_weights, _ = load_prev_factor_weights(HISTORY_DIR, end_date)
             save_factor_weights(HISTORY_DIR, end_date, deployed)               # 다음 회차 prev
             save_factor_styles(HISTORY_DIR, end_date, target_weights, prev_weights,
                                deployed, full_style_map)

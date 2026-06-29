@@ -117,7 +117,7 @@ main.py (CLI)
      │         │    └─ per-factor: L/S 분리 →             │
      │         │       vectorized return (30bp cost)      │
      │         │       → 롱-숏 수익률 합산                 │
-     │         ├─ CAGR 계산 + 상위 50개 선정              │
+     │         ├─ rank_score(t-stat) + dedup -> 상위 50  │
      │         └─ meta_data.csv 저장                      │
      │         │                                         │
      │    [6] optimize_constrained_weights()               │
@@ -580,7 +580,7 @@ Tier 1 (6개월마다): 규칙 학습 + IS 규칙을 전체 데이터에 적용
 
 Tier 2 (3개월마다): 팩터 선정 + style_cap 기반 가중치 재분배
   - precomputed_ret_df에서 IS 구간만 슬라이스 (aggregate 재실행 불필요)
-  - CAGR -> 상위 팩터 선정 -> [6] 실행
+  - rank_score(t-stat) + 클러스터 dedup -> 상위 팩터 선정 -> [6] 실행
   - 산출물: cached_weights, cached_meta
 
 Tier 3 (매월): OOS 수익률 조회
@@ -602,7 +602,7 @@ Tier 3 (매월): OOS 수익률 조회
 
 | 단계 | 과적합 위험 | 이유 |
 |------|------------|------|
-| [4] 상위 50 팩터 선정 | **높음** | IS CAGR 순위로 선정. 평균 회귀 위험 |
+| [4] 상위 50 팩터 선정 | **높음** | IS t-stat 순위 + 클러스터 dedup 으로 선정. 평균 회귀 위험 |
 | [6] 가중치 계산 (EW) | **낮음** | 1/N 동일가중 - 자유도 없음 |
 | [3] 섹터 제거 + L/N/S 라벨 | **낮음 (수정 완료)** | IS 전용 rule_bundle 적용으로 OOS 오염 제거됨 |
 | [2] 5분위 분석 | 낮음 | 횡단면 정렬이라 시계열 과적합 아님 |
@@ -643,14 +643,14 @@ Top-50이 아닌, **실제로 비중이 할당된 최종 팩터**에만 적용.
 - < 0.3 → 불안정 (과적합 의심)
 
 **보조 지표:**
-4. IS-OOS Rank Correlation: IS CAGR 순위와 OOS 실현 수익률 순위의 Spearman 상관
+4. IS-OOS Rank Correlation: IS 선정 점수(rank_score=t-stat) 순위와 OOS 실현 수익률 순위의 Spearman 상관
 5. Deflation Ratio: OOS CAGR / IS CAGR. OOS 기간이 짧으면 단독 판단 금지
 
 ### 6.5 방어 로직
 
 - **MIN_REQUIRED_FACTORS = 5**: 유효 팩터가 5개 미만이면 Tier 2 스킵, 이전 가중치 유지
-- **Turnover 스무딩 (디폴트 OFF)**: 디폴트는 **무스무딩**(`turnover_step=1.0`, `turnover_deadband=0.0`) — 목표 비중을 그대로 배포(합 1.0, 탈락 factor 즉시 제거). 옵션으로 **절대스텝 밴드형 스무딩**(`turnover_step=0.01`)을 켜면 배포 가중치에 **직접** 적용: 매 회차 각 factor가 목표 쪽으로 **최대 `turnover_step`(예 1%p)/월** 이동, |변화|<`turnover_deadband`(예 0.3%p)면 고정(거래 0), 탈락 factor(목표=0)는 0쪽으로 점진 청산(~3개월, 그동안 배포에 포함). 메모리/배포 구분 없음 — 배포 비중 자체가 스무딩 상태(다음 회차 prev). production `mp`(월간)·백테스트(`months`=weight_rebal_months)가 `service/pipeline/smoothing.py`의 `step_smooth`를 공유. (스무딩 ON 시 월간 cadence turnover ~32% 감소하나, 무비용 가정 OOS 에선 Sharpe 가 소폭 낮아 디폴트는 OFF. 성과 저하가 Price Momentum·Analyst Expectations 등 빠른 신호 스타일에 집중되는 기여도 분해는 [`docs/experiments/absolute_step_attribution_20260607.md`](docs/experiments/absolute_step_attribution_20260607.md) 참조. 과거 EMA 방식은 renorm 으로 유지 factor 가 출렁여 실거래 turnover 를 못 줄였기에 교체됨.)
-- **선정 히스테리시스 / 스타일별 step (백테스트 전용 실험 축, 디폴트 OFF)**: `WalkForwardEngine(selection_hysteresis=...)` 은 챌린저가 직전 보유 factor 를 rank_score 격차 margin 이상 이겨야 교체 (`factor.selection.apply_selection_hysteresis`). `style_step_overrides={"스타일": step}` 은 해당 스타일 factor 만 step 차등 (`step_smooth(step_overrides=...)`). 팩터단 전환비용을 계측한 6-way 비교 결과 — 무스무딩은 비용 인지 기준 최하위, 히스테리시스는 턴오버 -64% 와 gross CAGR +0.6~0.7%p 동시 개선 — 는 [`docs/experiments/smoothing_cost_experiment_20260612.md`](docs/experiments/smoothing_cost_experiment_20260612.md) 참조. **production 적용됨** (`selection_hysteresis=0.5`): `evaluate_universe` 가 `weight_history.load_prev_selection()` (직전 `factor_styles_*.csv` 의 raw_weight>0 = 직전 선정 집합, 배포 가중치 키가 아님 — 스무딩 청산 중 exit 의 잘못된 incumbency 방지) 으로 incumbents 를 로딩해 동일 함수를 적용. test 모드는 prod history 오염 방지를 위해 skip. backtest CLI 는 `--selection-hysteresis` (미지정 시 config 값). 또한 엔진 Tier 1 이 스무딩 prev/선정 incumbency 를 carry 하도록 변경됨 (기존 6개월마다 리셋 -> production 과 불일치 해소, Tier 2 는 규칙 갱신 시 강제 재실행).
+- **배포 = 목표 비중 (스무딩 제거)**: 매 회차 optimizer 목표 비중(Top-N 동일가중 + style_cap, 합 1.0)을 그대로 배포한다. factor 키를 정렬한 뒤 합 1.0 으로 재정규화(결정적·byte 안정), 탈락 factor 는 즉시 제거. production `mp`·백테스트 동일. (과거 turnover 스무딩(절대스텝 밴드형)은 월간 turnover 를 ~32% 줄였으나 무비용 가정 OOS 에서 Sharpe 개선이 없어 **제거**됨 — 실험 기록: [`smoothing_cost_experiment_20260612.md`](docs/experiments/smoothing_cost_experiment_20260612.md), [`absolute_step_attribution_20260607.md`](docs/experiments/absolute_step_attribution_20260607.md). turnover 절감은 아래 선정 히스테리시스로 달성.)
+- **선정 히스테리시스 (production 적용, `selection_hysteresis=0.5`)**: 챌린저가 직전 보유 factor 를 rank_score 격차 margin 이상 이겨야 교체 (`factor.selection.apply_selection_hysteresis`, mp·백테스트 공유). 팩터단 전환비용 6-way 비교에서 히스테리시스는 **턴오버 -64% + gross CAGR +0.6~0.7%p 동시 개선** — [`smoothing_cost_experiment_20260612.md`](docs/experiments/smoothing_cost_experiment_20260612.md). `evaluate_universe` 가 `weight_history.load_prev_selection()` (직전 `factor_styles_*.csv` 의 raw_weight>0 = 직전 선정 집합) 으로 incumbents 를 로딩해 동일 함수 적용. test 모드는 prod history 오염 방지 skip. backtest CLI 는 `--selection-hysteresis` (미지정 시 config 값). 엔진 Tier 1 이 선정 incumbency 를 carry (기존 6개월 리셋 -> production 불일치 해소, Tier 2 는 규칙 갱신 시 강제 재실행).
 
 ### 6.5.1 mp 가중치 history (`output/mp_weight_history/`)
 
@@ -662,12 +662,12 @@ Top-50이 아닌, **실제로 비중이 할당된 최종 팩터**에만 적용.
 | `factor_styles_{date}.csv` | `save_factor_styles` | `not test_file` | factor × style + raw(목표)/prev/new(=배포) + weight_within_style. factor union 기준. style 매핑 실패 시 "(unmapped)". |
 | `style_totals_{date}.csv` | `save_style_totals` | `not test_file` | style 단위 raw/prev/new 합계 + delta + factor_count + factors (`;` 구분 문자열). |
 
-**raw / prev / new(=배포) 의미** (절대스텝, 메모리 구분 없음)
+**raw / prev / new(=배포) 의미** (스무딩 제거, 메모리 구분 없음)
 - `raw` : 이번 회차 optimizer 산출 = **목표** (Top-N 동일가중 + style_cap, 합 1.0)
 - `prev`: 직전 회차 **배포** 가중치 (`factor_weights_{prev_date}.csv` 로딩)
-- `new` (= 배포): `step_smooth(raw, prev, step, deadband, months)` 결과 (합 1.0). 유지 factor는 |raw−prev|<deadband면 **완전 고정**, 그 외 목표쪽 최대 step 이동, 탈락(raw=0)은 0쪽 점진 청산. `factor_weights_{date}.csv` 로 저장돼 다음 회차 prev. **탈락 factor도 청산되며 배포에 포함**(Bloomberg 입력은 이 `new`). **디폴트(`step=1.0, deadband=0.0`)에서는 `new`=`raw`** (목표 그대로 배포, 탈락 factor 즉시 제거).
+- `new` (= 배포): `raw` 를 factor 키 정렬 후 합 1.0 으로 재정규화한 값 = **목표 그대로 배포**(스무딩 제거). `factor_weights_{date}.csv` 로 저장돼 다음 회차 prev(전월대비 delta 리포트용). 탈락 factor 는 배포에서 즉시 제거. Bloomberg 입력은 이 `new`.
 
-**공유 헬퍼**: `_build_factor_style_df` 가 factor union, style 매핑, weight_within_style 정규화 (스타일 합 0 이면 0) 의 공통 로직을 담당. `save_factor_styles` 와 `save_style_totals` 가 모두 이 헬퍼를 사용. (`deployed_weights` optional 인자는 함수에 남아있으나 절대스텝 전환 후 `new`=배포라 미사용.)
+**공유 헬퍼**: `_build_factor_style_df` 가 factor union, style 매핑, weight_within_style 정규화 (스타일 합 0 이면 0) 의 공통 로직을 담당. `save_factor_styles` 와 `save_style_totals` 가 모두 이 헬퍼를 사용. (`deployed_weights` optional 인자는 함수에 남아있으나 `new`=배포(=raw 정규화)라 미사용.)
 
 **style_map 출처**: `model_portfolio.py` 가 `data/factor_info.csv` 전체 (587 factor) 를 사용해 dict 구성. `self.meta` (38 kept factor) 를 안 쓰는 이유는 prev 에만 있는 factor (이번 회차 탈락) 도 매핑해야 하기 때문.
 
@@ -681,8 +681,7 @@ python main.py backtest <start> <end> [옵션]
   --factor-rebal-months  Tier 1 리밸런싱 주기 (기본: 6)
   --weight-rebal-months  Tier 2 리밸런싱 주기 (기본: 3)
   --top-factors          상위 팩터 수 (기본: 50)
-  --turnover-step        절대 스텝/월 (기본: 1.0 = 무스무딩; 스무딩 시 0.01 = 1%p)
-  --turnover-deadband    no-trade 밴드 (기본: 0.0; 스무딩 시 0.003 = 0.3%p)
+  --selection-hysteresis 선정 히스테리시스 margin (미지정 시 config 값)
 
 python main.py mp <start> <end> --benchmark
   → MP vs. 동일가중(1/N) 비교 리포트
@@ -718,12 +717,12 @@ python main.py mp <start> <end> --benchmark
 
 **재현성 (결정적 출력, 2026-06-24):** 위 두 CSV(`walk_forward_results.csv`,
 `walk_forward_weight_history.csv`)는 동일 코드라면 실행마다 byte-identical 하다.
-과거에는 선정/스무딩 경로가 `set` 반복에 의존해 `PYTHONHASHSEED`(프로세스별 문자열
+과거에는 선정/배포 경로가 `set` 반복에 의존해 `PYTHONHASHSEED`(프로세스별 문자열
 해시 랜덤화)에 따라 ① 가중치 컬럼 순서, ② 합산 순서 차이로 인한 수익률 float 말단자릿수,
 ③ 점수 동점 경계의 선정 팩터 집합이 흔들렸다. 다음 4곳을 결정화해 제거:
-- `smoothing.py:step_smooth` -- `union = sorted(set(target)|set(prev))` (반환 dict 키 순서 +
-  내부 합산 `held_sum/free_sum` 순서 고정). **근본원인.** mp 경로도 공유하지만 mp 는 출력 직전
-  `round(12)` 로 이미 말단자릿수를 잘라 byte-identical 이었음.
+- 배포 가중치 키 정렬 (`model_portfolio.py`·`walk_forward_engine.py`: `sorted(...)` 후 합 1.0
+  재정규화). 옛 `step_smooth` 의 `sorted(union)` 이 **근본원인**이었고, 스무딩 제거 후에도 이
+  정렬·재정규화를 보존해 배포 dict 키 순서/합산 순서를 고정 (출력 byte-identical 유지).
 - `factor/selection.py:apply_selection_hysteresis` -- 점수 동점 시 팩터명 오름차순 타이브레이크
   (`exits`/`entries`/반환 정렬에서 `set` 반복 순서 의존 제거).
 - `result_stitcher.py` -- `weight_history` 컬럼 알파벳 정렬.
@@ -747,9 +746,9 @@ CLAUDE.md 의 코드 변경 검증 절차(aggregated_weights before/after diff)�
 |------|------|
 | `service/report/dashboard_data.py` | CSV -> DataFrame + 파생지표(낙폭/KPI/스타일집계/상위롱숏/팩터틸트/선정셋/진단파싱). plotly 의존 없음 -> 단위 테스트 용이 |
 | `service/report/dashboard_charts.py` | DataFrame -> plotly Figure. `STYLE_COLORS`는 `report_generator.py` 미러 + Volatility 보강(결합도 회피 위해 복제) |
-| `service/report/dashboard.py` | 조립 + HTML 출력(얇음). `build_dashboard(end_date=None) -> Path` |
-| `main.py` `viz` 서브커맨드 | `python main.py viz [end_date] [--open]` -> `_run_viz()` |
-| `tests/test_unit/test_dashboard_data.py` | 순수 함수 단위 + HTML 스모크 (17개) |
+| `service/report/dashboard.py` | 조립 + HTML 출력(얇음). `build_dashboard(end_date=None) -> Path`. `_diagnostics_table(output_dir, curves)`이 overfit_diagnostics.csv 를 분류별 표로 렌더(단일값 colspan, 전 셀 `html.escape`) + `_oos_rows()`로 곡선 기반 OOS 성과(EW/Top50/CEW)를 통합(§7.4) |
+| `main.py` `viz` 서브커맨드 | `python main.py viz [end_date] [--open]` -> `_run_viz()`. **`_run_backtest()`도 종료 시 `build_dashboard()` 자동 호출**(try/except 격리 — viz 실패가 백테스트 산출물을 무효화하지 않음) |
+| `tests/test_unit/test_dashboard_data.py` | 순수 함수 단위 + HTML 스모크 + 진단 표 피벗/escape |
 
 ### 7.2 스냅샷 파일 선택 규칙
 
@@ -772,6 +771,9 @@ KPI 카드(CAGR/MDD/Sharpe/Calmar/승률/초과CAGR)는 `build_kpis()`에서 **�
 ### 7.4 출력 / 제약
 
 - `output/dashboard_<date>.html`, plotly.js **인라인** 임베드 -> 오프라인 단독 열림(약 4.7MB).
+- 백테스트 섹션 하단 "과적합 진단 상세" 표 = `overfit_diagnostics.csv` 전체를 순서대로 렌더(컬럼: 분류/지표/EW/Top50/CEW/해석). 단일값 행은 3열 colspan, Interpretation 의 `<`/`>`(예: 'A < B < C')는 escape. `parse_diagnostics()`는 KPI용이라 Interpretation/행순서를 버리므로 표는 CSV를 직접 읽는다.
+- **OOS 성과는 곡선에서 계산해 이 표에 통합**: `_oos_rows()`/`compute_series_perf()`가 walk_forward_results.csv 곡선에서 EW_All/EW_Top50/CEW 의 CAGR/MDD/Sharpe/Calmar 를 산출해 단일 "OOS 성과 (EW/Top50/CEW)" 블록으로 삽입(CSV/백테스트 스키마 무수정; 곡선 계산 = 진단값 §7.3; CSV 엔 없는 EW_All/Top50 의 Sharpe/Calmar 까지 메움). **중복 방지**: funnel 이 이미 OOS CAGR/MDD 를 EW/Top50/CEW 로 보여주므로, 통합 시 funnel 의 EW_All/EW_Top50/Constrained EW 변형행과 CSV OOS 섹션(CEW·선정EW)은 숨기고 funnel 패턴 판정 행만 남긴다. 곡선이 없으면(test 모드) funnel 변형행을 그대로 3열 피벗하는 폴백.
+- **낙폭 구간 분석**: `compute_drawdown_episodes(cum, min_depth=0.01)`(dashboard_data)가 곡선에서 underwater episode(고점->저점->회복)를 추출 — 깊이(%) + peak/trough/recovery 시점 + 하락(peak->trough)·회복(trough->recovery)·전체 기간(개월), 미회복 시 ONGOING. `_drawdown_episodes_section()`이 EW_All/EW_Top50/CEW 곡선별 표(깊은 순, 1% 이상)로 렌더. 정적 산출물 `docs/experiments/drawdown_analysis.md`(특정 설정/기간)와 달리 **현재 OOS 곡선에서 실시간 계산**이라 숫자는 다름.
 - 한글 차트 타이틀은 plotly JSON 내에서 `\uXXXX` 이스케이프로 저장됨(렌더링 정상). raw grep 시 주의.
 - Bloomberg 핸드오프 파일 `pivoted_total_agg_wgt_*.csv`는 읽지도 수정하지도 않음.
 ### 7.5 섹터 분해 (read-only parquet join)

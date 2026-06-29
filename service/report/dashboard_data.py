@@ -66,20 +66,91 @@ def compute_drawdown(cum: pd.Series) -> pd.Series:
     return cum / running_max - 1.0
 
 
+def _months_between(d0, d1) -> int:
+    """두 월말 Timestamp 사이 개월 수 (월 그리드 기준, 갭에 견고)."""
+    return (d1.year - d0.year) * 12 + (d1.month - d0.month)
+
+
+def compute_drawdown_episodes(cum: pd.Series, min_depth: float = 0.01) -> list[dict]:
+    """누적수익 곡선에서 낙폭 episode(고점->저점->회복)를 추출한다.
+
+    각 underwater 구간을 1개 episode 로 본다. 직전 고점(running max) 아래로 내려간
+    시점부터, 다시 그 고점 이상으로 회복(또는 데이터 끝)할 때까지가 1 episode.
+    회복 전이면 recovery=None('ONGOING'), total 은 고점~마지막 시점.
+
+    Args:
+        cum: date 인덱스의 누적수익 Series (월말 그리드 가정).
+        min_depth: 이 깊이(절대값) 미만 episode 제외 (기본 1%).
+
+    Returns:
+        깊은 순(depth 오름차순=가장 깊은 게 먼저) episode dict 리스트. 각 dict:
+        depth(<0), peak/trough(Timestamp), recovery(Timestamp|None),
+        peak_to_trough/trough_to_recovery/total(개월; recovery 없으면 trough_to_recovery=None).
+    """
+    cum = pd.Series(cum).astype(float)
+    if len(cum) < 2:
+        return []
+    dates, vals = list(cum.index), cum.values
+
+    def _episode(peak_i, trough_i, recovery_i):
+        peak_d, trough_d = dates[peak_i], dates[trough_i]
+        depth = float(vals[trough_i] / vals[peak_i] - 1.0)
+        if recovery_i is None:
+            rec_d, t2r, total = None, None, _months_between(peak_d, dates[-1])
+        else:
+            rec_d = dates[recovery_i]
+            t2r, total = _months_between(trough_d, rec_d), _months_between(peak_d, rec_d)
+        return {"depth": depth, "peak": peak_d, "trough": trough_d,
+                "peak_to_trough": _months_between(peak_d, trough_d),
+                "recovery": rec_d, "trough_to_recovery": t2r, "total": total}
+
+    episodes = []
+    peak_i, peak_val, in_dd, trough_i = 0, vals[0], False, 0
+    for i in range(1, len(vals)):
+        v = vals[i]
+        if v >= peak_val:
+            if in_dd:
+                episodes.append(_episode(peak_i, trough_i, i))
+                in_dd = False
+            peak_val, peak_i = v, i
+        else:
+            if not in_dd:
+                in_dd, trough_i = True, i
+            elif v < vals[trough_i]:
+                trough_i = i
+    if in_dd:
+        episodes.append(_episode(peak_i, trough_i, None))
+
+    episodes = [e for e in episodes if abs(e["depth"]) >= min_depth]
+    episodes.sort(key=lambda e: e["depth"])  # depth<0 -> 오름차순=가장 깊은 게 먼저
+    return episodes
+
+
+def compute_series_perf(curves: pd.DataFrame, ret_col: str, cum_col: str) -> dict:
+    """임의 수익률/누적 곡선쌍에서 CAGR/MDD/Sharpe/Calmar 계산 (연 12개월 기준).
+
+    overfit_diagnostics.csv 와 동일 공식 — 곡선만으로 진단값과 일치(research §7.3).
+    cew/ew/ew_all/ew_top50 등 어떤 변형이든 같은 함수로 산출해 OOS 성과를 비교한다.
+    """
+    r = curves[ret_col].astype(float)
+    cum = curves[cum_col].astype(float)
+    n = len(r)
+    cagr = float(cum.iloc[-1] ** (12.0 / n) - 1.0) if n else float("nan")
+    mdd = float(compute_drawdown(cum).min())
+    std = float(r.std())
+    sharpe = float(r.mean() / std * np.sqrt(12)) if std > 0 else float("nan")
+    calmar = float(cagr / abs(mdd)) if mdd != 0 else float("nan")
+    return {"cagr": cagr, "mdd": mdd, "sharpe": sharpe, "calmar": calmar}
+
+
 def compute_kpis(curves: pd.DataFrame) -> dict:
     """CEW 곡선에서 CAGR/MDD/Sharpe/Calmar/승률/초과CAGR 계산.
 
     overfit_diagnostics.csv 와 동일 공식 (연 12개월 기준).
     """
-    r = curves["cew_return"].astype(float)
-    cum = curves["cew_cumulative"].astype(float)
-    n = len(r)
-    cagr = float(cum.iloc[-1] ** (12.0 / n) - 1.0) if n else float("nan")
-    dd = compute_drawdown(cum)
-    mdd = float(dd.min())
-    std = float(r.std())
-    sharpe = float(r.mean() / std * np.sqrt(12)) if std > 0 else float("nan")
-    calmar = float(cagr / abs(mdd)) if mdd != 0 else float("nan")
+    n = len(curves)
+    p = compute_series_perf(curves, "cew_return", "cew_cumulative")
+    cagr, mdd, sharpe, calmar = p["cagr"], p["mdd"], p["sharpe"], p["calmar"]
 
     # 초과수익/승률은 진단(compare_cew_vs_ew_oos)과 동일하게 '선정 EW'(ew_*) 기준.
     ew_cum = curves["ew_cumulative"].astype(float)

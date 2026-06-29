@@ -10,7 +10,10 @@ plotly.js 를 인라인으로 임베드해 오프라인에서도 단독으로 �
 from __future__ import annotations
 
 import logging
+from html import escape
 from pathlib import Path
+
+import pandas as pd
 
 from service.report import dashboard_charts as ch
 from service.report import dashboard_data as dd
@@ -53,6 +56,17 @@ h2 { font-size: 18px; font-weight: 600; color: var(--on-dark); margin: 32px 0 14
 .card.full { margin-bottom: 14px; }
 .note { font-size: 13px; color: var(--muted); padding: 8px 0; }
 .plotly-graph-div { width: 100% !important; }
+.diag-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.diag-table th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+  border-bottom: 1px solid var(--hair); padding: 8px 10px; }
+.diag-table td { padding: 7px 10px; border-bottom: 1px solid var(--hair); vertical-align: top; }
+.diag-table tbody tr:last-child td { border-bottom: none; }
+.diag-table tr:hover td { background: var(--elev); }
+.diag-cat { color: var(--primary); font-weight: 600; white-space: nowrap; }
+.diag-val { font-family: var(--mono); color: var(--on-dark); white-space: nowrap; text-align: right; }
+.diag-val.diag-span { text-align: center; color: var(--muted-strong); }
+.diag-interp { color: var(--muted-strong); }
+.dd-cap { font-size: 13px; font-weight: 600; color: var(--primary); padding: 2px 10px 10px; }
 """
 
 # 일부 브라우저에서 plotly 초기 렌더 폭이 컨테이너와 어긋나 잘리는 경우 대비:
@@ -104,6 +118,177 @@ def _kpi_cards(kpis: dict) -> str:
     )
 
 
+# EW_All / EW_Top50 / Constrained EW 접두 지표는 EW/Top50/CEW 3열로 피벗한다.
+# (Funnel Value-Add 의 CAGR/MDD 비교 — funnel 의 핵심이라 나란히 보여 가독성↑)
+_DIAG_VARIANTS = [("Constrained EW ", "cew"), ("EW_Top50 ", "top50"), ("EW_All ", "ew")]
+
+
+def _fmt_perf(v: float, is_pct: bool) -> str:
+    """성과 값 포맷 (nan -> '-', 비율 -> %, 그 외 소수 2자리)."""
+    if v != v:  # nan
+        return "-"
+    return f"{v:.2%}" if is_pct else f"{v:.2f}"
+
+
+def _oos_rows(curves) -> list[dict]:
+    """OOS 성과(CAGR/MDD/Sharpe/Calmar)를 EW/Top50/CEW 3열로 비교하는 진단 표용 행 리스트.
+
+    walk_forward_results.csv 의 곡선에서 직접 계산 — overfit_diagnostics.csv 와 동일 공식
+    (research §7.3 검증)이라 진단값과 일치하며, CSV 엔 없는 EW_All/EW_Top50 의 Sharpe/Calmar
+    까지 메운다. EW=EW_All(전체 유효 팩터 동일가중), Top50=Top-50 후보군 동일가중, CEW=최종 MP.
+    곡선/컬럼이 없으면 빈 리스트(호출부는 CSV 원본 표기로 폴백).
+    """
+    if curves is None:
+        return []
+    specs = [("ew", "ew_all_return", "ew_all_cumulative"),
+             ("top50", "ew_top50_return", "ew_top50_cumulative"),
+             ("cew", "cew_return", "cew_cumulative")]
+    perf = {}
+    for key, rc, cc in specs:
+        if rc not in curves.columns or cc not in curves.columns:
+            return []
+        perf[key] = dd.compute_series_perf(curves, rc, cc)
+
+    metrics = [("CAGR", "cagr", True), ("MDD", "mdd", True),
+               ("Sharpe", "sharpe", False), ("Calmar", "calmar", False)]
+    return [
+        {"cat": "OOS 성과 (EW/Top50/CEW)", "metric": label, "single": None, "interp": "",
+         "ew": _fmt_perf(perf["ew"][m], pct),
+         "top50": _fmt_perf(perf["top50"][m], pct),
+         "cew": _fmt_perf(perf["cew"][m], pct)}
+        for label, m, pct in metrics
+    ]
+
+
+_OOS_CSV_CATS = ("OOS 성과 - Constrained EW", "OOS 성과 - EW")
+
+
+def _diagnostics_table(output_dir: Path, curves=None) -> str:
+    """overfit_diagnostics.csv 전체를 분류별로 묶은 다크 테마 HTML 표로 렌더(read-only).
+
+    parse_diagnostics 는 KPI 추출용이라 Interpretation/행순서를 버린다. 전체 표는
+    CSV(세로형 Category/Metric/Value/Interpretation)를 직접 읽어 순서대로 렌더한다.
+    그 외 단일값 행은 3열을 colspan 으로 합쳐 가운데 표시한다.
+    Interpretation 에 '<','>' (예: 'A < B < C')가 섞이므로 셀은 모두 escape 한다.
+
+    curves(walk_forward_results.csv)가 있으면 OOS 성과를 곡선에서 직접 계산한 단일
+    "OOS 성과" 블록(CAGR/MDD/Sharpe/Calmar x EW/Top50/CEW)으로 통합한다. funnel 이
+    이미 OOS CAGR/MDD 를 보여주므로 중복을 막고자, 이때 funnel 의 EW_All/EW_Top50/
+    Constrained EW 변형행과 CSV OOS 섹션은 숨긴다(패턴 판정 행은 유지). 곡선이 없으면
+    (test 모드 등) 변형행을 그대로 EW/Top50/CEW 로 피벗하는 폴백을 쓴다.
+    """
+    p = output_dir / "overfit_diagnostics.csv"
+    if not p.exists():
+        return ""
+    df = pd.read_csv(p, encoding="utf-8-sig").fillna("")
+
+    oos_rows = _oos_rows(curves)       # 곡선 기반 OOS 블록 (없으면 [])
+    out_rows: list[dict] = []          # 순서 보존된 출력 행
+    pivot_idx: dict[tuple, int] = {}   # (cat, base_metric) -> out_rows 인덱스
+    oos_inserted = False
+    for _, r in df.iterrows():
+        cat = str(r["Category"]).strip()
+        metric = str(r["Metric"]).strip()
+        value = str(r["Value"]).strip()
+        interp = str(r["Interpretation"]).strip()
+
+        if oos_rows:
+            # CSV OOS 섹션 위치에 곡선 기반 OOS 블록을 삽입하고 원본 행은 숨김
+            if cat in _OOS_CSV_CATS:
+                if not oos_inserted:
+                    out_rows.extend(oos_rows)
+                    oos_inserted = True
+                continue
+            # funnel 의 변형 CAGR/MDD 는 OOS 블록으로 흡수 -> 숨김 (패턴 행은 유지)
+            if any(metric.startswith(pfx) for pfx, _ in _DIAG_VARIANTS):
+                continue
+
+        matched = next((v for v in _DIAG_VARIANTS if metric.startswith(v[0])), None)
+        if matched:
+            prefix, col = matched
+            key = (cat, metric[len(prefix):].strip())  # base metric (CAGR/MDD)
+            if key not in pivot_idx:
+                pivot_idx[key] = len(out_rows)
+                # 피벗 행은 EW/Top50/CEW 헤더가 자체 설명하므로 해석 생략
+                out_rows.append({"cat": cat, "metric": key[1], "single": None,
+                                 "ew": "", "top50": "", "cew": "", "interp": ""})
+            out_rows[pivot_idx[key]][col] = value
+        else:
+            out_rows.append({"cat": cat, "metric": metric, "single": value, "interp": interp})
+
+    if oos_rows and not oos_inserted:  # CSV 에 OOS 섹션이 없던 경우(구버전) 끝에 추가
+        out_rows.extend(oos_rows)
+
+    trs, last_cat = [], None
+    for row in out_rows:
+        cat_cell = escape(row["cat"]) if row["cat"] != last_cat else ""
+        last_cat = row["cat"]
+        if row["single"] is not None:
+            val_cells = f'<td class="diag-val diag-span" colspan="3">{escape(row["single"])}</td>'
+        else:
+            val_cells = (
+                f'<td class="diag-val">{escape(row["ew"])}</td>'
+                f'<td class="diag-val">{escape(row["top50"])}</td>'
+                f'<td class="diag-val">{escape(row["cew"])}</td>'
+            )
+        trs.append(
+            f'<tr><td class="diag-cat">{cat_cell}</td>'
+            f'<td>{escape(row["metric"])}</td>'
+            f'{val_cells}'
+            f'<td class="diag-interp">{escape(row["interp"])}</td></tr>'
+        )
+    return (
+        '<div class="card full"><table class="diag-table">'
+        '<thead><tr><th>분류</th><th>지표</th><th>EW</th><th>Top50</th><th>CEW</th><th>해석</th></tr></thead>'
+        f'<tbody>{"".join(trs)}</tbody></table></div>'
+    )
+
+
+_DD_CURVE_SPECS = [("EW(전체)", "ew_all_cumulative"),
+                   ("Top50", "ew_top50_cumulative"),
+                   ("CEW(최종)", "cew_cumulative")]
+
+
+def _dd_episode_row(e: dict) -> str:
+    def ym(d):
+        return d.strftime("%Y-%m") if d is not None else "ONGOING"
+
+    def mo(v):
+        return f"{v}m" if v is not None else "ONGOING"
+
+    return (
+        f'<tr><td class="diag-val">{e["depth"]:.2%}</td>'
+        f'<td>{ym(e["peak"])}</td><td>{ym(e["trough"])}</td>'
+        f'<td class="diag-val">{mo(e["peak_to_trough"])}</td>'
+        f'<td>{ym(e["recovery"])}</td>'
+        f'<td class="diag-val">{mo(e["trough_to_recovery"])}</td>'
+        f'<td class="diag-val">{mo(e["total"])}</td></tr>'
+    )
+
+
+def _drawdown_episodes_section(curves) -> str:
+    """EW/Top50/CEW 곡선별 낙폭 episode(1% 이상) 표를 묶어 반환(곡선 없으면 생략)."""
+    blocks = []
+    for label, cum_col in _DD_CURVE_SPECS:
+        if cum_col not in curves.columns:
+            continue
+        eps = dd.compute_drawdown_episodes(curves[cum_col], min_depth=0.01)
+        if not eps:
+            continue
+        mdd = min(e["depth"] for e in eps)
+        rows = "".join(_dd_episode_row(e) for e in eps)
+        blocks.append(
+            '<div class="card full">'
+            f'<div class="dd-cap">{escape(label)} - {len(eps)} episodes, MDD {mdd:.2%}</div>'
+            '<table class="diag-table"><thead><tr>'
+            '<th>DD</th><th>peak</th><th>trough</th><th>peak→trough</th>'
+            '<th>recovery</th><th>trough→recovery</th><th>total</th>'
+            '</tr></thead><tbody>'
+            f'{rows}</tbody></table></div>'
+        )
+    return "".join(blocks)
+
+
 def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
     """백테스트 섹션 HTML 조각 리스트와 'plotly.js 포함 여부' 반환."""
     wf_path = output_dir / "walk_forward_results.csv"
@@ -139,6 +324,16 @@ def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
         churn_split = dd.selection_churn_split(wh)
         parts.append(f'<div class="card full">{_fig_div(ch.style_weight_evolution_fig(style_hist))}</div>')
         parts.append(f'<div class="card full">{_fig_div(ch.turnover_fig(turnover, churn_split))}</div>')
+
+    diag_tbl = _diagnostics_table(output_dir, curves)
+    if diag_tbl:
+        parts.append('<h2>과적합 진단 상세</h2>')
+        parts.append(diag_tbl)
+
+    dd_section = _drawdown_episodes_section(curves)
+    if dd_section:
+        parts.append('<h2>낙폭 구간 분석 (1% 이상 episode, 깊은 순)</h2>')
+        parts.append(dd_section)
 
     return parts, True
 

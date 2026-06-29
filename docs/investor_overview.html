@@ -248,10 +248,10 @@
         </div>
         <div class="flex items-center gap-4">
           <div class="funnel-bar h-14 rounded-lg flex items-center px-5 font-semibold text-ink keep" data-w="68%" style="width:0%;background:var(--surface-2)">Top-50 후보군 선정</div>
-          <span class="text-sm text-muted shrink-0 hidden sm:block keep">t-stat 랭킹</span>
+          <span class="text-sm text-muted shrink-0 hidden sm:block keep">t-stat 랭킹 + 클러스터 중복 제거</span>
         </div>
         <div class="flex items-center gap-4">
-          <div class="funnel-bar min-h-[3.5rem] rounded-lg flex items-center px-5 py-2 text-sm font-semibold text-ink keep leading-tight" data-w="44%" style="width:0%;background:var(--surface-2)">클러스터링으로 중복 팩터 제거 및 스타일캡으로 단일 팩터로의 편중 방지</div>
+          <div class="funnel-bar min-h-[3.5rem] rounded-lg flex items-center px-5 py-2 text-sm font-semibold text-ink keep leading-tight" data-w="44%" style="width:0%;background:var(--surface-2)">스타일 캡으로 단일 스타일로의 편중 방지 및 동일가중 비중 결정</div>
           <span class="text-sm text-muted shrink-0 hidden sm:block keep">1/N 동일가중 + 스타일 캡 25% 재분배</span>
         </div>
         <div class="flex items-center gap-4">
@@ -310,7 +310,7 @@
           <div>
             <h3 class="text-lg font-bold text-ink keep flex items-center gap-2"><iconify-icon icon="solar:ranking-bold" class="text-muted" width="20"></iconify-icon> 팩터 유니버스 선정 (200+ → Top-50)</h3>
             <p class="mt-2 text-sm leading-relaxed keep" style="color:var(--body)">
-              팩터별 롱-숏 수익률에서 거래비용을 차감한 뒤 <span class="font-semibold text-ink">통계적 유의성(t-stat)</span>으로 상위 후보를 1차 랭킹하여 Top-50 후보군을 선정합니다.
+              팩터별 롱-숏 수익률에서 거래비용을 차감한 뒤 <span class="font-semibold text-ink">통계적 유의성(t-stat)</span>으로 전체 팩터를 랭킹하고, 상관관계 기반 <span class="font-semibold text-ink">클러스터링</span>으로 비슷하게 움직이는 팩터의 중복을 제거하여 Top-50 후보군을 선정합니다.
             </p>
           </div>
         </div>
@@ -320,9 +320,9 @@
         <div class="flex items-start gap-4">
           <span class="text-sm font-bold text-accent shrink-0 mt-0.5">05</span>
           <div>
-            <h3 class="text-lg font-bold text-ink keep flex items-center gap-2"><iconify-icon icon="solar:scale-bold" class="text-muted" width="20"></iconify-icon> 중복 제거 + 스타일 캡 하 비중 결정</h3>
+            <h3 class="text-lg font-bold text-ink keep flex items-center gap-2"><iconify-icon icon="solar:scale-bold" class="text-muted" width="20"></iconify-icon> 스타일 캡 하 비중 결정</h3>
             <p class="mt-2 text-sm leading-relaxed keep" style="color:var(--body)">
-              상관관계 기반 <span class="font-semibold text-ink">자체 그룹화(클러스터링)</span>로 중복을 제거해 분산하고, 직전 보유 팩터는 충분한 우위가 있을 때만 교체하여 최종 후보군을 확정합니다.
+              직전 보유 팩터는 신규 후보가 충분한 우위를 보일 때만 교체하여 불필요한 회전을 줄입니다.
               이후 선정된 팩터에 1/N 동일가중을 부여한 뒤, 한 스타일의 합계가 <span class="font-semibold text-ink">25% 상한</span>을 넘지 않도록 비례 재분배합니다. 학습된 가중치가 아닌 결정론적 제약이므로 과적합 여지가 없습니다.
             </p>
           </div>

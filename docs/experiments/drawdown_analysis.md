@@ -1,5 +1,8 @@
 # Drawdown 분석 (2014-12 정렬, 1% 이상 episode)
 
+> **상태(정적 스냅샷):** 아래는 **설정 비교 실험**(baseline / combo_18_0.1 / cluster_18 등)의 그 시점 값이라 현재 production 과 다르다. 어느 케이스도 현 config(`use_cluster_dedup`=True, n_clusters=18, per_cluster_keep=3, `selection_hysteresis`=0.5)와 정확히 일치하지 않는다.
+> **현재 런의 낙폭 episode** 는 대시보드 "낙폭 구간 분석" 섹션에서 OOS 곡선(EW_All/Top50/CEW) 기준으로 실시간 확인: `python main.py viz` -> `output/dashboard_<date>.html`. (대시보드 = 단일 런의 funnel 단계 비교 / 이 문서 = 여러 설정 간 비교 — 목적이 달라 숫자가 일치하지 않는다.)
+
 ## 케이스별 DD episode 상세
 
 ### `baseline` (5 episodes, MDD -7.91%)

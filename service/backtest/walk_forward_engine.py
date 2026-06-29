@@ -37,9 +37,24 @@ from service.pipeline.model_portfolio import (
     aggregate_factor_returns,
 )
 from service.pipeline.optimization import optimize_constrained_weights
-from service.pipeline.smoothing import deploy_weights, step_smooth
 
 logger = logging.getLogger(__name__)
+
+
+def deploy_weights(
+    weights: dict[str, float],
+    factors: list[str] | set[str],
+) -> dict[str, float]:
+    """weights 를 factors 로 제한한 뒤 100% 재정규화 (합 1.0).
+
+    백테스트에서 OOS 가용 factor 로 배포를 제한할 때 사용.
+    대상이 없거나 합 0이면 빈 dict.
+    """
+    sub = {f: weights[f] for f in factors if f in weights}
+    total = sum(sub.values())
+    if total <= 0:
+        return {}
+    return {f: w / total for f, w in sub.items()}
 
 # 최소 유효 팩터 수 — 이 미만이면 Tier 2 스킵
 MIN_REQUIRED_FACTORS = 5
@@ -267,13 +282,9 @@ class WalkForwardEngine:
         min_is_months: 최소 IS 기간 (기본 36).
         factor_rebal_months: Tier 1 리밸런싱 주기 (기본 6).
         weight_rebal_months: Tier 2 리밸런싱 주기 (기본 3).
-        turnover_step: 절대스텝 최대 이동폭 (기본 1.0=무스무딩; 스무딩은 0.01).
-        turnover_deadband: 변화 무시 임계값 (기본 0.0; 스무딩 시 0.003).
         top_factors: 상위 팩터 수 (기본 50).
         selection_hysteresis: 선정 히스테리시스 margin (rank_score 단위,
             기본 0.0=off). 챌린저가 기존 보유 팩터를 이 격차 이상 이겨야 교체.
-        style_step_overrides: {styleName: step} — 해당 스타일 factor 만 step
-            차등 (예 {"Price Momentum": 1.0}). 기본 None=전 스타일 공통 step.
     """
 
     def __init__(
@@ -281,21 +292,15 @@ class WalkForwardEngine:
         min_is_months: int = 36,
         factor_rebal_months: int = 6,
         weight_rebal_months: int = 3,
-        turnover_step: float = 1.0,
-        turnover_deadband: float = 0.0,
         top_factors: int = 50,
         selection_hysteresis: float = 0.0,
-        style_step_overrides: dict[str, float] | None = None,
         pipeline_params_override: dict | None = None,
     ):
         self.min_is_months = min_is_months
         self.factor_rebal_months = factor_rebal_months
         self.weight_rebal_months = weight_rebal_months
-        self.turnover_step = turnover_step
-        self.turnover_deadband = turnover_deadband
         self.top_factors = top_factors
         self.selection_hysteresis = selection_hysteresis
-        self.style_step_overrides = style_step_overrides
         self.pipeline_params_override = pipeline_params_override
 
     def run(
@@ -462,22 +467,10 @@ class WalkForwardEngine:
                                 is_cum = (1 + is_weighted_ret).cumprod().iloc[-1]
                                 cached_is_cew_cagr = is_cum ** (12 / is_months) - 1
 
-                            # 절대스텝 스무딩 (production mp 와 공유). months=가중치 리밸런스 주기.
-                            # style_step_overrides 가 있으면 해당 스타일 factor 만 step 차등.
-                            factor_step_overrides = None
-                            if self.style_step_overrides:
-                                factor_step_overrides = {
-                                    f: self.style_step_overrides[s]
-                                    for f, s in style_map_full.items()
-                                    if s in self.style_step_overrides
-                                }
-                            cached_weights = step_smooth(
-                                raw_new_weights, cached_weights,
-                                self.turnover_step, self.turnover_deadband,
-                                months=self.weight_rebal_months,
-                                step_overrides=factor_step_overrides,
-                            )
-
+                            # 구 step_smooth(step=1.0) 동작 보존(출력 byte 동일): 정렬 + 합 1.0 재정규화.
+                            _order = sorted(raw_new_weights)
+                            _wscale = 1.0 / sum(raw_new_weights[f] for f in _order)
+                            cached_weights = {f: raw_new_weights[f] * _wscale for f in _order}
                             cached_selected_factors = list(raw_new_weights.keys())
 
             if cached_weights is None or cached_selected_factors is None:

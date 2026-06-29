@@ -14,7 +14,7 @@
 200+ 유효 팩터                      [1]~[3] 데이터 로딩 + 5분위 + 섹터 필터
        │
        ▼
-   Top-50 후보군 (Candidate Pool)   [4] t-stat 기준 상위 50개 선별
+   Top-50 후보군 (Candidate Pool)   [4] t-stat 랭킹 + 클러스터 dedup -> 상위 50 선정
        │
        ▼
    weight>0 팩터 (최대 50개)         [6] 스타일 캡 하 비중 결정
@@ -92,7 +92,7 @@
 - 랭킹 방식: **t-stat 기반** (기본), `shrunk_tstat` / `cagr` 선택 가능 (`factor_ranking_method`)
 - production `mp`와 walk-forward 백테스트가 `factor.selection.compute_rank_score()`를 공유 — 검증된 config과 배포 전략이 항상 일치
 - **선정 히스테리시스** (`selection_hysteresis=0.5`): 직전 회차 보유 팩터는 챌린저가 rank_score 격차 0.5 이상 이길 때만 교체 — 노이즈성 교체 차단으로 턴오버 -64%, OOS CAGR +0.6~0.7%p ([실험 근거](docs/experiments/smoothing_cost_experiment_20260612.md))
-- 상위 50개를 후보군으로 선정 → 하락 상관관계 계산
+- **클러스터 dedup** (`use_cluster_dedup=True`): 상관관계 기반 계층적 클러스터링 18개로 묶어 클러스터당 rank_score 상위 3개만 통과(최대 54개) → 그중 rank_score 상위 50개를 최종 후보군으로 확정 (상관 높은 팩터 쏠림 방지)
 - 최종 비중 할당은 [6]에서 결정
 
 ---
@@ -132,7 +132,7 @@
   - `pivoted_total_agg_wgt_{end_date}.csv` — 피벗 형태 (Optimizer 연동용)
   - `meta_data.csv` — 팩터 성과 요약
 - factor 가중치 + style 요약 → `output/mp_weight_history/`
-  - `factor_weights_{end_date}.csv` — factor 단위 배포 가중치 (항상 저장; 다음 회차 step_smooth prev 입력용)
+  - `factor_weights_{end_date}.csv` — factor 단위 배포 가중치 (항상 저장; 다음 회차 전월대비 delta 입력용)
   - `factor_styles_{end_date}.csv` — factor × style + raw/prev/new 가중치 분해
   - `style_totals_{end_date}.csv` — style 단위 raw/prev/new 합계 + delta + factor 목록
 
@@ -260,10 +260,12 @@ result.to_csv("output/wf.csv")      # 결과 저장
 - `output/walk_forward_results.csv` — OOS 월별 Constrained EW / EW / EW_All / EW_Top50 수익률 + 누적 수익률
 - `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
 - `output/walk_forward_weight_history.csv` — 월별 팩터 가중치 이력 (대시보드 비중 추이/회전율용)
+- `output/dashboard_<date>.html` — **백테스트 실행 시 자동 생성**되는 인터랙티브 리포트 (KPI + 과적합 진단 전체 표 + 차트). `viz`로 재생성 가능
 
 ### 시각화 대시보드 사용법 (viz)
 백테스트 내역과 현재 포트(배팅)를 단일 인터랙티브 HTML 리포트로 본다.
 기존 `output/*.csv`만 읽는 read-only 레이어라 파이프라인을 건드리지 않는다 (plotly 사용, 새 의존성 없음).
+`backtest` 실행 시 자동 생성되며, 아래 `viz`로 언제든 최신 CSV 기준 재생성한다.
 
 ```bash
 # 최신 스냅샷으로 대시보드 생성 -> output/dashboard_<date>.html
@@ -278,7 +280,9 @@ python main.py viz --open
 
 포함 차트:
 - (백테스트) KPI 카드(CAGR/MDD/Sharpe/Calmar/승률/Funnel - `overfit_diagnostics.csv` 값 우선),
-  누적수익 4선 비교, 낙폭, 월별수익 분포, **스타일 비중 추이(스택 영역)**, **팩터 회전율**
+  누적수익 4선 비교, 낙폭, 월별수익 분포, **스타일 비중 추이(스택 영역)**, **팩터 회전율**,
+  **과적합 진단 상세 표**(Funnel 패턴 + **OOS 성과**(CAGR/MDD/Sharpe/Calmar)를 **EW/Top50/CEW 3열**로 비교 + Jaccard/Deflation/Rank Corr 등),
+  **낙폭 구간 분석 표**(곡선별 DD episode: 깊이 + peak/trough/recovery + 하락·회복 기간(개월), 1% 이상)
 - (현재 포트) 스타일 배분(25% cap 라인), **섹터별 순비중(롱-숏 순노출)**, 종목별 순비중 상위 롱/숏,
   팩터 틸트, 팩터 리더보드(tstat vs CAGR), 전월 대비 스타일 변화(운영모드만)
 
@@ -310,8 +314,6 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `max_zero_return_months` | 10 | 0 수익률 허용 최대 월 수 | `model_portfolio.py` |
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
 | `selection_hysteresis` | 0.5 | 선정 히스테리시스 margin (rank_score 단위, 0=off). 직전 선정 팩터는 챌린저가 이 격차 이상 이겨야 교체 | `model_portfolio.py`, `walk_forward_engine.py` (`apply_selection_hysteresis` 공유) |
-| `turnover_step` | 1.0 | **무스무딩(디폴트)**: 목표 비중을 그대로 배포. 절대스텝 스무딩 시 0.01(1%p/월) | `smoothing.py`, `model_portfolio.py`, `walk_forward_engine.py` |
-| `turnover_deadband` | 0.0 | no-trade 밴드 (factor 변동<값이면 고정). 무스무딩이면 0, 스무딩 시 0.003(0.3%p) | `smoothing.py` |
 
 > **실험 결과:** [docs/experiments/cluster_turnover_20260425.md](docs/experiments/cluster_turnover_20260425.md) 참조 (43 케이스 광역 sweep). 1장 요약은 [executive_summary.md](docs/experiments/executive_summary.md). 핵심 발견: ① `OPTIMIZATION_OVERFIT` 실체 = style_cap 의 OOS 비용, ② n_clusters sweet spot 18~30, ③ Clustering 후 style_cap 효과 거의 없음, ④ smoothing α 0.1 saturation, ⑤ ranking method 는 t-stat 이 베스트, ⑥ min_is_months 는 모델에 영향 없음, ⑦ **baseline 은 2023~ Sharpe 0.27 / 21개월째 -6% 미회복 — 위험**, ⑧ **combo_18_0.1 은 같은 기간 Sharpe 0.99 / 회복 완료** (3.7배 차이). 당시 권장이던 `combo_18_0.1` 중 **clustering(n=18)은 적용 유지**, smoothing α=0.1(EMA)은 이후 절대스텝 -> 무스무딩으로 대체되었고, 2026-06 비용-인지 실험으로 **선정 히스테리시스(0.5)가 최종 적용**됨 — [smoothing_cost_experiment_20260612.md](docs/experiments/smoothing_cost_experiment_20260612.md) 참조.
 

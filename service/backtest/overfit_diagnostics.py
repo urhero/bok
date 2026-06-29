@@ -287,8 +287,9 @@ def calc_strict_jaccard(active_factors_history: list[set[str]]) -> dict[str, Any
 def calc_is_oos_rank_correlation(walk_forward_result: WalkForwardResult) -> dict[str, Any]:
     """IS-OOS 팩터 순위 상관(Spearman)을 계산한다.
 
-    각 Tier 2 리밸런싱 시점의 IS CAGR 순위와
-    해당 OOS 기간의 실현 수익률 순위를 비교한다.
+    각 Tier 2 리밸런싱 시점의 IS 선정 점수(rank_score=t-stat) 순위와
+    해당 OOS 기간의 실현 수익률 순위를 비교한다. 실제 선정 기준과 진단을
+    일치시키기 위함 (rank_score 없는 구 meta 는 cagr 로 폴백).
 
     Returns:
         avg_spearman, p_value, spearman_values, interpretation을 포함하는 dict.
@@ -320,11 +321,16 @@ def calc_is_oos_rank_correlation(walk_forward_result: WalkForwardResult) -> dict
         meta = meta_history[meta_idx]
         meta_idx += 1
 
-        if meta is None or "factorAbbreviation" not in meta.columns or "cagr" not in meta.columns:
+        if meta is None or "factorAbbreviation" not in meta.columns:
+            continue
+        # 실제 선정 기준(rank_score=t-stat)으로 IS 순위를 매겨 선정과 진단을 일치시킨다.
+        # rank_score 없는 (구) meta 는 cagr 로 폴백.
+        score_col = "rank_score" if "rank_score" in meta.columns else "cagr"
+        if score_col not in meta.columns:
             continue
 
         is_factors = meta["factorAbbreviation"].tolist()
-        is_cagr = meta["cagr"].tolist()
+        is_scores = meta[score_col].tolist()
 
         # OOS 기간: 현재 리밸런싱 ~ 다음 리밸런싱 (또는 끝)
         next_rebal_i = weight_rebal_indices[k + 1] if k + 1 < len(weight_rebal_indices) else len(oos_history)
@@ -344,7 +350,7 @@ def calc_is_oos_rank_correlation(walk_forward_result: WalkForwardResult) -> dict
         if len(common_factors) < 3:
             continue
 
-        is_rank = pd.Series({f: cagr for f, cagr in zip(is_factors, is_cagr) if f in common_factors}).rank(ascending=False)
+        is_rank = pd.Series({f: s for f, s in zip(is_factors, is_scores) if f in common_factors}).rank(ascending=False)
         oos_rank = pd.Series({f: oos_returns_by_factor[f] for f in common_factors}).rank(ascending=False)
 
         # Spearman 계산

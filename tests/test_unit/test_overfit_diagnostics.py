@@ -27,6 +27,7 @@ def _make_result(
     all_factor_returns=None,
     top50_factors=None,
     active_factors=None,
+    is_meta_df=None,
 ):
     """간단한 WalkForwardResult 생성 헬퍼.
 
@@ -64,9 +65,10 @@ def _make_result(
             "active_factors": active_factors if active_factors else default_active,
         }
         if with_meta and i % 3 == 0:
-            entry["is_meta"] = pd.DataFrame({
+            entry["is_meta"] = is_meta_df.copy() if is_meta_df is not None else pd.DataFrame({
                 "factorAbbreviation": ["F1", "F2", "F3"],
                 "cagr": [0.15, 0.10, 0.05],
+                "rank_score": [3.0, 2.0, 1.0],  # 기본: cagr 와 같은 순서 (실제 backtest meta 반영)
                 "styleName": ["Val", "Mom", "Qual"],
             })
         results.append(entry)
@@ -270,6 +272,24 @@ class TestISoosRankCorrelation:
         result = WalkForwardResult([])
         rc = calc_is_oos_rank_correlation(result)
         assert np.isnan(rc["avg_spearman"])
+
+    def test_ranks_by_rank_score_not_cagr(self):
+        """IS 순위를 실제 선정 기준(rank_score=t-stat)으로 매긴다 (cagr 아님).
+
+        cagr 순위(F1>F2>F3)와 rank_score 순위(F2>F3>F1)를 어긋나게 구성.
+        OOS 실현 순위는 F1>F3>F2 (oos_factor_returns 기본값).
+          - cagr 기준이면 Spearman = +0.5
+          - rank_score 기준이면 Spearman = -1.0
+        """
+        meta = pd.DataFrame({
+            "factorAbbreviation": ["F1", "F2", "F3"],
+            "cagr": [0.15, 0.10, 0.05],
+            "rank_score": [0.5, 2.0, 1.0],
+            "styleName": ["Val", "Mom", "Qual"],
+        })
+        result = _make_result(n_months=12, with_meta=True, is_meta_df=meta)
+        rc = calc_is_oos_rank_correlation(result)
+        assert rc["avg_spearman"] == pytest.approx(-1.0)
 
 
 # ── 5순위 (보조): Deflation Ratio ──

@@ -59,10 +59,6 @@ def main(argv: list[str] | None = None) -> int:
                                   help="Tier 2 rebalancing frequency (default: 3)")
     parser_backtest.add_argument("--top-factors", type=int, default=50,
                                   help="Number of top factors to select (default: 50)")
-    parser_backtest.add_argument("--turnover-step", type=float, default=1.0,
-                                  help="Absolute step/month (default: 1.0 = no smoothing; 0.01 = 1%%p smoothing)")
-    parser_backtest.add_argument("--turnover-deadband", type=float, default=0.0,
-                                  help="No-trade band (default: 0.0; 0.003 = 0.3%%p when smoothing)")
     parser_backtest.add_argument("--selection-hysteresis", type=float, default=None,
                                   help="Selection hysteresis margin in rank_score units "
                                        "(default: config PIPELINE_PARAMS['selection_hysteresis'])")
@@ -220,8 +216,6 @@ def _run_backtest(args):
         min_is_months=args.min_is_months,
         factor_rebal_months=args.factor_rebal_months,
         weight_rebal_months=args.weight_rebal_months,
-        turnover_step=args.turnover_step,
-        turnover_deadband=args.turnover_deadband,
         top_factors=args.top_factors,
         selection_hysteresis=selection_hysteresis,
     )
@@ -241,6 +235,14 @@ def _run_backtest(args):
 
     # 진단 결과 CSV 저장 (세로형: Category/Metric/Value/Interpretation) — 직렬화는 도메인 모듈로 위임
     serialize_diagnostics_csv(oos_report, OUTPUT_DIR / "overfit_diagnostics.csv")
+
+    # 진단 표 포함 대시보드 자동 생성 (read-only viz). 실패해도 백테스트 산출물은 보존.
+    try:
+        from service.report.dashboard import build_dashboard
+        dash_path = build_dashboard(end_date=args.end_date)
+        logging.getLogger(__name__).info("Dashboard generated: %s", dash_path)
+    except Exception as e:  # viz 실패가 백테스트 결과를 무효화하지 않도록 격리
+        logging.getLogger(__name__).warning("Dashboard generation skipped (%s)", e)
 
 
 if __name__ == "__main__":
