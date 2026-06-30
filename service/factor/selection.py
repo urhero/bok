@@ -315,3 +315,68 @@ def cluster_and_dedup_top_n(
         len(factors), n_clusters_eff, cluster_sizes, len(survivors), len(final),
     )
     return final["factor"].tolist()
+
+
+def cluster_winner_median_dedup(
+    monthly_rets: pd.DataFrame,
+    rank_score: pd.Series,
+    n_clusters: int = 18,
+    per_cluster_keep: int = 3,
+) -> list[str]:
+    """제안 변형 selection: 클러스터 1등 보호 + 전역 중위값 품질 바닥 (top_n 고정 없음).
+
+    cluster_and_dedup_top_n 과 클러스터링(상관 기반 average linkage, n_clusters)은
+    동일하나, 압축 규칙이 다르다:
+      - 각 클러스터 rank_score 상위 per_cluster_keep 후보 중,
+      - 클러스터 1등은 무조건 통과(분산 보장 -> 최소 n_clusters 개),
+      - 나머지(2위 이하)는 전역 rank_score 중위값 이상일 때만 통과.
+    Top-N 고정 절단이 없어 최종 개수는 n_clusters ~ n_clusters*per_cluster_keep 가변.
+
+    IS 전용: monthly_rets/rank_score 모두 IS 구간 값이어야 한다 (호출부 보장).
+    """
+    factors = list(monthly_rets.columns)
+    if len(factors) <= n_clusters:
+        return list(rank_score.reindex(factors).sort_values(ascending=False).index)
+
+    n_clusters_eff = min(n_clusters, len(factors))
+    # 클러스터 라벨: cluster_and_dedup_top_n 과 동일 절차 (ponytail: ~10줄 중복 —
+    # production 함수를 안 건드리려 의도적으로 복제, 실험 경로 전용).
+    try:
+        corr = monthly_rets.corr().fillna(0.0)
+    except Exception as e:
+        logger.warning("winner_median: corr failed (%s), fallback to rank_score sort", e)
+        return list(rank_score.sort_values(ascending=False).index)
+    dist_mat = 1.0 - corr.abs().values
+    np.fill_diagonal(dist_mat, 0.0)
+    dist_mat = np.clip(dist_mat, 0.0, 2.0)
+    dist_mat = (dist_mat + dist_mat.T) / 2.0
+
+    from scipy.cluster.hierarchy import fcluster, linkage
+    from scipy.spatial.distance import squareform
+
+    try:
+        condensed = squareform(dist_mat, checks=False)
+        link = linkage(condensed, method="average")
+        labels = fcluster(link, t=n_clusters_eff, criterion="maxclust")
+    except Exception as e:
+        logger.warning("winner_median: linkage failed (%s), fallback to rank_score sort", e)
+        return list(rank_score.sort_values(ascending=False).index)
+
+    scores = rank_score.reindex(factors)
+    median = float(scores.median())
+    cluster_df = pd.DataFrame({"factor": factors, "cluster": labels, "score": scores.values})
+
+    kept: list[tuple[str, float]] = []
+    for _, grp in cluster_df.groupby("cluster"):
+        top = grp.sort_values(["score", "factor"], ascending=[False, True]).head(per_cluster_keep)
+        winner = top["factor"].iloc[0]
+        for f, sc in zip(top["factor"], top["score"]):
+            if f == winner or sc >= median:        # 1등 무조건 + 나머지 중위값 이상
+                kept.append((f, float(sc)))
+    # 결정적 출력: score 내림차순, 동점 시 팩터명 오름차순
+    final = [f for f, _ in sorted(kept, key=lambda x: (-x[1], x[0]))]
+    logger.info(
+        "winner_median: %d factors -> %d clusters -> %d selected (median=%.4f)",
+        len(factors), n_clusters_eff, len(final), median,
+    )
+    return final

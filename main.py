@@ -62,6 +62,11 @@ def main(argv: list[str] | None = None) -> int:
     parser_backtest.add_argument("--selection-hysteresis", type=float, default=None,
                                   help="Selection hysteresis margin in rank_score units "
                                        "(default: config PIPELINE_PARAMS['selection_hysteresis'])")
+    parser_backtest.add_argument("--cluster-method", choices=["topn", "winner_median"], default=None,
+                                  help="Cluster dedup method (default: config; topn=상위3->Top-N, "
+                                       "winner_median=1등보호+중위값바닥)")
+    parser_backtest.add_argument("--style-cap", type=float, default=None,
+                                  help="Style 합계 상한 (default: config 0.25; 1.0=캡 해제)")
 
     # viz: 기존 output CSV -> 인터랙티브 HTML 대시보드 (read-only, 파이프라인 미수정)
     parser_viz = subparsers.add_parser("viz", help="Generate interactive HTML dashboard from existing outputs.")
@@ -212,12 +217,19 @@ def _run_backtest(args):
         else float(PIPELINE_PARAMS.get("selection_hysteresis", 0.0))
     )
 
+    override = {}
+    if args.cluster_method:
+        override["cluster_method"] = args.cluster_method
+    if args.style_cap is not None:
+        override["style_cap"] = args.style_cap
+    override = override or None
     engine = WalkForwardEngine(
         min_is_months=args.min_is_months,
         factor_rebal_months=args.factor_rebal_months,
         weight_rebal_months=args.weight_rebal_months,
         top_factors=args.top_factors,
         selection_hysteresis=selection_hysteresis,
+        pipeline_params_override=override,
     )
 
     result = engine.run(args.start_date, args.end_date, test_file=getattr(args, "test_file", None))

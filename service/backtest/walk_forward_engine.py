@@ -24,6 +24,7 @@ from service.backtest.data_slicer import get_oos_dates, slice_data_by_date
 from service.factor.selection import (
     apply_selection_hysteresis,
     cluster_and_dedup_top_n,
+    cluster_winner_median_dedup,
     compute_rank_score,
 )
 from service.backtest.result_stitcher import WalkForwardResult
@@ -531,13 +532,19 @@ class WalkForwardEngine:
         # Sprint 1-B: Hierarchical Clustering 기반 중복 제거
         if pp.get("use_cluster_dedup", False):
             score_series = meta_df.set_index("factorAbbreviation")["rank_score"]
-            selected = cluster_and_dedup_top_n(
-                monthly_rets,
-                score_series,
-                n_clusters=int(pp.get("n_clusters", 18)),
-                per_cluster_keep=int(pp.get("per_cluster_keep", 3)),
-                top_n=top_n,
-            )
+            if pp.get("cluster_method", "topn") == "winner_median":
+                selected = cluster_winner_median_dedup(
+                    monthly_rets, score_series,
+                    n_clusters=int(pp.get("n_clusters", 18)),
+                    per_cluster_keep=int(pp.get("per_cluster_keep", 3)),
+                )
+            else:
+                selected = cluster_and_dedup_top_n(
+                    monthly_rets, score_series,
+                    n_clusters=int(pp.get("n_clusters", 18)),
+                    per_cluster_keep=int(pp.get("per_cluster_keep", 3)),
+                    top_n=top_n,
+                )
             meta_top = meta_df.set_index("factorAbbreviation").loc[selected].reset_index()
         else:
             meta_top = meta_df.head(top_n)

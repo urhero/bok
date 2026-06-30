@@ -53,6 +53,7 @@ PIPELINE_PARAMS = {
     "use_cluster_dedup": True,         # Sprint 1-B: Top-N Hierarchical Clustering 중복 제거 (production 적용)
     "n_clusters": 18,                  # 클러스터 수 (use_cluster_dedup=True일 때)
     "per_cluster_keep": 3,             # 클러스터당 유지 팩터 수
+    "cluster_method": "winner_median", # "winner_median"(기본): 클러스터 1등 보호 + 전역 중위값 바닥(top_n 고정 없음, ~18~54 가변) / "topn": 클러스터당 상위3 -> 전역 rank_score Top-N
     "newey_west_lag": 3,               # Newey-West 보정 lag (meta_data.csv 진단용)
     "selection_hysteresis": 0.5,       # 선정 히스테리시스 margin (rank_score 단위). 0=off. 실험 근거: smoothing_cost_experiment_20260612.md
 }

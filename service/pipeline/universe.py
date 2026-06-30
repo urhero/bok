@@ -103,16 +103,25 @@ def evaluate_universe(kept_abbrs, kept_names, kept_styles, filtered_data, end_da
     # Sprint 1-B: Hierarchical Clustering 기반 Top-N dedup (선택적)
     # use_cluster_dedup=False 일 때는 단순 rank_score 상위 N
     if pipeline_params.get("use_cluster_dedup", False):
-        from service.factor.selection import cluster_and_dedup_top_n
         score_series = meta.set_index("factorAbbreviation")["rank_score"]
-        selected = cluster_and_dedup_top_n(
-            monthly_rets,
-            score_series,
-            n_clusters=int(pipeline_params.get("n_clusters", 18)),
-            per_cluster_keep=int(pipeline_params.get("per_cluster_keep", 3)),
-            top_n=top_n,
-        )
-        logger.info("cluster_dedup applied: %d factors selected from %d via %d clusters",
+        if pipeline_params.get("cluster_method", "topn") == "winner_median":
+            from service.factor.selection import cluster_winner_median_dedup
+            selected = cluster_winner_median_dedup(
+                monthly_rets, score_series,
+                n_clusters=int(pipeline_params.get("n_clusters", 18)),
+                per_cluster_keep=int(pipeline_params.get("per_cluster_keep", 3)),
+            )
+        else:
+            from service.factor.selection import cluster_and_dedup_top_n
+            selected = cluster_and_dedup_top_n(
+                monthly_rets,
+                score_series,
+                n_clusters=int(pipeline_params.get("n_clusters", 18)),
+                per_cluster_keep=int(pipeline_params.get("per_cluster_keep", 3)),
+                top_n=top_n,
+            )
+        logger.info("cluster_dedup applied (%s): %d factors selected from %d via %d clusters",
+                    pipeline_params.get("cluster_method", "topn"),
                     len(selected), len(score_series),
                     int(pipeline_params.get("n_clusters", 18)))
     else:

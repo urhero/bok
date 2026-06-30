@@ -14,10 +14,10 @@
 200+ 유효 팩터                      [1]~[3] 데이터 로딩 + 5분위 + 섹터 필터
        │
        ▼
-   Top-50 후보군 (Candidate Pool)   [4] t-stat 랭킹 + 클러스터 dedup -> 상위 50 선정
+   선정 팩터 (~20~40개 가변)         [4] t-stat 랭킹 + 클러스터 dedup(winner_median 기본) 선정
        │
        ▼
-   weight>0 팩터 (최대 50개)         [6] 스타일 캡 하 비중 결정
+   weight>0 팩터                     [6] 스타일 캡 하 비중 결정
        │
        ▼
    종목별 MP 비중 산출               [7] CSV 출력 → Bloomberg Optimizer
@@ -88,11 +88,13 @@
 - 각 팩터별 롱/숏 포트폴리오 구성 → 거래비용(30bp) 차감 → 월간 L-S 수익률 행렬 생성
 - 핵심 함수: `factor_returns.aggregate_factor_returns()`
 
-### (b) 팩터 유니버스 최종 선정 (200+ -> Top-50)
+### (b) 팩터 유니버스 최종 선정 (200+ -> 클러스터 dedup)
 - 랭킹 방식: **t-stat 기반** (기본), `shrunk_tstat` / `cagr` 선택 가능 (`factor_ranking_method`)
 - production `mp`와 walk-forward 백테스트가 `factor.selection.compute_rank_score()`를 공유 — 검증된 config과 배포 전략이 항상 일치
 - **선정 히스테리시스** (`selection_hysteresis=0.5`): 직전 회차 보유 팩터는 챌린저가 rank_score 격차 0.5 이상 이길 때만 교체 — 노이즈성 교체 차단으로 턴오버 -64%, OOS CAGR +0.6~0.7%p ([실험 근거](docs/experiments/smoothing_cost_experiment_20260612.md))
-- **클러스터 dedup** (`use_cluster_dedup=True`): 상관관계 기반 계층적 클러스터링 18개로 묶어 클러스터당 rank_score 상위 3개만 통과(최대 54개) → 그중 rank_score 상위 50개를 최종 후보군으로 확정 (상관 높은 팩터 쏠림 방지)
+- **클러스터 dedup** (`use_cluster_dedup=True`, 상관 높은 팩터 쏠림 방지): 상관관계 기반 계층적 클러스터링 18개로 묶음. `cluster_method`로 압축 규칙 선택:
+  - **`winner_median` (기본)**: 클러스터당 rank_score 상위 3개 후보 중, **클러스터 1등은 무조건 통과**(분산 보장) + 나머지는 **전역 중위값 이상**만 통과. 고정 Top-N 없음 → 가변(~20~40개). A/B 백테스트에서 topn 대비 Sharpe 0.73→0.79·Calmar 0.43→0.57·MDD -5.1→-4.0% 개선
+  - `topn`: 클러스터당 상위 3개 통과(최대 54개) → 그중 rank_score 상위 `top_factor_count`(50) 절단
 - 최종 비중 할당은 [6]에서 결정
 
 ---
@@ -304,9 +306,10 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 |---------|-----|------|-----------|
 | `style_cap` | 0.25 | 스타일 캡 (프로덕션 규제 요건) | `optimization.py` |
 | `transaction_cost_bps` | 30.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
-| `top_factor_count` | 50 | rank_score 기준 상위 팩터 선정 수 | `model_portfolio.py` |
+| `top_factor_count` | 50 | rank_score 상위 절단 수 (**`cluster_method=topn`일 때만** 적용; winner_median은 미사용) | `model_portfolio.py` |
 | `factor_ranking_method` | "tstat" | 팩터 랭킹 방식 (`shrunk_tstat` / `tstat` / `cagr`) | `model_portfolio.py`, `walk_forward_engine.py` (`compute_rank_score` 공유) |
-| `use_cluster_dedup` | True | Top-N Hierarchical Clustering 중복 제거 (Sprint 1-B, production 적용) | `model_portfolio.py`, `walk_forward_engine.py` |
+| `use_cluster_dedup` | True | Hierarchical Clustering 중복 제거 (Sprint 1-B, production 적용) | `model_portfolio.py`, `walk_forward_engine.py` |
+| `cluster_method` | "winner_median" | 클러스터 압축 규칙 (**`winner_median`(기본)**: 1등보호+중위값바닥 / `topn`: 상위3→Top-N) | `factor/selection.py` |
 | `n_clusters` | 18 | 클러스터 수 (`use_cluster_dedup=True`일 때) | `factor/selection.py` |
 | `per_cluster_keep` | 3 | 클러스터당 유지 팩터 수 | `factor/selection.py` |
 | `newey_west_lag` | 3 | Newey-West 보정 lag (meta_data 진단 컬럼) | `factor/selection.py` |

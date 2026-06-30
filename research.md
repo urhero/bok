@@ -117,7 +117,7 @@ main.py (CLI)
      │         │    └─ per-factor: L/S 분리 →             │
      │         │       vectorized return (30bp cost)      │
      │         │       → 롱-숏 수익률 합산                 │
-     │         ├─ rank_score(t-stat) + dedup -> 상위 50  │
+     │         ├─ rank_score(t-stat) + 클러스터 dedup 선정│
      │         └─ meta_data.csv 저장                      │
      │         │                                         │
      │    [6] optimize_constrained_weights()               │
@@ -216,7 +216,7 @@ q_mean["label"] = q_mean["long"] + q_mean["short"]
 
 이 로직의 의미: Q1과 Q5 사이 팩터 스프레드의 10%를 허용 범위로 두고, Q1에 가까운 수익률을 보이는 분위도 롱에, Q5에 가까운 분위도 숏에 포함시킨다. 결과적으로 Q1=L, Q2~Q4=일부 L/N/S, Q5=S가 된다.
 
-#### [4] evaluate_universe: 팩터 유니버스 평가 및 상위 50 선정
+#### [4] evaluate_universe: 팩터 유니버스 평가 및 선정 (클러스터 dedup)
 
 ```python
 # 1. 팩터별 순수익률 행렬 구성
@@ -234,8 +234,10 @@ valid = ret_df.columns[(ret_df == 0).sum() <= 10]
 meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
 meta["rank_score"] = compute_rank_score(monthly_rets, ranking_method, style_map)
 
-# 5. rank_score 상위 50개 선정 (use_cluster_dedup=True 면 클러스터 dedup 경유)
-meta = meta[:top_n]
+# 5. 클러스터 dedup 선정 (use_cluster_dedup=True). cluster_method:
+#    winner_median(기본)=클러스터 1등 보호+전역 중위값 바닥(고정 Top-N 없음, ~20~40개)
+#    topn=클러스터당 상위3 -> rank_score 상위 top_n(50) 절단
+selected = cluster_winner_median_dedup(monthly_rets, score)  # 기본; topn이면 cluster_and_dedup_top_n(..., top_n)
 ```
 
 **aggregate_factor_returns 내부 흐름**:
@@ -602,7 +604,7 @@ Tier 3 (매월): OOS 수익률 조회
 
 | 단계 | 과적합 위험 | 이유 |
 |------|------------|------|
-| [4] 상위 50 팩터 선정 | **높음** | IS t-stat 순위 + 클러스터 dedup 으로 선정. 평균 회귀 위험 |
+| [4] 팩터 선정 (클러스터 dedup) | **높음** | IS t-stat 순위 + 클러스터 dedup(winner_median 기본) 선정. 평균 회귀 위험 |
 | [6] 가중치 계산 (EW) | **낮음** | 1/N 동일가중 - 자유도 없음 |
 | [3] 섹터 제거 + L/N/S 라벨 | **낮음 (수정 완료)** | IS 전용 rule_bundle 적용으로 OOS 오염 제거됨 |
 | [2] 5분위 분석 | 낮음 | 횡단면 정렬이라 시계열 과적합 아님 |
@@ -702,10 +704,11 @@ python main.py mp <start> <end> --benchmark
 - **1-A `shrunk_tstat`** — `service/factor/selection.py:compute_shrunk_tstat()`
   James-Stein 계열 shrinkage로 팩터 t-stat을 스타일 그룹 평균 쪽으로 `lambda` 만큼 축소.
   `lambda = var_within_style / (var_within_style + var_between_styles)` — 데이터 주도 결정.
-- **1-B `use_cluster_dedup`** — `cluster_and_dedup_top_n()`
-  IS 구간 팩터 L-S 수익률 상관으로 `1 - |corr|` distance, `scipy.cluster.hierarchy.linkage(method="average")`,
-  `fcluster(maxclust=n_clusters)`. 클러스터별 rank_score 상위 `per_cluster_keep` 개만 통과.
-  IS 전용 (OOS look-ahead 방지).
+- **1-B `use_cluster_dedup`** — IS 구간 팩터 L-S 수익률 상관으로 `1 - |corr|` distance,
+  `scipy.cluster.hierarchy.linkage(method="average")`, `fcluster(maxclust=n_clusters)`. IS 전용(OOS look-ahead 방지).
+  `cluster_method`로 압축 규칙 선택:
+  - **`winner_median`(기본, production) — `cluster_winner_median_dedup()`**: 클러스터당 rank_score 상위 `per_cluster_keep` 후보 중 **클러스터 1등 무조건 통과**(분산 보장, 최소 n_clusters개) + 나머지는 **전역 rank_score 중위값 이상**만 통과. 고정 Top-N 없음(~20~40개 가변). A/B 백테스트: topn 대비 OOS Sharpe 0.73→0.79, Calmar 0.43→0.57, MDD -5.1→-4.0%, 보유 ~41→~26개. ([2026-06-30 A/B](#))
+  - `topn` — `cluster_and_dedup_top_n()`: 클러스터별 상위 `per_cluster_keep` 통과 후 rank_score 상위 `top_factor_count`(50) 절단.
 - **1-C Newey-West 진단** — `compute_newey_west_tstat()`
   Bartlett kernel, lag=3 기본. `meta_data.csv`의 `newey_west_tstat` 컬럼으로만 노출, 랭킹 교체 X.
 
