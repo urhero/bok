@@ -44,6 +44,42 @@ def _style_color(style: str) -> str:
 
 # ── 백테스트 ───────────────────────────────────────────────────────────────
 
+_MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def monthly_returns_heatmap_fig(table: pd.DataFrame) -> go.Figure:
+    """연 x 월 수익률 히트맵 (%, 상승=green/하락=red 다이버징, 'Year' 열 포함)."""
+    cols = list(range(1, 13)) + ["Year"]
+    z = table.reindex(columns=cols)
+    years = [str(y) for y in z.index]
+    zv = z.values.astype(float) * 100.0
+    text = [["" if v != v else f"{v:.1f}" for v in row] for row in zv]
+    fig = go.Figure(go.Heatmap(
+        z=zv, x=_MONTH_ABBR + ["Year"], y=years, zmid=0,
+        colorscale=[[0.0, _NEG_COLOR], [0.5, "#2b3139"], [1.0, _POS_COLOR]],
+        text=text, texttemplate="%{text}", textfont=dict(size=10),
+        hovertemplate="%{y} %{x}: %{z:.2f}%<extra></extra>",
+        xgap=2, ygap=2, colorbar=dict(title="%", thickness=10),
+    ))
+    fig.update_layout(title="월별 수익률 (%, CEW)",
+                      height=max(240, 26 * len(years) + 130), **_BASE_LAYOUT)
+    fig.update_yaxes(autorange="reversed")  # 최근 연도 위로
+    return fig
+
+
+def rolling_sharpe_fig(rs: pd.Series) -> go.Figure:
+    """롤링 12개월 연환산 Sharpe 라인."""
+    fig = go.Figure(go.Scatter(
+        x=rs.index, y=rs.values, name="12M Sharpe",
+        line=dict(color="#fcd535", width=2),
+        hovertemplate="%{x|%Y-%m}<br>Sharpe %{y:.2f}<extra></extra>",
+    ))
+    fig.add_hline(y=0, line=dict(color=_MUTED, width=1, dash="dot"))
+    fig.update_layout(title="롤링 12개월 Sharpe (CEW)", height=300, **_BASE_LAYOUT)
+    return fig
+
+
 def equity_curve_fig(curves: pd.DataFrame) -> go.Figure:
     fig = go.Figure()
     for key, color, label, width in _STRAT:

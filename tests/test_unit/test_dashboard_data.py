@@ -413,6 +413,41 @@ def test_drawdown_episodes_section_renders():
     assert _drawdown_episodes_section(bare) == ""
 
 
+def test_monthly_returns_table():
+    t = dd.monthly_returns_table(_curves())
+    assert "Year" in t.columns
+    assert [c for c in t.columns if c != "Year"] == list(range(1, 13))
+    assert len(t) == 1  # _curves 는 2020 한 해 12개월
+    yr = (1 + _curves()["cew_return"]).prod() - 1
+    assert t["Year"].iloc[0] == pytest.approx(float(yr))
+
+
+def test_extended_stats_keys_and_ranges():
+    s = dd.extended_stats(_curves())
+    assert set(s) >= {"ann_vol", "sortino", "best_month", "worst_month",
+                      "pct_positive", "avg_month", "skew", "max_loss_streak"}
+    assert s["ann_vol"] >= 0
+    assert 0.0 <= s["pct_positive"] <= 1.0
+    assert s["best_month"] >= s["worst_month"]
+    assert isinstance(s["max_loss_streak"], int)
+
+
+def test_rolling_sharpe_window():
+    assert len(dd.rolling_sharpe(_curves(), window=12)) == 1   # 12개월 -> 1 시점
+    assert len(dd.rolling_sharpe(_curves(), window=6)) == 7     # 12-6+1
+
+
+def test_relative_metrics():
+    m = dd.relative_metrics(_curves(), bench_col="ew_return")
+    assert set(m) >= {"beta", "alpha_ann", "tracking_error", "info_ratio", "bench"}
+    assert m["bench"] == "ew_return"
+    assert m["tracking_error"] >= 0
+    # _curves: ew_return = 0.5*cew_return -> beta = cov/var = 2.0
+    assert m["beta"] == pytest.approx(2.0)
+    # 벤치 컬럼 없으면 빈 dict
+    assert dd.relative_metrics(_curves().drop(columns=["ew_return"])) == {}
+
+
 def test_oos_rows_three_variants():
     """OOS 성과 행은 4지표 x EW/Top50/CEW. 곡선/컬럼 없으면 빈 리스트."""
     pytest.importorskip("plotly")  # dashboard import 가 plotly 끌어옴

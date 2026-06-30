@@ -289,6 +289,52 @@ def _drawdown_episodes_section(curves) -> str:
     return "".join(blocks)
 
 
+def _is_start_month() -> str | None:
+    """학습(IS) 시작월 = config backtest_start (YYYY-MM). 확장창이라 IS 는 항상 여기서 시작.
+    config 미가용 시 None (헤더에서 생략)."""
+    try:
+        from config import PIPELINE_PARAMS
+        return pd.Timestamp(PIPELINE_PARAMS["backtest_start"]).strftime("%Y-%m")
+    except Exception:
+        return None
+
+
+def _backtest_stats_card(curves) -> str:
+    """확장 성과 통계(QC Key Statistics 스타일) + 벤치마크(선정 EW) 대비 지표를 KPI 그리드로."""
+    s = dd.extended_stats(curves)
+    rel = dd.relative_metrics(curves, bench_col="ew_return")
+
+    def pct(v):
+        return "-" if v != v else f"{v:.2%}"
+
+    def dec(v):
+        return "-" if v != v else f"{v:.2f}"
+
+    items = [
+        ("연환산 변동성", pct(s["ann_vol"])),
+        ("Sortino", dec(s["sortino"])),
+        ("최고 월", pct(s["best_month"])),
+        ("최저 월", pct(s["worst_month"])),
+        ("상승월 비율", pct(s["pct_positive"])),
+        ("평균 월수익", pct(s["avg_month"])),
+        ("월수익 왜도", dec(s["skew"])),
+        ("최장 연속손실", f'{s["max_loss_streak"]}M'),
+    ]
+    if rel:
+        items += [
+            ("Beta (vs 선정EW)", dec(rel["beta"])),
+            ("Alpha 연 (vs 선정EW)", pct(rel["alpha_ann"])),
+            ("정보비율", dec(rel["info_ratio"])),
+            ("추적오차 연", pct(rel["tracking_error"])),
+        ]
+    cells = "".join(
+        f'<div class="kpi"><div class="kpi-label">{escape(lbl)}</div>'
+        f'<div class="kpi-val">{escape(val)}</div></div>'
+        for lbl, val in items
+    )
+    return f'<div class="kpi-grid">{cells}</div>'
+
+
 def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
     """백테스트 섹션 HTML 조각 리스트와 'plotly.js 포함 여부' 반환."""
     wf_path = output_dir / "walk_forward_results.csv"
@@ -302,15 +348,29 @@ def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
 
     start = curves.index.min().strftime("%Y-%m")
     end = curves.index.max().strftime("%Y-%m")
+    is_start = _is_start_month()
+    title_range = f"학습 {is_start} · OOS {start}~{end}" if is_start else f"OOS {start}~{end}"
+    is_note = (f"학습(IS) {is_start}부터 확장창 · 성과는 OOS {start}~ 집계 · "
+               if is_start else "")
     parts = [
-        f'<h2>1. 백테스트 ({start} ~ {end}, 월별 {kpis["n_months"]}개월)</h2>',
+        f'<h2>1. 백테스트 ({title_range}, OOS {kpis["n_months"]}개월)</h2>',
         f'<div class="kpi-grid">{_kpi_cards(kpis)}</div>',
+        f'<div class="note">{is_note}상세 통계/벤치마크 = 선정 EW(1/N)</div>',
+        _backtest_stats_card(curves),
         f'<div class="card full">{_fig_div(ch.equity_curve_fig(curves), include_js=True)}</div>',
     ]
+    # 월별 수익률 히트맵 (QC 스타일 연x월 그리드)
+    mret = dd.monthly_returns_table(curves)
+    if not mret.empty:
+        parts.append(f'<div class="card full">{_fig_div(ch.monthly_returns_heatmap_fig(mret))}</div>')
     parts.append(_grid2([
         f'<div class="card">{_fig_div(ch.drawdown_fig(curves))}</div>',
         f'<div class="card">{_fig_div(ch.monthly_dist_fig(curves))}</div>',
     ]))
+    # 롤링 12개월 Sharpe (>=12개월 구간에서만)
+    rs = dd.rolling_sharpe(curves)
+    if not rs.empty:
+        parts.append(f'<div class="card full">{_fig_div(ch.rolling_sharpe_fig(rs))}</div>')
 
     # 가중치 이력이 직렬화돼 있으면 스타일 비중 추이 + 회전율 추가 (백테스트 재실행 산출).
     # 스타일 추이는 범례(스타일 7~8개)가 넓어 풀폭 카드로 둔다 - 반폭이면 범례가 그래프 침범.

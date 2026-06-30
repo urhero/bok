@@ -280,7 +280,8 @@ python main.py viz --open
 
 포함 차트:
 - (백테스트) KPI 카드(CAGR/MDD/Sharpe/Calmar/승률/Funnel - `overfit_diagnostics.csv` 값 우선),
-  누적수익 4선 비교, 낙폭, 월별수익 분포, **스타일 비중 추이(스택 영역)**, **팩터 회전율**,
+  **상세 성과 통계**(Sortino/연변동성/최고·최저월/상승월%/왜도/최장연속손실 + 벤치마크(선정 EW) 대비 Beta/Alpha/정보비율/추적오차),
+  누적수익 4선 비교, **월별 수익률 히트맵(연×월)**, 낙폭, 월별수익 분포, **롤링 12개월 Sharpe**, **스타일 비중 추이(스택 영역)**, **팩터 회전율**,
   **과적합 진단 상세 표**(Funnel 패턴 + **OOS 성과**(CAGR/MDD/Sharpe/Calmar)를 **EW/Top50/CEW 3열**로 비교 + Jaccard/Deflation/Rank Corr 등),
   **낙폭 구간 분석 표**(곡선별 DD episode: 깊이 + peak/trough/recovery + 하락·회복 기간(개월), 1% 이상)
 - (현재 포트) 스타일 배분(25% cap 라인), **섹터별 순비중(롱-숏 순노출)**, 종목별 순비중 상위 롱/숏,

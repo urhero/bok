@@ -170,6 +170,60 @@ def compute_kpis(curves: pd.DataFrame) -> dict:
     }
 
 
+def monthly_returns_table(curves: pd.DataFrame) -> pd.DataFrame:
+    """CEW 월별 수익률을 연(행) x 월(1~12 열) 행렬 + 연간 복리('Year' 열)로 변환."""
+    r = curves["cew_return"].astype(float)
+    df = pd.DataFrame({"y": r.index.year, "m": r.index.month, "r": r.values})
+    pivot = (df.pivot_table(index="y", columns="m", values="r", aggfunc="first")
+             .reindex(columns=range(1, 13)))
+    pivot["Year"] = df.groupby("y")["r"].apply(lambda s: (1.0 + s).prod() - 1.0)
+    return pivot
+
+
+def extended_stats(curves: pd.DataFrame) -> dict:
+    """QC Key Statistics 스타일 확장 지표 (CEW 월별 수익률 기반, 연 12개월)."""
+    r = curves["cew_return"].astype(float)
+    down = r[r < 0]
+    dstd = float(down.std()) if len(down) > 1 else float("nan")
+    streak = mx = 0
+    for v in r:
+        streak = streak + 1 if v < 0 else 0
+        mx = max(mx, streak)
+    return {
+        "ann_vol": float(r.std() * (12 ** 0.5)),
+        "sortino": float(r.mean() / dstd * (12 ** 0.5)) if dstd and dstd > 0 else float("nan"),
+        "best_month": float(r.max()),
+        "worst_month": float(r.min()),
+        "pct_positive": float((r > 0).mean()),
+        "avg_month": float(r.mean()),
+        "skew": float(r.skew()),
+        "max_loss_streak": int(mx),
+    }
+
+
+def rolling_sharpe(curves: pd.DataFrame, window: int = 12) -> pd.Series:
+    """롤링 window 개월 연환산 Sharpe (CEW). window 미만 구간은 dropna 로 제외."""
+    r = curves["cew_return"].astype(float)
+    rs = (r.rolling(window).mean() / r.rolling(window).std()) * (12 ** 0.5)
+    return rs.dropna()
+
+
+def relative_metrics(curves: pd.DataFrame, bench_col: str = "ew_return") -> dict:
+    """벤치마크(기본 선정 EW) 대비 Beta / Alpha(연) / 추적오차(연) / 정보비율 (CEW)."""
+    if bench_col not in curves.columns:
+        return {}
+    p = curves["cew_return"].astype(float)
+    b = curves[bench_col].astype(float)
+    var_b = float(b.var())
+    beta = float(p.cov(b) / var_b) if var_b > 0 else float("nan")
+    alpha_ann = float((p.mean() - beta * b.mean()) * 12) if var_b > 0 else float("nan")
+    active = p - b
+    te = float(active.std() * (12 ** 0.5))
+    ir = float(active.mean() * 12 / te) if te > 0 else float("nan")
+    return {"beta": beta, "alpha_ann": alpha_ann, "tracking_error": te,
+            "info_ratio": ir, "bench": bench_col}
+
+
 def parse_diagnostics(path: Path) -> dict:
     """overfit_diagnostics.csv (세로형) -> {(category, metric): value_str}."""
     p = Path(path)
