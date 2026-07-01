@@ -30,6 +30,7 @@ from service.backtest.walk_forward_engine import (
     _run_rule_learning,
 )
 from service.pipeline.factor_analysis import (
+    ANALYZE_COLS,
     calculate_factor_stats_batch,
     filter_and_label_factors,
 )
@@ -42,6 +43,21 @@ OOS_CHECK_MONTH = pd.Timestamp("2024-08-31")
 EXPECTED_CONTRACT_RETURN = -0.18
 # 재학습(전체 기간, S2 제거) 시: long={A1}=+2%, short={A4}=+2% -> +4%
 EXPECTED_RELEARNED_RETURN = 0.04
+
+
+def _precompute_full_stats(pipeline, raw, mret):
+    """run() 의 전체 데이터 5분위 통계 사전계산을 동일하게 재현한다.
+
+    _apply_rules_and_aggregate 가 내부 재계산 대신 사전계산된 stats 를 받도록
+    리팩터됨(루프 불변값 hoisting). 테스트도 run() 과 동일하게 1회 계산해 전달한다.
+    """
+    _, merged_full, abbrs, orders = pipeline._prepare_metadata(raw, mret)
+    slim_full = merged_full[[c for c in ANALYZE_COLS if c in merged_full.columns]]
+    stats_full = calculate_factor_stats_batch(
+        slim_full, abbrs, orders, test_mode=True,
+        min_sector_stocks=pipeline.pipeline_params["min_sector_stocks"],
+    )
+    return stats_full, abbrs
 
 
 def _build_synthetic() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -134,7 +150,8 @@ class TestOOSPurityContract:
         is_raw, is_mret = slice_data_by_date(raw, mret, IS_END)
         bundle = _run_rule_learning(is_raw, is_mret, pipeline, test_file="syn")
 
-        ret_df = _apply_rules_and_aggregate(raw, mret, bundle, pipeline, test_file="syn")
+        stats_full, abbrs = _precompute_full_stats(pipeline, raw, mret)
+        ret_df = _apply_rules_and_aggregate(stats_full, abbrs, bundle, pipeline)
 
         assert "F1" in ret_df.columns
         # 사전계산은 전체 기간을 커버해야 한다 (OOS 월 조회 가능)
@@ -157,7 +174,8 @@ class TestOOSPurityContract:
             raise AssertionError("filter_and_label_factors 가 OOS 적용 경로에서 호출됨 (재학습 금지)")
 
         monkeypatch.setattr(wfe, "filter_and_label_factors", _forbidden)
-        ret_df = _apply_rules_and_aggregate(raw, mret, bundle, pipeline, test_file="syn")
+        stats_full, abbrs = _precompute_full_stats(pipeline, raw, mret)
+        ret_df = _apply_rules_and_aggregate(stats_full, abbrs, bundle, pipeline)
         assert not ret_df.empty
 
 

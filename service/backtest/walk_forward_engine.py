@@ -20,7 +20,7 @@ import pandas as pd
 from rich.progress import track
 
 from config import PARAM, PIPELINE_PARAMS
-from service.backtest.data_slicer import get_oos_dates, slice_data_by_date
+from service.backtest.data_slicer import get_oos_dates
 from service.factor.selection import (
     apply_selection_hysteresis,
     cluster_and_dedup_top_n,
@@ -62,12 +62,19 @@ MIN_REQUIRED_FACTORS = 5
 
 
 def _run_rule_learning(
-    is_raw: pd.DataFrame,
-    is_mret: pd.DataFrame,
+    is_raw: pd.DataFrame | None,
+    is_mret: pd.DataFrame | None,
     pipeline: ModelPortfolioPipeline,
     test_file: str | None = None,
+    prepared: tuple | None = None,
 ) -> dict[str, Any]:
     """IS 데이터에서 [2]~[3] 규칙을 학습한다.
+
+    Args:
+        prepared: (factor_metadata, merged_data, factor_abbr_list, orders) 튜플.
+            제공되면 _prepare_metadata 재실행을 생략하고 그대로 사용한다.
+            run()에서 전체 merged 를 1회 계산 후 IS 날짜로 슬라이스해 전달하는
+            용도(Tier 1 마다의 재-merge 제거). 미제공 시 is_raw/is_mret 로 병합.
 
     Returns:
         rule_bundle: kept_abbrs, factor_stats, sort_order_map,
@@ -76,9 +83,12 @@ def _run_rule_learning(
     pp = pipeline.pipeline_params
 
     # [1] 메타데이터 병합 (IS 데이터에 대해)
-    factor_metadata, merged_data, factor_abbr_list, orders = pipeline._prepare_metadata(
-        is_raw, is_mret
-    )
+    if prepared is None:
+        factor_metadata, merged_data, factor_abbr_list, orders = pipeline._prepare_metadata(
+            is_raw, is_mret
+        )
+    else:
+        factor_metadata, merged_data, factor_abbr_list, orders = prepared
 
     # [2] 5분위 분석
     slim_data = merged_data[[c for c in ANALYZE_COLS if c in merged_data.columns]]
@@ -128,42 +138,37 @@ def _run_rule_learning(
 
 
 def _apply_rules_and_aggregate(
-    raw_data: pd.DataFrame,
-    mreturn_df: pd.DataFrame,
+    factor_stats_full: list,
+    factor_abbr_list: list[str],
     rule_bundle: dict[str, Any],
     pipeline: ModelPortfolioPipeline,
-    test_file: str | None = None,
 ) -> pd.DataFrame:
-    """IS에서 학습한 규칙을 전체 데이터에 적용하고 팩터 수익률을 사전 계산한다.
+    """IS에서 학습한 규칙을 (사전 계산된) 전체 데이터 5분위 통계에 적용하고 팩터 수익률을 사전 계산한다.
 
     Tier 1 핵심: 전체 데이터의 횡단면 5분위 랭킹(안전)에 IS 전용 규칙
     (dropped_sectors, label_rules)을 적용하여 aggregate_factor_returns를
     1회만 실행, 전기간 팩터 수익률 행렬을 생성한다.
+
+    factor_stats_full 은 윈도우 불변(횡단면 랭킹)이므로 run()에서 1회만 계산해
+    Tier 1 마다 재사용한다 (기존엔 Tier 1 마다 동일 raw_data 로 재계산 -> 결과 동일).
+    여기서는 IS 전용 규칙 적용 + aggregate_factor_returns 만 수행한다.
 
     OOS look-ahead bias 방지:
       - 5분위 랭킹: 횡단면(같은 날짜·섹터 내 순위) → 시계열 오염 없음, 전체 데이터 안전
       - 섹터 제거: IS에서 학습한 dropped_sectors 직접 적용 (재계산 아님)
       - L/N/S 라벨: IS에서 학습한 label_rules 직접 매핑 (재계산 아님)
 
+    Args:
+        factor_stats_full: run()에서 사전 계산된 전체 데이터 5분위 통계
+            (calculate_factor_stats_batch 결과; factor_abbr_list 와 인덱스 정렬).
+        factor_abbr_list: factor_stats_full 인덱스에 대응하는 팩터 약어 리스트.
+
     Returns:
         precomputed_ret_df: (전체 월 × 유효 팩터) 수익률 행렬
     """
     pp = pipeline.pipeline_params
 
-    # 전체 데이터에 대해 메타데이터 병합
-    _factor_metadata, merged_data_full, factor_abbr_list, orders = pipeline._prepare_metadata(
-        raw_data, mreturn_df
-    )
-
-    # [2] 전체 데이터에서 횡단면 5분위 랭킹 (시계열 오염 없음, 안전)
-    slim_data = merged_data_full[[c for c in ANALYZE_COLS if c in merged_data_full.columns]]
-    factor_stats_full = calculate_factor_stats_batch(
-        slim_data, factor_abbr_list, orders,
-        test_mode=bool(test_file),
-        min_sector_stocks=pp["min_sector_stocks"],
-    )
-
-    # [3] IS 규칙을 전체 데이터에 적용 (재학습 아님)
+    # [3] IS 규칙을 (사전 계산된) 전체 데이터 5분위 통계에 적용 (재학습 아님)
     # factor_abbr_list → factor_stats_full 인덱스 매핑
     abbr_to_stats_idx = {a: i for i, a in enumerate(factor_abbr_list)}
 
@@ -358,6 +363,20 @@ class WalkForwardEngine:
             len(all_dates), len(oos_dates), self.min_is_months,
         )
 
+        # 1-b. 전체 데이터 횡단면 5분위 통계 사전 계산 (Tier 1 루프 불변값)
+        #   분위 랭킹은 같은 날짜·섹터 내 횡단면 순위 -> 윈도우와 무관하게 불변(시계열 오염 없음).
+        #   기존엔 _apply_rules_and_aggregate 가 Tier 1 마다 동일 raw_data 로 재계산했으나
+        #   결과가 매번 동일하므로 1회만 계산해 재사용한다 (출력 byte-identical, Tier1 횟수배 단축).
+        _meta_full, merged_full, factor_abbr_list_full, orders_full = pipeline._prepare_metadata(
+            raw_data, market_return_df
+        )
+        slim_full = merged_full[[c for c in ANALYZE_COLS if c in merged_full.columns]]
+        factor_stats_full = calculate_factor_stats_batch(
+            slim_full, factor_abbr_list_full, orders_full,
+            test_mode=bool(test_file),
+            min_sector_stocks=pp["min_sector_stocks"],
+        )
+
         # 2. 캐시 초기화
         cached_rule_bundle: dict | None = None
         precomputed_ret_df: pd.DataFrame | None = None
@@ -380,12 +399,18 @@ class WalkForwardEngine:
             # ── Tier 1: 규칙 학습 + 팩터 수익률 사전 계산 ──
             if cached_rule_bundle is None or i % self.factor_rebal_months == 0:
                 is_rule_rebal = True
-                is_raw, is_mret = slice_data_by_date(raw_data, market_return_df, is_end_date)
-                cached_rule_bundle = _run_rule_learning(is_raw, is_mret, pipeline, test_file)
+                # IS 는 캐시된 전체 merged 를 날짜 슬라이스해 재사용 (Tier 1 마다의 재-merge/copy 제거).
+                #   merged_full[ddt<=cutoff] == _prepare_metadata(is_raw)  (동일 행·순서, inner merge 키에 ddt 포함)
+                #   -> byte-identical. factor_metadata/abbr/orders 도 전체와 동일(factor_info.csv 고정).
+                merged_is = merged_full[merged_full["ddt"] <= pd.Timestamp(is_end_date)]
+                prepared_is = (_meta_full, merged_is, factor_abbr_list_full, orders_full)
+                cached_rule_bundle = _run_rule_learning(
+                    None, None, pipeline, test_file, prepared=prepared_is,
+                )
 
-                # 전체 데이터에 규칙 적용 + aggregate 1회 실행
+                # 사전 계산된 전체 데이터 5분위 통계에 규칙 적용 + aggregate 1회 실행
                 precomputed_ret_df = _apply_rules_and_aggregate(
-                    raw_data, market_return_df, cached_rule_bundle, pipeline, test_file
+                    factor_stats_full, factor_abbr_list_full, cached_rule_bundle, pipeline,
                 )
 
                 if precomputed_ret_df.empty:

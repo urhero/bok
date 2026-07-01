@@ -12,6 +12,7 @@ pyodbc = "*"
 sqlalchemy = "*"
 pyarrow = "*"
 scipy = "*"
+joblib = "*"
 rich = "*"
 python-dotenv = "*"
 

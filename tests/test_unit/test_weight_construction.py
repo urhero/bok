@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from service.pipeline.weight_construction import construct_long_short_df, calculate_vectorized_return
+from service.factor.factor_returns import aggregate_factor_returns
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -251,3 +252,23 @@ class TestCalculateVectorizedReturnShape:
         gross, _, _ = calculate_vectorized_return(multi_date_portfolio, "TestFactor")
         n_dates = multi_date_portfolio["ddt"].nunique()
         assert gross.shape[0] == n_dates
+
+
+# ---------------------------------------------------------------------------
+# aggregate_factor_returns 병렬화 byte-identity
+# ---------------------------------------------------------------------------
+class TestAggregateFactorReturnsParallel:
+    def test_parallel_matches_serial_byte_identical(self, basic_labeled_data):
+        """병렬(n_jobs=-1)과 직렬(n_jobs=1) 출력이 bit 단위로 동일해야 한다.
+
+        _PARALLEL_MIN_FACTORS(8) 초과하도록 10개 팩터로 복제해 병렬 경로를 강제한다.
+        assert_frame_equal 은 값 + 컬럼 순서를 모두 검사 -> 순서 보존(byte-identity 핵심)까지 증명.
+        """
+        data = [basic_labeled_data.copy() for _ in range(10)]
+        abbrs = [f"F{i}" for i in range(10)]
+
+        serial = aggregate_factor_returns(data, abbrs, backtest_start="2017-12-31", n_jobs=1)
+        parallel = aggregate_factor_returns(data, abbrs, backtest_start="2017-12-31", n_jobs=-1)
+
+        assert not parallel.empty, "병렬 경로가 실제로 결과를 내야 한다 (빈 프레임 동치 방지)"
+        pd.testing.assert_frame_equal(serial, parallel, check_exact=True)

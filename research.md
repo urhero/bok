@@ -600,6 +600,16 @@ Tier 3 (매월): OOS 수익률 조회
 | 섹터 제거 (Q1-Q5 스프레드 기반) | - | O -> rule_bundle["dropped_sectors"] 사용 |
 | L/N/S 라벨 (분위별 평균 수익률 기반) | - | O -> rule_bundle["label_rules"] 사용 |
 
+### 6.2.1 성능 최적화 (2026-07-01): 38.8분 -> 15.6분 (60%, 출력 byte-identical)
+
+세 가지 무손실 최적화로 전체 walk-forward 실행시간을 60% 단축했다. 모두 **출력 CSV byte-identical**(md5 검증)이며, 검증 방식은 [[backtest-cli-dates-ignored]] 참고(백테스트는 항상 전체 기간을 돌므로 축소범위 불가; 유닛테스트 + before/after md5 로 검증).
+
+1. **전체 데이터 5분위 통계 1회 캐시** (`run()` 진입부): `_apply_rules_and_aggregate()`가 Tier 1(약 27회)마다 **동일한 `raw_data`로 재계산**하던 `_prepare_metadata` + `calculate_factor_stats_batch`를 루프 밖에서 1회만 계산해 재사용. 분위 랭킹은 횡단면(날짜·섹터 내)이라 윈도우 불변이므로 결과 동일. (-42%)
+2. **`aggregate_factor_returns` 병렬화** (`factor_returns.py`): 팩터별 독립 루프(`_compute_factor_net_return`)를 joblib(loky)로 코어 분산. joblib이 제출 순서대로 반환하므로 concat 컬럼 순서 보존 -> byte-identical. `n_jobs` 파라미터(기본 -1), 팩터 `_PARALLEL_MIN_FACTORS`(8) 이하면 직렬. mp/report 경로도 공유해 함께 빨라짐. (-11%p)
+3. **IS merge 캐시** (`_run_rule_learning(prepared=...)`): Tier 1마다 `_prepare_metadata(is_raw)`로 재-merge하던 것을, 캐시된 전체 merged 를 날짜 슬라이스(`merged_full[ddt<=cutoff]`)해 전달. inner merge 키에 `ddt`가 있어 슬라이스 == 재-merge -> byte-identical. (-7%p)
+
+**남은 병목(무손실로는 추가 단축 어려움):** IS rank/cut(윈도우별 필수), Tier 2 가중치 최적화/레코드 조립. 클러스터링(corr+linkage)은 호출당 ~1-2초로 병목 아님. 검토했으나 기각: rule-application 루프 병렬화(순이득 0 — 루프가 병목 아니었고 full fdf pickle 비용이 상쇄), Tier2 클러스터링 근사 캐시(<1분 이득 + 결과 변경이라 byte-identical 위배).
+
 ### 6.3 과적합 위험 지점
 
 | 단계 | 과적합 위험 | 이유 |
