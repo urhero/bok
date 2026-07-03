@@ -249,9 +249,12 @@ def _run_backtest(args):
     serialize_diagnostics_csv(oos_report, OUTPUT_DIR / "overfit_diagnostics.csv")
 
     # 진단 표 포함 대시보드 자동 생성 (read-only viz). 실패해도 백테스트 산출물은 보존.
+    # end_date=None: 최신 스냅샷 자동 선택. backtest CLI 날짜(args.end_date)는 production
+    # parquet 에서 무시되므로(항상 전체 데이터), 이를 넘기면 대시보드가 그 옛 날짜의
+    # 낡은 weights 스냅샷을 집어 실제 데이터월과 어긋난다.
     try:
         from service.report.dashboard import build_dashboard
-        dash_path = build_dashboard(end_date=args.end_date)
+        dash_path = build_dashboard(end_date=None)
         logging.getLogger(__name__).info("Dashboard generated: %s", dash_path)
     except Exception as e:  # viz 실패가 백테스트 결과를 무효화하지 않도록 격리
         logging.getLogger(__name__).warning("Dashboard generation skipped (%s)", e)
