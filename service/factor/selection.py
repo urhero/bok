@@ -229,6 +229,27 @@ def apply_selection_hysteresis(
     return sorted(out, key=lambda f: (-float(scores[f]), f))
 
 
+def _correlation_cluster_labels(monthly_rets: pd.DataFrame, n_clusters_eff: int) -> np.ndarray:
+    """상관행렬 -> 1-|corr| distance -> average linkage -> maxclust 라벨.
+
+    cluster_and_dedup_top_n / cluster_winner_median_dedup 이 공유하는 동일 절차.
+    실패 시 예외를 그대로 올리며, rank_score 정렬 fallback 은 호출부가 담당한다.
+    """
+    corr = monthly_rets.corr().fillna(0.0)
+    dist_mat = 1.0 - corr.abs().values
+    np.fill_diagonal(dist_mat, 0.0)
+    dist_mat = np.clip(dist_mat, 0.0, 2.0)
+    # 대칭성 보정
+    dist_mat = (dist_mat + dist_mat.T) / 2.0
+
+    from scipy.cluster.hierarchy import fcluster, linkage
+    from scipy.spatial.distance import squareform
+
+    condensed = squareform(dist_mat, checks=False)
+    link = linkage(condensed, method="average")
+    return fcluster(link, t=n_clusters_eff, criterion="maxclust")
+
+
 def cluster_and_dedup_top_n(
     monthly_rets: pd.DataFrame,
     rank_score: pd.Series,
@@ -266,28 +287,10 @@ def cluster_and_dedup_top_n(
         # per_cluster_keep 을 늘려 Top-N 채울 여지 확보
         per_cluster_keep = max(per_cluster_keep, int(np.ceil(top_n / n_clusters_eff)))
 
-    # 상관행렬 -> distance
     try:
-        corr = monthly_rets.corr().fillna(0.0)
+        labels = _correlation_cluster_labels(monthly_rets, n_clusters_eff)
     except Exception as e:
-        logger.warning("cluster_and_dedup: corr failed (%s), fallback to rank_score sort", e)
-        return list(rank_score.sort_values(ascending=False).head(top_n).index)
-
-    dist_mat = 1.0 - corr.abs().values
-    np.fill_diagonal(dist_mat, 0.0)
-    dist_mat = np.clip(dist_mat, 0.0, 2.0)
-    # 대칭성 보정
-    dist_mat = (dist_mat + dist_mat.T) / 2.0
-
-    from scipy.cluster.hierarchy import fcluster, linkage
-    from scipy.spatial.distance import squareform
-
-    try:
-        condensed = squareform(dist_mat, checks=False)
-        link = linkage(condensed, method="average")
-        labels = fcluster(link, t=n_clusters_eff, criterion="maxclust")
-    except Exception as e:
-        logger.warning("cluster_and_dedup: linkage failed (%s), fallback to rank_score sort", e)
+        logger.warning("cluster_and_dedup: clustering failed (%s), fallback to rank_score sort", e)
         return list(rank_score.sort_values(ascending=False).head(top_n).index)
 
     cluster_df = pd.DataFrame({
@@ -339,27 +342,10 @@ def cluster_winner_median_dedup(
         return list(rank_score.reindex(factors).sort_values(ascending=False).index)
 
     n_clusters_eff = min(n_clusters, len(factors))
-    # 클러스터 라벨: cluster_and_dedup_top_n 과 동일 절차 (ponytail: ~10줄 중복 —
-    # production 함수를 안 건드리려 의도적으로 복제, 실험 경로 전용).
     try:
-        corr = monthly_rets.corr().fillna(0.0)
+        labels = _correlation_cluster_labels(monthly_rets, n_clusters_eff)
     except Exception as e:
-        logger.warning("winner_median: corr failed (%s), fallback to rank_score sort", e)
-        return list(rank_score.sort_values(ascending=False).index)
-    dist_mat = 1.0 - corr.abs().values
-    np.fill_diagonal(dist_mat, 0.0)
-    dist_mat = np.clip(dist_mat, 0.0, 2.0)
-    dist_mat = (dist_mat + dist_mat.T) / 2.0
-
-    from scipy.cluster.hierarchy import fcluster, linkage
-    from scipy.spatial.distance import squareform
-
-    try:
-        condensed = squareform(dist_mat, checks=False)
-        link = linkage(condensed, method="average")
-        labels = fcluster(link, t=n_clusters_eff, criterion="maxclust")
-    except Exception as e:
-        logger.warning("winner_median: linkage failed (%s), fallback to rank_score sort", e)
+        logger.warning("winner_median: clustering failed (%s), fallback to rank_score sort", e)
         return list(rank_score.sort_values(ascending=False).index)
 
     scores = rank_score.reindex(factors)

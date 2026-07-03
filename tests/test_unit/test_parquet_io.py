@@ -350,6 +350,33 @@ class TestValidateLoadedFactorData:
         # 연속 월이면 빈 리스트
         assert month_gap_issues(sorted(pd.to_datetime(["2023-01-31", "2023-02-28"]))) == []
 
+    def test_unsorted_lag_groups_error(self):
+        """(gvkeyiid, factor) 그룹 내 시간순서 위반 시 ERROR (lag 오염 방지)."""
+        # s1/F1 행이 2월 -> 1월 역순: shift(1) lag 가 오염되는 케이스
+        df = pd.DataFrame({
+            "gvkeyiid": ["s1", "s1", "s2", "s2"],
+            "ddt": pd.to_datetime(["2023-02-28", "2023-01-31", "2023-01-31", "2023-02-28"]),
+            "factorAbbreviation": ["F1"] * 4,
+            "val": [1.0, 2.0, 3.0, 4.0],
+            "sec": ["Tech"] * 4,
+        })
+        issues = validate_loaded_factor_data(df, min_months=1)
+        assert any(i["type"] == "UNSORTED_LAG_GROUPS" and i["level"] == "ERROR" for i in issues)
+
+    def test_factor_unsorted_but_groups_sorted_ok(self):
+        """팩터 단위 역순이어도 (gvkeyiid, factor) 그룹 내부가 시간순이면 ERROR 아님."""
+        # 팩터 F1 전체로는 [1월, 3월, 2월] 시간순이 아니지만
+        # 그룹별(s1: 1월->3월, s2: 2월)로는 각각 시간순 -> lag 안전
+        df = pd.DataFrame({
+            "gvkeyiid": ["s1", "s1", "s2"],
+            "ddt": pd.to_datetime(["2023-01-31", "2023-03-31", "2023-02-28"]),
+            "factorAbbreviation": ["F1"] * 3,
+            "val": [1.0, 2.0, 3.0],
+            "sec": ["Tech"] * 3,
+        })
+        issues = validate_loaded_factor_data(df, min_months=1)
+        assert not any(i["type"] == "UNSORTED_LAG_GROUPS" for i in issues)
+
     def test_load_with_validate_error_raises(self, tmp_path):
         """validate=True + ERROR → RuntimeError."""
         # 필수 컬럼 누락 데이터

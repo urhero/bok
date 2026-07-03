@@ -238,6 +238,14 @@ def run_download_pipeline(
                 existing_year = pd.DataFrame()
 
         updated_year = pd.concat([existing_year, new_factor], ignore_index=True)
+        # backfill(기존 최신 월보다 과거 월 재다운로드) 시 append 가 (gvkeyiid, factor)
+        # 그룹 내 시간순서를 깨서 calculate_factor_stats_batch 의 shift(1) lag 이
+        # 조용히 오염됨 -> 시간순 복원. 최신 월 append(통상 경로)는 이미 정렬돼
+        # 있으므로 그대로 둔다 (기존 파일 바이트 보존).
+        if not existing_year.empty and end_dt < existing_year["ddt"].max():
+            updated_year = updated_year.sort_values(
+                ["factorAbbreviation", "ddt"], kind="stable", ignore_index=True
+            )
         save_factor_parquet_by_year(updated_year, out_dir, benchmark, years={affected_year})
 
         # M_RETURN은 단일 파일이므로 전체 업데이트

@@ -306,4 +306,28 @@ def validate_loaded_factor_data(
             "message": f"{dup_count:,} duplicate rows (gvkeyiid + ddt + factorAbbreviation)",
         })
 
+    # [9] 팩터 내 시간순 정렬 검사 — calculate_factor_stats_batch 의 lag(groupby.shift(1))는
+    # (gvkeyiid, factorAbbreviation) 그룹 내 행이 시간순이라는 전제에 의존한다.
+    # 깨지면 전월값 대신 임의 월 값으로 투자하는 조용한 오염이므로 ERROR 로 승격.
+    # 팩터 단위 단조성(저장 규약: ORDER BY factorAbbreviation, ddt)이 그룹 단위를 함의하므로
+    # 싼 검사를 먼저 하고, 위반 팩터에 한해 정밀(그룹 단위) 재검사한다.
+    factor_mono = df.groupby("factorAbbreviation", observed=True)["ddt"].apply(
+        lambda s: s.is_monotonic_increasing
+    )
+    suspects = factor_mono[~factor_mono].index
+    if len(suspects):
+        sub = df[df["factorAbbreviation"].isin(suspects)]
+        group_mono = sub.groupby(["gvkeyiid", "factorAbbreviation"], observed=True)["ddt"].apply(
+            lambda s: s.is_monotonic_increasing
+        )
+        n_bad = int((~group_mono).sum())
+        if n_bad:
+            issues.append({
+                "level": "ERROR", "type": "UNSORTED_LAG_GROUPS",
+                "message": (
+                    f"{n_bad:,} (gvkeyiid, factor) group(s) not in chronological order - "
+                    f"factor lag (shift(1)) would be silently corrupted"
+                ),
+            })
+
     return issues
