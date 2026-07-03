@@ -47,7 +47,7 @@ def aggregate_factor_returns(
     factor_data_list: list,
     factor_abbr_list: list[str],
     backtest_start: str = "2017-12-31",
-    cost_bps: float = 30.0,
+    cost_bps: float = 20.0,
     n_jobs: int = -1,
 ) -> pd.DataFrame:
     """모든 팩터의 롱+숏 수익률을 하나의 행렬로 결합한다 (오케스트레이션 함수).

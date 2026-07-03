@@ -85,7 +85,7 @@
 ## [4] 롱-숏 수익률 + 팩터 유니버스 선정
 
 ### (a) 롱-숏 수익률
-- 각 팩터별 롱/숏 포트폴리오 구성 → 거래비용(30bp) 차감 → 월간 L-S 수익률 행렬 생성
+- 각 팩터별 롱/숏 포트폴리오 구성 → 거래비용(20bp) 차감 → 월간 L-S 수익률 행렬 생성
 - 핵심 함수: `factor_returns.aggregate_factor_returns()`
 
 ### (b) 팩터 유니버스 최종 선정 (200+ -> 클러스터 dedup)
@@ -305,7 +305,7 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | 파라미터 | 값 | 설명 | 사용 모듈 |
 |---------|-----|------|-----------|
 | `style_cap` | 0.25 | 스타일 캡 (프로덕션 규제 요건) | `optimization.py` |
-| `transaction_cost_bps` | 30.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
+| `transaction_cost_bps` | 20.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
 | `top_factor_count` | 50 | rank_score 상위 절단 수 (**`cluster_method=topn`일 때만** 적용; winner_median은 미사용) | `model_portfolio.py` |
 | `factor_ranking_method` | "tstat" | 팩터 랭킹 방식 (`shrunk_tstat` / `tstat` / `cagr`) | `model_portfolio.py`, `walk_forward_engine.py` (`compute_rank_score` 공유) |
 | `use_cluster_dedup` | True | Hierarchical Clustering 중복 제거 (Sprint 1-B, production 적용) | `model_portfolio.py`, `walk_forward_engine.py` |

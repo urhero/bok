@@ -238,18 +238,16 @@ def _apply_rules_and_aggregate(
 def _resolve_backtest_cost_bps(pp: dict) -> float:
     """factor-level 백테스트의 유효 매매비용(bps)을 계산한다.
 
-    factor-level 백테스트는 포트 수익을 '팩터수익 x 비중' 으로 계산하므로, 팩터 간
-    비중변경(inter-factor rebalancing)으로 실제 발생하는 종목 매매비용을 직접 잡지
-    못한다 (팩터 내부 종목 회전 비용만 factor return 에 반영됨). 이를 보정하려고
-    종목 매매비용(transaction_cost_bps)에 backtest_cost_multiplier(기본 2.0 -> 60bp)를
-    곱해 '총 비용'을 근사한다.
+    팩터별 전액 계상은 교차 팩터 netting(실거래는 MP 합산 후 월 1회 매매)을 무시해
+    비용을 과대평가한다. MP-level 실측 netting ratio = 0.574 (실제 종목매매비용 /
+    팩터별 전액계상 비용, docs/experiments/mp_level_cost_20260703.md) -> 기본 배수
+    0.6 으로 근사 (20bp x 0.6 = 12bp). 상세는 config.py 주석 참조.
 
-    - 정확한 종목단 비용이 아니라 보수적 근사값이다 (종목 overlap 무시 -> 약간 과대계상 가능).
     - 배수는 config PIPELINE_PARAMS['backtest_cost_multiplier'] 로 조정한다 (figure 관리).
     - 운영 mp 파이프라인에는 적용되지 않는다 (이 함수는 백테스트 엔진 전용).
     """
-    base = float(pp.get("transaction_cost_bps", 30.0))
-    mult = float(pp.get("backtest_cost_multiplier", 2.0))
+    base = float(pp.get("transaction_cost_bps", 20.0))
+    mult = float(pp.get("backtest_cost_multiplier", 0.6))
     return base * mult
 
 

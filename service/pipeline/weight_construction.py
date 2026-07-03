@@ -207,7 +207,7 @@ def construct_long_short_df(
 def calculate_vectorized_return(
     portfolio_data_df: pd.DataFrame,
     factor_abbr: str,
-    cost_bps: float = 30.0,
+    cost_bps: float = 20.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """포트폴리오의 총수익률·순수익률·거래비용을 벡터 연산으로 계산한다.
 
@@ -216,7 +216,7 @@ def calculate_vectorized_return(
     Args:
         portfolio_data_df: 롱 또는 숏 포트폴리오 (construct_long_short_df 결과)
         factor_abbr: 팩터 약어 (컬럼명으로 사용)
-        cost_bps: 거래비용 (basis points, 기본 30bp = 0.30%)
+        cost_bps: 거래비용 (basis points, 기본 20bp = 0.20%)
 
     Returns:
         (gross_return_df, net_return_df, trading_cost_df) 튜플
@@ -259,7 +259,15 @@ def calculate_vectorized_return(
     w_pre = weighted_growth.div(denom, axis=0)
 
     rebal_in_r = r.index.intersection(turnover_weight_df.index)
-    turnover = 1 * (w.shift(-1).loc[rebal_in_r] - w_pre.loc[rebal_in_r]).abs().sum(axis=1)
+    # 편입 매수/편출 매도 포함: 미보유 월(NaN) 비중을 0으로 간주해 |w_next - w_pre|
+    # 전액을 턴오버로 계상한다. (구 버전은 NaN 차감이 합산에서 빠져 연속 보유 종목의
+    # 비중 변화만 계상 -> 비용 과소, 고회전 팩터가 랭킹에서 과대평가되는 편향)
+    turnover = (
+        w.shift(-1).loc[rebal_in_r].fillna(0.0) - w_pre.loc[rebal_in_r].fillna(0.0)
+    ).abs().sum(axis=1)
+    if len(turnover) > 0:
+        # 마지막 월은 다음 목표 비중이 없음(청산 아님) -> 비용 0 (기존 동작 유지)
+        turnover.iloc[-1] = 0.0
     turnover = turnover.reindex(r.index).fillna(0)
     trading_friction = (cost_bps / 1e4) * turnover
 

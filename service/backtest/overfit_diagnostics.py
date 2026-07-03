@@ -89,11 +89,23 @@ def calc_funnel_value_add(walk_forward_result: WalkForwardResult) -> dict[str, A
         )
     elif cagr_b > cagr_cew:
         pattern = "CONSTRAINT_DRAG"
+        # C vs A 는 이 분기에서 보장되지 않으므로 실제 값으로 검증해 표기한다
+        # (B > A 는 첫 분기 탈락으로 보장됨).
+        if cagr_cew > cagr_a:
+            cew_vs_all = f"> A(EW_All)={cagr_a:.4%}"
+            tail = (
+                f"과적합이 아니라 제약-리스크 트레이드오프: 수익 일부를 내주는 대신 "
+                f"스타일 집중도/변동성/MDD를 낮춘다. 규제 요건이면 의도된 비용."
+            )
+        else:
+            cew_vs_all = f"<= A(EW_All)={cagr_a:.4%}"
+            tail = (
+                f"주의: 제약 비용이 필터링 가치를 전부 잠식해 전체 funnel 의 "
+                f"CAGR 순가치가 없음 (EW_All 이하). style_cap 수준 재검토 필요."
+            )
         interpretation = (
-            f"B(EW_Top50)={cagr_b:.4%} > C(Constrained EW)={cagr_cew:.4%} > A(EW_All)={cagr_a:.4%} "
-            f"-> style_cap(결정론적 제약, 학습 가중치 아님)이 OOS CAGR을 깎음. "
-            f"과적합이 아니라 제약-리스크 트레이드오프: 수익 일부를 내주는 대신 "
-            f"스타일 집중도/변동성/MDD를 낮춘다. 규제 요건이면 의도된 비용."
+            f"B(EW_Top50)={cagr_b:.4%} > C(Constrained EW)={cagr_cew:.4%} {cew_vs_all} "
+            f"-> style_cap(결정론적 제약, 학습 가중치 아님)이 OOS CAGR을 깎음. {tail}"
         )
     else:
         pattern = "NORMAL"
@@ -504,10 +516,10 @@ def generate_overfit_report(walk_forward_result: WalkForwardResult, full_period_
             f"Funnel Value-Add Test(단계별 가치 창출)를 가장 먼저 확인할 것."
         ),
         "limitation": (
-            "본 백테스트는 factor-level('팩터수익 x 비중')에서 수행되어 팩터 간 비중변경"
-            "(inter-factor rebalancing) 매매비용을 직접 잡지 못한다. 이를 보정하기 위해 "
-            "종목 매매비용의 2배(기본 60bp, config backtest_cost_multiplier)를 적용해 총 "
-            "비용을 근사한다. 정확한 종목단 비용은 아니므로 보수성은 해당 figure 로 조정한다."
+            "본 백테스트는 factor-level('팩터수익 x 비중')에서 수행된다. 팩터별 전액 "
+            "계상은 교차 팩터 netting 을 무시해 비용 과대 -> MP-level 실측 "
+            "(실제 종목매매비용/팩터별 전액계상 = 0.574) 근거로 배수 0.6 적용 "
+            "(config backtest_cost_multiplier, docs/experiments/mp_level_cost_20260703.md)."
         ),
     }
 

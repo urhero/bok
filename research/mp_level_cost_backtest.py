@@ -1,0 +1,337 @@
+# -*- coding: utf-8 -*-
+"""MP-level(종목단) 비용 백테스트 — factor-level 비용 근사의 결정판 검증 (2026-07).
+
+walk_forward_engine.run() 의 Tier 1/2 결정(규칙 학습/선정/가중치)을 그대로 재현하되,
+Tier 3 에서 종목 수준 MP 비중을 팩터 합산(교차 팩터 netting 반영)하고
+실제 MP 매매 턴오버에 종목비용(config transaction_cost_bps)을 물린 순수익률을 산출한다.
+
+factor-level 백테스트와의 차이:
+  - factor-level: 각 팩터가 자기 편입/편출 매매를 전액 부담 (netting 무시 -> 비용 과대)
+  - MP-level:     같은 종목의 롱/숏이 팩터 간 상쇄된 뒤의 '실제 트레이드'에만 비용
+
+산출 (scratchpad 또는 --out 경로):
+  - mp_level_cost_backtest.csv: 월별 cew(factor-level) / gross / cost_stock /
+    net_stock / cost_factor_level / turnover_oneway
+  - 콘솔 요약: 성과 비교 + netting ratio (cost_stock / cost_factor_level)
+
+parity: cew_return 은 canonical output/walk_forward_results.csv 와 일치해야 한다
+(동일 결정 재현 검증). --test 는 test_data.csv 로 엔진과 in-process 비교.
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from joblib import Parallel, delayed
+
+from config import PARAM, PIPELINE_PARAMS
+from service.backtest.data_slicer import get_oos_dates
+from service.backtest.walk_forward_engine import (
+    MIN_REQUIRED_FACTORS,
+    WalkForwardEngine,
+    _resolve_backtest_cost_bps,
+    _run_rule_learning,
+    _run_weight_optimization,
+    deploy_weights,
+)
+from service.pipeline.factor_analysis import ANALYZE_COLS, calculate_factor_stats_batch
+from service.pipeline.model_portfolio import DATA_DIR, ModelPortfolioPipeline
+from service.pipeline.weight_construction import (
+    calculate_vectorized_return,
+    construct_long_short_df,
+)
+
+
+def _factor_series(data, abbr, backtest_start, cost_bps):
+    """단일 팩터 (net, cost) 시리즈 — aggregate_factor_returns 와 동일 절차 + cost 보존."""
+    long_df, short_df = construct_long_short_df(data, backtest_start=backtest_start)
+    _, net_l, cost_l = calculate_vectorized_return(long_df, abbr, cost_bps=cost_bps)
+    _, net_s, cost_s = calculate_vectorized_return(short_df, abbr, cost_bps=cost_bps)
+    return (net_l + net_s)[abbr], (cost_l + cost_s)[abbr]
+
+
+def apply_rules_keep_frames(factor_stats_full, factor_abbr_list, rule_bundle, pp):
+    """_apply_rules_and_aggregate 재현 + 종목 프레임과 팩터별 비용 시리즈 보존.
+
+    Returns:
+        (net_df, cost_df, frames): net_df 는 엔진의 precomputed_ret_df 와 동일해야 함.
+    """
+    abbr_to_idx = {a: i for i, a in enumerate(factor_abbr_list)}
+    valid_abbrs, valid_frames = [], []
+    for abbr in rule_bundle["kept_abbrs"]:
+        i = abbr_to_idx.get(abbr)
+        if i is None:
+            continue
+        stats = factor_stats_full[i]
+        if stats[0] is None:
+            continue
+        raw_df = stats[3]
+        secs = rule_bundle["dropped_sectors"].get(abbr, [])
+        raw_clean = raw_df[~raw_df["sec"].isin(secs)].copy() if secs else raw_df.copy()
+        if raw_clean.empty:
+            continue
+        labels = rule_bundle["label_rules"].get(abbr, {})
+        if not labels:
+            continue
+        raw_clean["label"] = raw_clean["quantile"].map(labels)
+        merged = raw_clean.dropna(subset=["label"])
+        if merged.empty:
+            continue
+        if not ((merged["label"] == 1).any() and (merged["label"] == -1).any()):
+            continue
+        valid_abbrs.append(abbr)
+        valid_frames.append(merged)
+
+    if not valid_abbrs:
+        return pd.DataFrame(), pd.DataFrame(), {}
+
+    results = Parallel(n_jobs=-1)(
+        delayed(_factor_series)(fr, ab, pp["backtest_start"], pp["transaction_cost_bps"])
+        for fr, ab in zip(valid_frames, valid_abbrs)
+    ) if len(valid_abbrs) > 8 else [
+        _factor_series(fr, ab, pp["backtest_start"], pp["transaction_cost_bps"])
+        for fr, ab in zip(valid_frames, valid_abbrs)
+    ]
+
+    net_df = pd.concat([r[0] for r in results], axis=1)
+    cost_df = pd.concat([r[1] for r in results], axis=1)
+    keep = net_df.columns[~net_df.isna().any()]
+    net_df, cost_df = net_df[keep], cost_df[keep]
+    frames = {ab: fr for ab, fr in zip(valid_abbrs, valid_frames) if ab in set(keep)}
+    return net_df, cost_df, frames
+
+
+def stock_weights_at(frames, w_dep, t, backtest_start_ts):
+    """월 t 의 MP 종목 비중과 종목 수익률 맵을 만든다 (production 구성 로직과 동일).
+
+    각 팩터: L 종목 +w_f/n_L, S 종목 -w_f/n_S -> 종목 단위 합산 (netting).
+    """
+    parts = []
+    for f, wf in w_dep.items():
+        fr = frames.get(f)
+        if fr is None:
+            continue
+        rows = fr[(fr["ddt"] == t) & (fr["label"] != 0)]
+        if rows.empty or t < backtest_start_ts:
+            continue
+        cnt = rows.groupby("label")["label"].transform("count")
+        part = pd.DataFrame({
+            "gvkeyiid": rows["gvkeyiid"].to_numpy(),
+            "w": (rows["label"] / cnt * wf).to_numpy(),
+            "r": rows["M_RETURN"].to_numpy(),
+        })
+        parts.append(part)
+    if not parts:
+        return pd.Series(dtype=float), pd.Series(dtype=float)
+    allp = pd.concat(parts, ignore_index=True)
+    g = allp.groupby("gvkeyiid", observed=True)
+    w = g["w"].sum()
+    r = g["r"].first()
+    return w.sort_index(), r
+
+
+def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None = None,
+        out_suffix: str = "") -> pd.DataFrame:
+    """selection_cost_bps: factor-level(선정 입력) 비용 오버라이드.
+    None 이면 엔진과 동일 (transaction_cost_bps x multiplier).
+    MP-level 실비용(cost_stock)은 항상 base transaction_cost_bps 를 쓴다 —
+    netted 실거래에는 multiplier(netting 근사)를 다시 곱하면 이중 할인.
+    """
+    t0 = time.time()
+    min_is = 4 if test_file else 36
+    factor_rebal, weight_rebal = 6, 3
+    hyst = float(PIPELINE_PARAMS.get("selection_hysteresis", 0.0))
+
+    pp = dict(PIPELINE_PARAMS)
+    pp["top_factor_count"] = 50
+    if pp["optimization_mode"] == "hardcoded":
+        pp["optimization_mode"] = "equal_weight"
+    mp_cost_bps = float(pp["transaction_cost_bps"])  # 실비용: base (multiplier 미적용)
+    pp["transaction_cost_bps"] = (
+        _resolve_backtest_cost_bps(pp) if selection_cost_bps is None else float(selection_cost_bps)
+    )
+
+    engine = WalkForwardEngine(
+        min_is_months=min_is, factor_rebal_months=factor_rebal,
+        weight_rebal_months=weight_rebal, top_factors=50, selection_hysteresis=hyst,
+    )
+
+    pipeline = ModelPortfolioPipeline(
+        config=PARAM, factor_info_path=DATA_DIR / "factor_info.csv",
+        is_test=bool(test_file), pipeline_params=pp,
+    )
+    raw, mret, _, _ = pipeline._load_data(None, None, test_file)
+    all_dates = sorted(raw["ddt"].unique())
+    oos_dates = get_oos_dates(all_dates, min_is)
+
+    meta_full, merged_full, abbrs_full, orders_full = pipeline._prepare_metadata(raw, mret)
+    slim = merged_full[[c for c in ANALYZE_COLS if c in merged_full.columns]]
+    stats_full = calculate_factor_stats_batch(
+        slim, abbrs_full, orders_full, test_mode=bool(test_file),
+        min_sector_stocks=pp["min_sector_stocks"],
+    )
+
+    backtest_start_ts = pd.Timestamp(pp["backtest_start"])
+
+    cached_rule_bundle = None
+    net_full = cost_full = None
+    frames: dict = {}
+    cached_weights = None
+    cached_selected = None
+    prev_w = prev_r = None
+    records = []
+
+    for i, t in enumerate(oos_dates):
+        is_end = all_dates[min_is + i - 1]
+        is_rule_rebal = False
+
+        # -- Tier 1 (엔진과 동일) --
+        if cached_rule_bundle is None or i % factor_rebal == 0:
+            is_rule_rebal = True
+            merged_is = merged_full[merged_full["ddt"] <= pd.Timestamp(is_end)]
+            prepared = (meta_full, merged_is, abbrs_full, orders_full)
+            cached_rule_bundle = _run_rule_learning(None, None, pipeline, test_file, prepared=prepared)
+            net_full, cost_full, frames = apply_rules_keep_frames(
+                stats_full, abbrs_full, cached_rule_bundle, pp)
+            if net_full.empty:
+                continue
+            net_full.loc[net_full.index[0]] = 0.0
+            net_full = net_full.sort_index()
+            cost_full = cost_full.sort_index()
+
+        if net_full is None or net_full.empty:
+            continue
+
+        # -- Tier 2 (엔진과 동일) --
+        if cached_weights is None or is_rule_rebal or i % weight_rebal == 0:
+            ret_is = net_full[net_full.index <= is_end].copy()
+            if len(ret_is) >= 3:
+                ret_is.iloc[0] = 0.0
+                valid = ret_is.columns[(ret_is == 0).sum() <= pp["max_zero_return_months"]]
+                ret_is = ret_is[valid]
+                if len(ret_is.columns) >= MIN_REQUIRED_FACTORS:
+                    style_map = dict(zip(cached_rule_bundle.get("kept_abbrs", []),
+                                         cached_rule_bundle.get("kept_styles", [])))
+                    selected, meta_top = engine._rank_and_select(ret_is, style_map, pp, cached_selected)
+                    try:
+                        raw_w, _ = _run_weight_optimization(ret_is[selected], meta_top, pp)
+                    except (ValueError, RuntimeError):
+                        raw_w = None
+                    if raw_w is not None:
+                        order = sorted(raw_w)
+                        scale = 1.0 / sum(raw_w[f] for f in order)
+                        cached_weights = {f: raw_w[f] * scale for f in order}
+                        cached_selected = list(raw_w.keys())
+
+        if cached_weights is None or t not in net_full.index:
+            continue
+
+        # -- Tier 3: factor-level cew (parity) + stock-level --
+        avail = sorted(f for f in cached_weights if f in net_full.columns)
+        if not avail:
+            continue
+        w_dep = deploy_weights(cached_weights, avail)
+        cew = sum(net_full.loc[t, f] * w_dep.get(f, 0) for f in avail)
+        cost_fl = sum(cost_full.loc[t, f] * w_dep.get(f, 0) for f in avail)
+
+        w_t, r_t = stock_weights_at(frames, w_dep, t, backtest_start_ts)
+        gross = float((w_t * r_t).sum()) if len(w_t) else 0.0
+
+        if prev_w is not None and len(prev_w) and len(w_t):
+            pr = prev_r.reindex(prev_w.index).fillna(0.0)
+            nav = 1.0 + float((prev_w * pr).sum())
+            drift = prev_w * (1.0 + pr) / (nav if nav > 0 else 1.0)
+            union = w_t.index.union(drift.index)
+            turno = float((w_t.reindex(union).fillna(0.0) - drift.reindex(union).fillna(0.0)).abs().sum())
+        else:
+            turno = 0.0
+        cost_stock = mp_cost_bps / 1e4 * turno
+
+        prev_w, prev_r = w_t, r_t
+        sel_bps = pp["transaction_cost_bps"]
+        records.append({
+            "date": t, "cew_return": cew,
+            "gross_stock": gross, "cost_stock": cost_stock,
+            "net_stock": gross - cost_stock,
+            "cost_factor_level": cost_fl,
+            # netting ratio 용: factor-level 비용을 base bps 스케일로 환산
+            # (trading_cost 는 bps 에 선형이므로 단순 비례 환산 가능)
+            "cost_factor_at_base": cost_fl * (mp_cost_bps / sel_bps) if sel_bps > 0 else np.nan,
+            "turnover_oneway": turno / 2.0,
+        })
+
+    df = pd.DataFrame(records).set_index("date")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = "mp_level_cost_backtest_test" if test_file else "mp_level_cost_backtest"
+    out_path = out_dir / f"{stem}{out_suffix}.csv"
+    df.to_csv(out_path)
+    print(f"saved {out_path} ({len(df)} months, {time.time() - t0:.0f}s)")
+    return df
+
+
+def perf(rets: pd.Series) -> dict:
+    cum = (1 + rets).cumprod()
+    n = len(rets)
+    final = cum.iloc[-1]
+    cagr = -1.0 if final <= 0 else final ** (12 / n) - 1
+    mdd = ((cum - cum.cummax()) / cum.cummax()).min()
+    sharpe = rets.mean() / rets.std() * np.sqrt(12) if rets.std() > 0 else 0.0
+    return {"CAGR": cagr, "MDD": mdd, "Sharpe": sharpe,
+            "Calmar": cagr / abs(mdd) if mdd != 0 else 0.0}
+
+
+def summarize(df: pd.DataFrame, test_file: str | None):
+    print("\n=== 성과 (OOS %d개월) ===" % len(df))
+    for label, col in [("factor-level net (cew parity)", "cew_return"),
+                       ("stock-level gross", "gross_stock"),
+                       ("stock-level net (MP 실비용)", "net_stock")]:
+        p = perf(df[col])
+        print(f"{label:32s} CAGR {p['CAGR']:+.4f}  MDD {p['MDD']:+.4f}  "
+              f"Sharpe {p['Sharpe']:+.3f}  Calmar {p['Calmar']:+.3f}")
+
+    to = df["turnover_oneway"].iloc[1:]  # 첫 달 0 제외
+    print(f"\nMP one-way 턴오버: 평균 {to.mean():.3f}/월 (연 {to.mean()*12:.1f}x)")
+    cs = df["cost_stock"].iloc[1:]
+    cf = df.get("cost_factor_at_base", df["cost_factor_level"]).iloc[1:]
+    print(f"월평균 비용 (동일 bps 기준): stock-level {cs.mean()*1e4:.1f}bp vs factor-level {cf.mean()*1e4:.1f}bp")
+    if cf.mean() > 0:
+        print(f"netting ratio (실비용/팩터별 전액계상) = {cs.mean()/cf.mean():.3f}")
+
+    # parity: canonical walk_forward_results.csv 와 cew 비교
+    if not test_file:
+        canon_path = PROJECT_ROOT / "output" / "walk_forward_results.csv"
+        if canon_path.exists():
+            canon = pd.read_csv(canon_path, parse_dates=["date"]).set_index("date")
+            joined = df[["cew_return"]].join(canon["cew_return"], rsuffix="_canon").dropna()
+            md = (joined["cew_return"] - joined["cew_return_canon"]).abs().max()
+            print(f"\nparity: |cew - canonical| max = {md:.2e} ({len(joined)}개월)")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--test", action="store_true", help="test_data.csv 로 빠른 검증")
+    ap.add_argument("--out", default=None, help="출력 디렉토리 (기본: output/experiments)")
+    ap.add_argument("--selection-cost-bps", type=float, default=None,
+                    help="선정(factor-level) 비용 오버라이드. 0 = gross 선정. "
+                         "기본: 엔진과 동일 (cost x multiplier)")
+    args = ap.parse_args()
+    test_file = "test_data.csv" if args.test else None
+    out_dir = Path(args.out) if args.out else PROJECT_ROOT / "output" / "experiments"
+    suffix = "" if args.selection_cost_bps is None else f"_sel{args.selection_cost_bps:g}bp"
+    df = run(test_file, out_dir, selection_cost_bps=args.selection_cost_bps, out_suffix=suffix)
+    # parity 는 선정 비용이 엔진 기본과 같을 때만 의미 있음
+    summarize(df, test_file if args.selection_cost_bps is None else "skip-parity")
+
+
+if __name__ == "__main__":
+    import logging
+    logging.basicConfig(level=logging.WARNING)
+    main()

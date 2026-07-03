@@ -229,6 +229,24 @@ class TestCalculateVectorizedReturnRelationships:
         _, _, cost = calculate_vectorized_return(multi_date_portfolio, "TestFactor")
         assert (cost.values >= -1e-10).all()
 
+    def test_entry_exit_trades_are_costed(self):
+        """편입 매수/편출 매도도 턴오버 비용에 포함된다 (2026-07 비용 과소계상 수정).
+
+        수익률 0으로 고정해 drift 를 제거하면 1월 턴오버는
+        |0.5-0.5|(A 유지) + |0-0.5|(B 편출 매도) + |0.5-0|(C 편입 매수) = 1.0.
+        """
+        df = pd.DataFrame({
+            "ddt": pd.to_datetime(["2024-01-31", "2024-01-31", "2024-02-29", "2024-02-29"]),
+            "gvkeyiid": ["A", "B", "A", "C"],  # 2월에 B 편출, C 편입
+            "M_RETURN": [0.0, 0.0, 0.0, 0.0],
+            "return_weight": [0.5, 0.5, 0.5, 0.5],
+            "turnover_weight": [0.5, 0.5, 0.5, 0.5],
+        })
+        _, _, cost = calculate_vectorized_return(df, "F", cost_bps=30.0)
+        assert cost.iloc[0, 0] == pytest.approx(30.0 / 1e4 * 1.0)
+        # 마지막 월은 다음 목표 비중이 없음(청산 아님) -> 비용 0
+        assert cost.iloc[1, 0] == 0.0
+
     def test_custom_cost_bps(self, multi_date_portfolio):
         """cost_bps=0이면 gross == net인지 확인."""
         gross, net, cost = calculate_vectorized_return(

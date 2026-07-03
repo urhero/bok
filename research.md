@@ -89,7 +89,7 @@ main.py (CLI)
      │         ├─ load_factor_parquet(validate=True)      │
      │         │    ├─ 연도별 분할 → 자동 병합 (우선)     │
      │         │    ├─ 단일 파일 fallback                │
-     │         │    └─ 9가지 무결성 검증                  │
+     │         │    └─ 10가지 무결성 검증                 │
      │         ├─ Legacy: raw parquet + M_RETURN 분리     │
      │         ├─ Test: CSV 로드 + fld 파싱              │
      │         ├─ factor_info.csv merge (factorOrder)     │
@@ -115,7 +115,7 @@ main.py (CLI)
      │         │                                         │
      │         ├─ aggregate_factor_returns()              │
      │         │    └─ per-factor: L/S 분리 →             │
-     │         │       vectorized return (30bp cost)      │
+     │         │       vectorized return (20bp cost)      │
      │         │       → 롱-숏 수익률 합산                 │
      │         ├─ rank_score(t-stat) + 클러스터 dedup 선정│
      │         └─ meta_data.csv 저장                      │
@@ -141,7 +141,7 @@ main.py (CLI)
 
 | 경로 | 조건 | 특징 |
 |------|------|------|
-| **연도별 분할** | `{benchmark}_factor_YYYY.parquet` 파일 존재 | **최적 경로.** `load_factor_parquet()`이 자동 병합. merge 불필요, categorical→object 변환만 수행. `validate=True`로 9가지 무결성 검증 |
+| **연도별 분할** | `{benchmark}_factor_YYYY.parquet` 파일 존재 | **최적 경로.** `load_factor_parquet()`이 자동 병합. merge 불필요, categorical→object 변환만 수행. `validate=True`로 10가지 무결성 검증 (시간순 정렬 `UNSORTED_LAG_GROUPS` 포함 — lag `shift(1)` 전제 보호) |
 | 단일 파일 (fallback) | 분할 파일 없고 `{benchmark}_factor.parquet` 존재 | 레거시 호환. 동일 `load_factor_parquet()` 함수가 자동 fallback |
 | Legacy raw | 위 둘 다 없고 `{benchmark}_{start}_{end}.parquet` 존재 | raw parquet에서 M_RETURN 분리 필요 |
 | Test | `test_file` 인자 전달 시 | CSV 로드, `fld` 컬럼에서 regex로 factorAbbreviation 파싱 |
@@ -254,8 +254,8 @@ per-factor:
 **calculate_vectorized_return 핵심 로직**:
 - `pivot_table`으로 (날짜 × 종목) 행렬 생성
 - 리밸런싱 블록별 누적 성장률 계산 (`cumulative_growth_block`)
-- 턴오버 = abs(새 비중 - 이전 비중의 drift)
-- 거래비용 = 30bp × 턴오버
+- 턴오버 = abs(새 비중 - 이전 비중의 drift), 편입 매수/편출 매도 포함 (미보유 월 비중 = 0 처리; 2026-07 수정 — 구 버전은 연속 보유 종목만 계상해 비용 과소)
+- 거래비용 = 20bp × 턴오버 (마지막 월은 다음 목표 비중이 없어 비용 0)
 
 #### [6] optimize_constrained_weights: 비중 결정
 
@@ -319,7 +319,7 @@ SQL Server -> `_build_pipeline_ready()` (M_RETURN 분리, factor_info merge, cat
 
 **두 가지 모드:**
 - **전체 모드** (기본): 기존 parquet을 `data_backup/`에 이동 후 전체 재다운로드
-- **증분 모드** (`--incremental`): `end_date` 월만 다운로드, 해당 연도 파일만 갱신 (~20MB I/O)
+- **증분 모드** (`--incremental`): `end_date` 월만 다운로드, 해당 연도 파일만 갱신 (~20MB I/O). 과거 월 backfill(기존 최신 월보다 이전 월 재다운로드) 시에는 `(factorAbbreviation, ddt)` 로 재정렬해 저장 — append 순서가 깨지면 5분위 분석의 lag(`shift(1)`)가 조용히 오염되기 때문 (로드 시 `UNSORTED_LAG_GROUPS` 검증으로도 방어)
 
 **저장 후 검증** (`download_validation.validate_parquet_coverage`): 빈 월, 팩터/종목 수 급감, M_RETURN 정합성 등 5가지
 
@@ -416,9 +416,9 @@ main.py
 - **위치**: `config.py:PIPELINE_PARAMS["style_cap"]` → `optimization.py` 파라미터로 전달
 - **이유**: 프로덕션 규제 요건. 단일 스타일 집중 위험 통제
 
-#### 4.1.4 거래비용 30bp
+#### 4.1.4 거래비용 20bp
 - **위치**: `config.py:PIPELINE_PARAMS["transaction_cost_bps"]` → `factor_returns.aggregate_factor_returns()` → `weight_construction.py` 파라미터로 전달
-- **이유**: 중국 주식 시장 실거래 비용 추정치. 변경 시 모든 팩터의 순수익률과 순위가 변동
+- **이유**: 중국 주식 시장 실거래 비용 추정치 (2026-07 30bp -> 20bp). 변경 시 모든 팩터의 순수익률과 순위가 변동. 백테스트는 여기에 `backtest_cost_multiplier`(0.6)를 곱해 netting 반영
 
 #### 4.1.5 sort_order(factorOrder) 방향 통일
 - **위치**: `factor_analysis.py` batch [4] 단계
@@ -505,7 +505,7 @@ def construct_long_short_df(labeled_data_df, backtest_start="2017-12-31"):
 | `factor_analysis.filter_and_label_factors` | ~8 | 섹터 제거, L/N/S 라벨, 엣지케이스 | - |
 | `weight_construction` | ~10 | L/S 분리, 동일가중, 수익률 계산 | - |
 | `model_portfolio` | E2E 16 | 전체 파이프라인 | 개별 private 메서드 단위 테스트 없음 |
-| `parquet_io` | 25 | save/load roundtrip, 연도별 분할, fallback, 9가지 검증 | - |
+| `parquet_io` | 27 | save/load roundtrip, 연도별 분할, fallback, 10가지 검증 | - |
 | `download_factors` | 0 | - | 전체 미커버 (DB 의존) |
 | `report_generator` | 0 | - | 전체 미커버 |
 
@@ -546,7 +546,7 @@ rank_total = rank_CAGR × 0.6 + rank_MDD × 0.4
 ### 거래비용
 ```
 trading_cost = (cost_bps / 10000) × turnover
-turnover = |new_weight - drifted_weight|
+turnover = sum |new_weight - drifted_weight|   (편입/편출 포함: 미보유 = 0 으로 간주)
 ```
 
 ### 스타일 캡 재분배
@@ -567,7 +567,8 @@ fitted = shrunk + redistributed
 기존 파이프라인([1]~[7])의 내부 코드를 **한 줄도 수정하지 않고**, 외부에서 감싸는(wrapper) 방식으로 구현한다.
 
 - **Factor-Level Backtest**: 종목(stock-level) MP까지 내려가지 않고, 팩터 수익률(net-of-cost) × 팩터 가중치로 포트폴리오 수익률을 산출
-- **거래비용 (중요)**: `calculate_vectorized_return()`이 팩터 내부 종목 리밸런싱 비용만 차감하고, 팩터 간 비중변경(inter-factor) 매매비용은 '팩터수익 × 비중' 구조상 직접 못 잡는다. 이를 보정하려고 **백테스트 전용으로 종목비용의 2배(기본 60bp)** 를 적용한다 — `config.PIPELINE_PARAMS['backtest_cost_multiplier']`(기본 2.0) × `transaction_cost_bps`(30bp). 적용 지점: `walk_forward_engine._resolve_backtest_cost_bps()` → `run()`의 `pp`. 정확한 종목단 비용이 아닌 보수적 근사이며 이 figure 로 조정. **mp(운영)는 영향 없음**(30bp 유지)
+- **거래비용 (중요)**: `calculate_vectorized_return()`이 팩터 내부 매매(연속 보유 종목 비중 변화 + 편입 매수/편출 매도, 2026-07 수정)를 전액 차감한다. 팩터 간 비중변경(inter-factor) 매매는 '팩터수익 × 비중' 구조상 미계상(과소 방향), 반대로 실거래는 MP 합산 후 1회 매매라 교차 팩터 netting 을 무시하는 팩터별 전액 계상은 과대 방향 — MP-level 실측 netting ratio 0.574 근거로 `backtest_cost_multiplier` 기본 **0.6** (30bp×0.6=18bp; 구 2.0 은 편입/편출 누락 보정치, 1.0 은 netting 무시 과대). 적용 지점: `walk_forward_engine._resolve_backtest_cost_bps()` → `run()`의 `pp`. **mp(운영)는 multiplier 영향 없음**(30bp; 단 턴오버 수정은 운영 factor return/랭킹에도 적용됨)
+- **MP-level 실비용 (결정판)**: `research/mp_level_cost_backtest.py`가 종목단 MP 비중을 합산해 실제 매매 턴오버(연 ~2.8x one-way)에 종목비용(transaction_cost_bps)을 부과한 수치를 제공 — **netting ratio 0.574** (실비용 = 팩터별 전액 계상의 ~57%; scale-invariant, bp 수준 무관). 상세: [docs/experiments/mp_level_cost_20260703.md](docs/experiments/mp_level_cost_20260703.md)
 - **equal_weight 모드**: 백테스트 전체에서 equal_weight 모드 사용. hardcoded 모드는 프로덕션 전용
 
 ### 6.2 계층적 리밸런싱 (Tiered Rebalancing)

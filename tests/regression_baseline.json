@@ -1,10 +1,10 @@
 {
-  "_description": "Regression baseline from test_data.csv pipeline run (factor_ranking_method=tstat)",
-  "_generated": "2026-06-12",
+  "_description": "Regression baseline from test_data.csv pipeline run (factor_ranking_method=tstat, entry/exit turnover costed, transaction_cost_bps=20)",
+  "_generated": "2026-07-03",
   "_tolerance": "CAGR within 0.5pp; top-3 factor abbreviations must match",
   "top_factor": {
     "abbreviation": "InvToAsset",
-    "cagr": 0.4680899778071521
+    "cagr": 0.4520073319485584
   },
   "top5_factors": [
     "InvToAsset",
@@ -13,10 +13,10 @@
     "BP"
   ],
   "top5_cagrs": [
-    0.4680899778071521,
-    1.017770890613435,
-    0.10438518761510185,
-    -0.04967777955355468
+    0.4520073319485584,
+    1.0042321702549182,
+    0.1084922083732353,
+    -0.0486018600850579
   ],
   "total_ranked_factors": 4,
   "cagr_tolerance": 0.005

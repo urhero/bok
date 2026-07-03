@@ -61,9 +61,9 @@ def test_override_can_change_top_factor_count():
 
 # ── factor-level 백테스트 비용 보정 (_resolve_backtest_cost_bps) ──────────────
 
-def test_backtest_cost_default_doubles_to_60bp():
-    """기본 multiplier 2.0 -> 종목비용 30bp 의 2배 = 60bp."""
-    assert _resolve_backtest_cost_bps({"transaction_cost_bps": 30.0}) == 60.0
+def test_backtest_cost_default_is_18bp():
+    """기본 multiplier 0.6 -> 30bp x 0.6 = 18bp (MP-level 실측 netting ratio 0.574 근사)."""
+    assert _resolve_backtest_cost_bps({"transaction_cost_bps": 30.0}) == 18.0
 
 
 def test_backtest_cost_respects_multiplier():
@@ -76,6 +76,6 @@ def test_backtest_cost_respects_multiplier():
 
 
 def test_config_has_backtest_cost_multiplier():
-    """config 에 figure 가 존재하고 기본 2.0 (60bp 근사)."""
+    """config 에 figure 가 존재하고 기본 0.6 (netting ratio 0.574 실측 근사)."""
     from config import PIPELINE_PARAMS
-    assert PIPELINE_PARAMS.get("backtest_cost_multiplier") == 2.0
+    assert PIPELINE_PARAMS.get("backtest_cost_multiplier") == 0.6
