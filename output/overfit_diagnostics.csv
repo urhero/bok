@@ -1,24 +1,24 @@
 ﻿Category,Metric,Value,Interpretation
-1순위 - Funnel Value-Add,패턴,CONSTRAINT_DRAG,"B(EW_Top50)=2.3587% > C(Constrained EW)=1.7740% > A(EW_All)=0.5749% -> style_cap(결정론적 제약, 학습 가중치 아님)이 OOS CAGR을 깎음. 과적합이 아니라 제약-리스크 트레이드오프: 수익 일부를 내주는 대신 스타일 집중도/변동성/MDD를 낮춘다. 규제 요건이면 의도된 비용."
-1순위 - Funnel Value-Add,EW_All CAGR,0.5749%,전체 유효 팩터 동일가중
-1순위 - Funnel Value-Add,EW_Top50 CAGR,2.3587%,Top-50 후보군 동일가중
-1순위 - Funnel Value-Add,Constrained EW CAGR,1.7740%,Constrained EW (Top-N + style_cap)
-1순위 - Funnel Value-Add,EW_All MDD,-7.7346%,
-1순위 - Funnel Value-Add,EW_Top50 MDD,-11.6260%,
-1순위 - Funnel Value-Add,Constrained EW MDD,-8.8571%,
-2순위 - OOS Percentile,평균 백분위,46.8798%,평균 백분위 = 46.88% (상위 47%) -> 보통 (랜덤과 차이 미미)
-3순위 - Strict Jaccard,Strict Jaccard,0.8955,Strict Jaccard = 0.90 > 0.5 -> 안정적 (핵심 팩터 유지)
-4순위(보조) - Rank Corr,IS-OOS Rank Correlation,0.1378,Rank Corr = 0.14 ~= 0 -> IS 순위와 OOS 순위 무관
-4순위(보조) - Rank Corr,Rank Corr p-value,0.2275,
-5순위(보조) - Deflation,Deflation Ratio,0.3543,Deflation Ratio = 0.35 (0.3~0.6) -> 주의 (참고용)
-OOS 성과 - Constrained EW,CAGR,1.7740%,
-OOS 성과 - Constrained EW,MDD,-8.8571%,
-OOS 성과 - Constrained EW,Sharpe,0.4919,
-OOS 성과 - Constrained EW,Calmar,0.2003,
-OOS 성과 - EW,CAGR,2.3587%,
-OOS 성과 - EW,MDD,-11.6260%,
-OOS 성과 - EW,Sharpe,0.5684,
-Constrained EW vs EW_Top50 비교,Excess CAGR,-0.5847%,
-Constrained EW vs EW_Top50 비교,Win Rate,41.9753%,
-주의사항,경고,,OOS 기간이 162개월(13.5년)이므로 특정 매크로 환경에 편향되었을 수 있음. Funnel Value-Add Test(단계별 가치 창출)를 가장 먼저 확인할 것.
+1순위 - Funnel Value-Add,패턴,CONSTRAINT_DRAG,"B(EW_Top50)=2.5019% > C(Constrained EW)=1.8780% > A(EW_All)=0.6892% -> style_cap(결정론적 제약, 학습 가중치 아님)이 OOS CAGR을 깎음. 과적합이 아니라 제약-리스크 트레이드오프: 수익 일부를 내주는 대신 스타일 집중도/변동성/MDD를 낮춘다. 규제 요건이면 의도된 비용."
+1순위 - Funnel Value-Add,EW_All CAGR,0.6892%,전체 유효 팩터 동일가중
+1순위 - Funnel Value-Add,EW_Top50 CAGR,2.5019%,Top-50 후보군 동일가중
+1순위 - Funnel Value-Add,Constrained EW CAGR,1.8780%,Constrained EW (Top-N + style_cap)
+1순위 - Funnel Value-Add,EW_All MDD,-7.6928%,
+1순위 - Funnel Value-Add,EW_Top50 MDD,-12.3013%,
+1순위 - Funnel Value-Add,Constrained EW MDD,-10.2258%,
+2순위 - OOS Percentile,평균 백분위,46.8295%,평균 백분위 = 46.83% (상위 47%) -> 보통 (랜덤과 차이 미미)
+3순위 - Strict Jaccard,Strict Jaccard,0.8935,Strict Jaccard = 0.89 > 0.5 -> 안정적 (핵심 팩터 유지)
+4순위(보조) - Rank Corr,IS-OOS Rank Correlation,0.1416,Rank Corr = 0.14 ~= 0 -> IS 순위와 OOS 순위 무관
+4순위(보조) - Rank Corr,Rank Corr p-value,0.2417,
+5순위(보조) - Deflation,Deflation Ratio,0.3722,Deflation Ratio = 0.37 (0.3~0.6) -> 주의 (참고용)
+OOS 성과 - Constrained EW,CAGR,1.8780%,
+OOS 성과 - Constrained EW,MDD,-10.2258%,
+OOS 성과 - Constrained EW,Sharpe,0.5161,
+OOS 성과 - Constrained EW,Calmar,0.1837,
+OOS 성과 - EW,CAGR,2.5019%,
+OOS 성과 - EW,MDD,-12.3013%,
+OOS 성과 - EW,Sharpe,0.6010,
+Constrained EW vs EW_Top50 비교,Excess CAGR,-0.6239%,
+Constrained EW vs EW_Top50 비교,Win Rate,41.7178%,
+주의사항,경고,,OOS 기간이 163개월(13.6년)이므로 특정 매크로 환경에 편향되었을 수 있음. Funnel Value-Add Test(단계별 가치 창출)를 가장 먼저 확인할 것.
 주의사항,한계점,,"본 백테스트는 factor-level('팩터수익 x 비중')에서 수행된다. 팩터별 전액 계상은 교차 팩터 netting 을 무시해 비용 과대 -> MP-level 실측 (실제 종목매매비용/팩터별 전액계상 = 0.574) 근거로 배수 0.6 적용 (config backtest_cost_multiplier, docs/experiments/mp_level_cost_20260703.md)."
