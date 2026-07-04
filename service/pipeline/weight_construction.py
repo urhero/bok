@@ -236,6 +236,13 @@ def calculate_vectorized_return(
         | 2024-01-31 | 0.0      |
         | 2024-02-28 | 0.02     |
     """
+    # 빈 포트폴리오 가드: 한쪽(롱 또는 숏) 종목이 0개인 팩터(라벨이 한쪽만 존재)면
+    # pivot 결과에 return_weight 컬럼이 없어 KeyError. 빈 결과를 반환하고 호출부
+    # (_compute_factor_net_return)가 비어있지 않은 쪽만 합산한다.
+    if portfolio_data_df.empty:
+        empty = pd.DataFrame(columns=[factor_abbr], dtype=float)
+        return empty, empty.copy(), empty.copy()
+
     # 단일 pivot으로 3개 값을 한번에 추출
     pivoted = portfolio_data_df.pivot_table(
         index="ddt", columns="gvkeyiid", values=["return_weight", "M_RETURN", "turnover_weight"]

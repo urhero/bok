@@ -281,6 +281,49 @@ class TestFilterAndLabelFactorsMultipleFactors:
         assert kept_idx == [0, 1]
 
 
+class TestFilterAndLabelFactorsValidityGuards:
+    """유효성 가드: 죽은/역전 팩터 탈락 (2026-07, EPSEstDispFY1C 회귀)."""
+
+    def test_nonpositive_recomputed_spread_discards_factor(self, dates_3m):
+        """섹터 필터 후 재계산 Q1-Q5 <= 0 이면 팩터 탈락.
+
+        2026-06 EPSEstDispFY1C 재현: 섹터별 스프레드는 양수(드롭 없음)인데
+        전체 재계산 스프레드가 음수인 비단조 분위 구조. 구 코드는 thresh~=0 으로
+        롱 밴드가 Q5 를 삼켜 롱-only 라벨을 만들었다 -> 이제 탈락해야 함.
+        """
+        # 분위 수익: Q4 최고, Q1 ~= Q5 (Q1-Q5 = -0.0002 < 0), 노이즈 없음(결정적)
+        base = {"Q1": 0.0027, "Q2": 0.0037, "Q3": 0.0050, "Q4": 0.0067, "Q5": 0.0029}
+        rows = []
+        for date in dates_3m:
+            for sec in ["IT", "Health"]:
+                for q, r in base.items():
+                    for j in range(5):
+                        rows.append({
+                            "gvkeyiid": f"GV{sec[:2]}{q}{j}", "ticker": f"{sec[:2]}_{q}_{j}",
+                            "isin": f"KR{sec[:2]}{q}{j:04d}", "ddt": date, "sec": sec,
+                            "country": "KR", "quantile": q, "M_RETURN": r,
+                        })
+        raw = pd.DataFrame(rows)
+        # 섹터별 스프레드는 양수로 세팅 -> 섹터 드롭 없음 (가드가 아니면 라벨링 진행)
+        sector_ret = _make_sector_return_df({
+            "IT": (0.05, 0.03, 0.01, -0.01, -0.03),
+            "Health": (0.05, 0.03, 0.01, -0.01, -0.03),
+        })
+        kept_abbrs, _, _, _, _, _ = filter_and_label_factors(
+            ["DeadFactor"], ["Dead"], ["Style"], [(sector_ret, None, None, raw)],
+        )
+        assert kept_abbrs == [], "재계산 스프레드 <= 0 인 팩터는 탈락해야 함 (롱-only 오염 방지)"
+
+    def test_positive_spread_factor_still_kept_with_both_sides(self, basic_factor_data):
+        """정상(양의 스프레드) 팩터는 가드 영향 없이 양쪽 라벨로 유지."""
+        kept_abbrs, _, _, _, _, filtered_data = filter_and_label_factors(
+            ["FactorA"], ["A"], ["Valuation"], [basic_factor_data],
+        )
+        assert kept_abbrs == ["FactorA"]
+        labels = set(filtered_data[0]["label"].unique())
+        assert 1 in labels and -1 in labels
+
+
 class TestFilterAndLabelFactorsEdgeCases:
     """엣지 케이스 테스트."""
 

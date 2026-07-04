@@ -55,7 +55,12 @@ def _factor_series(data, abbr, backtest_start, cost_bps):
     long_df, short_df = construct_long_short_df(data, backtest_start=backtest_start)
     _, net_l, cost_l = calculate_vectorized_return(long_df, abbr, cost_bps=cost_bps)
     _, net_s, cost_s = calculate_vectorized_return(short_df, abbr, cost_bps=cost_bps)
-    return (net_l + net_s)[abbr], (cost_l + cost_s)[abbr]
+    # 한쪽 비면(롱-only/숏-only) 있는 쪽만 (weight_construction 가드와 동일 처리)
+    nets = [s for s in (net_l, net_s) if not s.empty]
+    costs = [s for s in (cost_l, cost_s) if not s.empty]
+    net = (net_l + net_s) if len(nets) == 2 else (nets[0] if nets else pd.DataFrame(columns=[abbr]))
+    cost = (cost_l + cost_s) if len(costs) == 2 else (costs[0] if costs else pd.DataFrame(columns=[abbr]))
+    return net[abbr], cost[abbr]
 
 
 def apply_rules_keep_frames(factor_stats_full, factor_abbr_list, rule_bundle, pp):

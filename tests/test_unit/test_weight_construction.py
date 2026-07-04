@@ -209,6 +209,17 @@ class TestCalculateVectorizedReturnBasic:
         assert "SalesAcc" in net.columns
         assert "SalesAcc" in cost.columns
 
+    def test_empty_portfolio_returns_empty_not_keyerror(self):
+        """빈 포트폴리오(롱-only/숏-only 팩터의 빈 쪽)는 KeyError 대신 빈 결과.
+
+        construct_long_short_df 가 한쪽 종목 0개를 반환하면 pivot 에 return_weight
+        컬럼이 없어 과거 KeyError 로 전체 mp 가 죽었다(2026-06 EPSEstDispFY1C).
+        """
+        empty = pd.DataFrame(columns=["ddt", "gvkeyiid", "M_RETURN", "return_weight", "turnover_weight"])
+        gross, net, cost = calculate_vectorized_return(empty, "F1")
+        assert list(gross.columns) == ["F1"] and gross.empty
+        assert net.empty and cost.empty
+
     def test_first_row_is_zero(self, multi_date_portfolio):
         """첫 번째 행의 gross return이 0인지 확인."""
         gross, _, _ = calculate_vectorized_return(multi_date_portfolio, "TestFactor")

@@ -40,6 +40,13 @@ def _compute_factor_net_return(
     long_df, short_df = construct_long_short_df(data, backtest_start=backtest_start)
     _, net_long, _ = calculate_vectorized_return(long_df, abbr, cost_bps=cost_bps)
     _, net_short, _ = calculate_vectorized_return(short_df, abbr, cost_bps=cost_bps)
+    # 한쪽이 비면(롱-only/숏-only 팩터, 예: 라벨에 숏 분위 없음) 있는 쪽만 사용.
+    # 둘 다 있으면 기존 동작(net_long + net_short) 그대로 보존(byte-identical).
+    sides = [s for s in (net_long, net_short) if not s.empty]
+    if not sides:
+        return pd.DataFrame(columns=[abbr], dtype=float)
+    if len(sides) == 1:
+        return sides[0]
     return net_long + net_short
 
 

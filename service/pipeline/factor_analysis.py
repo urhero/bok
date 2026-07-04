@@ -96,8 +96,20 @@ def filter_and_label_factors(
         q_ret = raw_clean.groupby(["ddt", "quantile"], observed=False)["M_RETURN"].mean().unstack(fill_value=0)
         q_mean = (np.exp(np.log(1 + q_ret).mean(axis=0)) - 1).to_frame("mean")
 
+        # 유효성 가드: 섹터 필터 후 재계산 스프레드가 양수가 아니면(<=0 또는 NaN)
+        # "Q1이 Q5보다 좋다"는 롱-숏 전제 자체가 IS 에서 깨진 것 -> 팩터 탈락.
+        # (스프레드 ~= 0 이면 thresh ~= 0 이 되어 롱 밴드가 전 분위를 삼키는
+        # degenerate 라벨(예: 2026-06 EPSEstDispFY1C 롱-only)이 나오는 근본 원인.)
+        # spread > 0 이면 Q1=롱, Q5=숏이 수학적으로 보장되므로 별도의 한쪽 라벨
+        # 검사는 불필요하다.
+        spread = q_mean.loc["Q1", "mean"] - q_mean.loc["Q5", "mean"]
+        if not spread > 0:  # NaN 포함 탈락
+            logger.info("Factor %s discarded - non-positive Q1-Q5 spread after sector filter (%.5f)",
+                        factor_abbr_list[idx], spread)
+            continue
+
         # 임계값 기반 L/N/S 라벨 결정
-        thresh = abs(q_mean.loc["Q1", "mean"] - q_mean.loc["Q5", "mean"]) * spread_threshold_pct
+        thresh = spread * spread_threshold_pct
 
         # 롱: Q1부터 내려가며 수익률 > (Q1 - threshold)인 분위
         q_mean["long"] = (q_mean["mean"] > q_mean.loc["Q1", "mean"] - thresh).astype(int).cumprod()
@@ -105,14 +117,6 @@ def filter_and_label_factors(
         q_mean["short"] = (q_mean["mean"] < q_mean.loc["Q5", "mean"] + thresh).astype(int) * -1
         q_mean["short"] = q_mean["short"].abs()[::-1].cumprod()[::-1] * -1
         q_mean["label"] = q_mean["long"] + q_mean["short"]
-
-        # L/S 라벨 분포 검증
-        n_long = (q_mean["label"] == 1).sum()
-        n_short = (q_mean["label"] == -1).sum()
-        if n_short == 0:
-            logger.warning("Factor %s has no short labels - long-only portfolio", factor_abbr_list[idx])
-        if n_long == 0:
-            logger.warning("Factor %s has no long labels", factor_abbr_list[idx])
 
         # 라벨을 종목 데이터에 매핑
         label_map = q_mean["label"].to_dict()

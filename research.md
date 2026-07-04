@@ -202,7 +202,10 @@ to_drop = tmp.loc[tmp["spread"] < 0, "sec"].tolist()
 
 **L/N/S 라벨 결정 (10% 임계값)**:
 ```python
-thresh = abs(Q1_mean - Q5_mean) * 0.10
+spread = Q1_mean - Q5_mean          # 섹터 제거 후 재계산 (기하평균)
+if not spread > 0: 팩터 탈락         # 유효성 가드 (2026-07; NaN 포함)
+
+thresh = spread * 0.10
 
 # 롱 확장: Q1부터 내려가며, 수익률이 (Q1 - thresh) 이상인 연속 분위
 q_mean["long"] = (q_mean["mean"] > Q1_mean - thresh).cumprod()
@@ -215,6 +218,8 @@ q_mean["label"] = q_mean["long"] + q_mean["short"]
 ```
 
 이 로직의 의미: Q1과 Q5 사이 팩터 스프레드의 10%를 허용 범위로 두고, Q1에 가까운 수익률을 보이는 분위도 롱에, Q5에 가까운 분위도 숏에 포함시킨다. 결과적으로 Q1=L, Q2~Q4=일부 L/N/S, Q5=S가 된다.
+
+**유효성 가드 (2026-07, EPSEstDispFY1C 사례)**: 섹터별 스프레드 체크(음수 섹터 제거)만으로는 남은 섹터를 **합산**한 전체 스프레드의 역전을 못 잡는다 (섹터별 양수라도 풀링+기하평균 재계산이 음수 가능). 전체 스프레드가 양수가 아니면(<=0 또는 NaN) "Q1이 Q5보다 좋다"는 전제가 깨진 죽은/역전 팩터이므로 탈락시킨다. 수학적으로 spread > 0 이면 Q1은 항상 롱, Q5는 항상 숏이 보장되므로 이 가드 하나로 한쪽 라벨 소멸(롱-only 시장 베타가 t-stat 랭킹 오염)까지 원천 차단된다. 구 동작(warning 후 유지)은 2026-06 데이터에서 롱-only 팩터가 MP에 선정되는 사고로 폐기.
 
 #### [4] evaluate_universe: 팩터 유니버스 평가 및 선정 (클러스터 dedup)
 
