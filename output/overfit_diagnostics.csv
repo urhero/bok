@@ -1,10 +1,10 @@
 ﻿Category,Metric,Value,Interpretation
-1순위 - Funnel Value-Add,패턴,CONSTRAINT_DRAG,"B(EW_Top50)=2.5019% > C(Constrained EW)=1.8780% > A(EW_All)=0.6892% -> style_cap(결정론적 제약, 학습 가중치 아님)이 OOS CAGR을 깎음. 과적합이 아니라 제약-리스크 트레이드오프: 수익 일부를 내주는 대신 스타일 집중도/변동성/MDD를 낮춘다. 규제 요건이면 의도된 비용."
+1순위 - Funnel Value-Add,패턴,NORMAL,C(Constrained EW)=1.8780% > B(EW_Top50)=1.8163% > A(EW_All)=0.6892% -> 정상: 필터링과 style_cap 제약 모두 가치 창출.
 1순위 - Funnel Value-Add,EW_All CAGR,0.6892%,전체 유효 팩터 동일가중
-1순위 - Funnel Value-Add,EW_Top50 CAGR,2.5019%,Top-50 후보군 동일가중
+1순위 - Funnel Value-Add,EW_Top50 CAGR,1.8163%,Top-50 후보군 동일가중
 1순위 - Funnel Value-Add,Constrained EW CAGR,1.8780%,Constrained EW (Top-N + style_cap)
 1순위 - Funnel Value-Add,EW_All MDD,-7.6928%,
-1순위 - Funnel Value-Add,EW_Top50 MDD,-12.3013%,
+1순위 - Funnel Value-Add,EW_Top50 MDD,-12.8452%,
 1순위 - Funnel Value-Add,Constrained EW MDD,-10.2258%,
 2순위 - OOS Percentile,평균 백분위,46.8295%,평균 백분위 = 46.83% (상위 47%) -> 보통 (랜덤과 차이 미미)
 3순위 - Strict Jaccard,Strict Jaccard,0.8935,Strict Jaccard = 0.89 > 0.5 -> 안정적 (핵심 팩터 유지)
