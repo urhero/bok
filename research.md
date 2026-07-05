@@ -1,6 +1,6 @@
 # BOK 심층 분석 보고서
 
-> 최종 갱신: 2026-04-07
+> 최종 갱신: 2026-07-05
 > 분석 범위: 프로젝트 전체 (13개 프로덕션 모듈, 6개 테스트 모듈, 설정/데이터 파일)
 
 ---
@@ -9,7 +9,7 @@
 
 ### 1.1 목적
 
-BOK은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 Model Portfolio(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중(MP)을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다. 현재 MP는 Top-N 팩터 동일가중에 `style_cap`(기본 25%) 제약을 부가한 **Constrained EW 방식**으로 구성된다 — 공분산/리스크 모델 기반 최적화는 커밋 `8dfb64e`에서 제거됨.
+BOK은 **중국 주식(MXCN1A 벤치마크) 대상 팩터 기반 Model Portfolio(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중(MP)을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다. 현재 MP는 선정 팩터(winner_median 클러스터 dedup, 가변 개수) 동일가중에 `style_cap`(기본 25%) 제약을 부가한 **Constrained EW 방식**으로 구성된다 — 공분산/리스크 모델 기반 최적화는 커밋 `8dfb64e`에서 제거됨.
 
 ### 핵심 Funnel 구조
 
@@ -543,9 +543,12 @@ CAGR = (cumulative_return)^(12/months) - 1
 MDD = min(cumulative / running_max - 1)
 ```
 
-### 복합 랭크 (팩터 선정 + 시뮬레이션 공통)
+### 팩터 랭킹 (meta_data.csv)
 ```
-rank_total = rank_CAGR × 0.6 + rank_MDD × 0.4
+rank_score  = compute_rank_score(monthly_rets, factor_ranking_method)  # 기본 tstat
+rank_total  = rank_score 내림차순 순위
+rank_style  = 스타일 내 rank_score 내림차순 순위
+# (구 Monte Carlo 시절의 rank_CAGR x 0.6 + rank_MDD x 0.4 복합 랭크는 폐기됨)
 ```
 
 ### 거래비용
@@ -554,13 +557,15 @@ trading_cost = (cost_bps / 10000) × turnover
 turnover = sum |new_weight - drifted_weight|   (편입/편출 포함: 미보유 = 0 으로 간주)
 ```
 
-### 스타일 캡 재분배
+### 스타일 캡 재분배 (`optimization._equal_weight_allocation`)
 ```
-excess = max(style_weight - cap, 0)
-shrink = cap / style_weight  (if exceeding)
-room = max(cap - style_weight, 0)  (for under-allocated styles)
-redistributed = excess × (room / total_room)
-fitted = shrunk + redistributed
+repeat (최대 10회):
+    for 각 스타일 s:
+        if style_weight(s) > cap:  w[s 소속 팩터] *= cap / style_weight(s)   # 위반 스타일 비례 축소
+    w /= w.sum()                                                             # 전체 재정규화 (미달 스타일로 자연 재분배)
+    if 전 스타일 <= cap: break
+# 10회 내 미수렴 시 위반 스타일 경고 로그만 남기고 진행
+# n_styles x cap < 100% 면 제약 자체가 infeasible -> 경고 후 위반 상태로 진행
 ```
 
 ---
@@ -572,7 +577,7 @@ fitted = shrunk + redistributed
 기존 파이프라인([1]~[7])의 내부 코드를 **한 줄도 수정하지 않고**, 외부에서 감싸는(wrapper) 방식으로 구현한다.
 
 - **Factor-Level Backtest**: 종목(stock-level) MP까지 내려가지 않고, 팩터 수익률(net-of-cost) × 팩터 가중치로 포트폴리오 수익률을 산출
-- **거래비용 (중요)**: `calculate_vectorized_return()`이 팩터 내부 매매(연속 보유 종목 비중 변화 + 편입 매수/편출 매도, 2026-07 수정)를 전액 차감한다. 팩터 간 비중변경(inter-factor) 매매는 '팩터수익 × 비중' 구조상 미계상(과소 방향), 반대로 실거래는 MP 합산 후 1회 매매라 교차 팩터 netting 을 무시하는 팩터별 전액 계상은 과대 방향 — MP-level 실측 netting ratio 0.574 근거로 `backtest_cost_multiplier` 기본 **0.6** (30bp×0.6=18bp; 구 2.0 은 편입/편출 누락 보정치, 1.0 은 netting 무시 과대). 적용 지점: `walk_forward_engine._resolve_backtest_cost_bps()` → `run()`의 `pp`. **mp(운영)는 multiplier 영향 없음**(30bp; 단 턴오버 수정은 운영 factor return/랭킹에도 적용됨)
+- **거래비용 (중요)**: `calculate_vectorized_return()`이 팩터 내부 매매(연속 보유 종목 비중 변화 + 편입 매수/편출 매도, 2026-07 수정)를 전액 차감한다. 팩터 간 비중변경(inter-factor) 매매는 '팩터수익 × 비중' 구조상 미계상(과소 방향), 반대로 실거래는 MP 합산 후 1회 매매라 교차 팩터 netting 을 무시하는 팩터별 전액 계상은 과대 방향 — MP-level 실측 netting ratio 0.574 근거로 `backtest_cost_multiplier` 기본 **0.6** (20bp×0.6=12bp; 구 2.0 은 편입/편출 누락 보정치, 1.0 은 netting 무시 과대). 적용 지점: `walk_forward_engine._resolve_backtest_cost_bps()` → `run()`의 `pp`. **mp(운영)는 multiplier 영향 없음**(20bp 전액; 단 턴오버 수정은 운영 factor return/랭킹에도 적용됨)
 - **MP-level 실비용 (결정판)**: `research/mp_level_cost_backtest.py`가 종목단 MP 비중을 합산해 실제 매매 턴오버(연 ~2.8x one-way)에 종목비용(transaction_cost_bps)을 부과한 수치를 제공 — **netting ratio 0.574** (실비용 = 팩터별 전액 계상의 ~57%; scale-invariant, bp 수준 무관). 상세: [docs/experiments/mp_level_cost_20260703.md](docs/experiments/mp_level_cost_20260703.md)
 - **equal_weight 모드**: 백테스트 전체에서 equal_weight 모드 사용. hardcoded 모드는 프로덕션 전용
 
@@ -627,7 +632,16 @@ Tier 3 (매월): OOS 수익률 조회
 
 ### 6.4 과적합 진단 3단계 테스트
 
-파이프라인의 2단계 축소(200+ → Top-50 → 최종 weight>0 팩터)가 진짜 가치를 창출했는지 해부한다.
+파이프라인의 축소 funnel(200+ 유효 팩터 → 선정 팩터)이 진짜 가치를 창출했는지 해부한다.
+
+> **EW_Top50 곡선 정의 (2026-07-05 복원)**: `ew_top50_return` = 클러스터 dedup/히스테리시스
+> **이전**의 순수 rank_score 상위 `top_factor_count`(50) 동일가중. 커밋 `8dfb64e`(최적화 제거)
+> 이후 한동안 선정 집합이 그대로 들어가 `ew_return`(선정 EW)과 동일 곡선이 중복 기록됐었고
+> (equal_weight 에선 선정 전원이 weight>0), 2026-07-05 에 pre-dedup Top-N 으로 복원했다.
+> 복원 후 funnel 은 3단계 분해: A→B = t-stat 랭킹 가치, B→선정EW(`ew_return`) =
+> dedup+히스테리시스 가치, 선정EW→C = style_cap 효과.
+> 이때 funnel 패턴 라벨이 CONSTRAINT_DRAG → NORMAL 로 바뀐 것은 B 재정의 때문(전략 무변경).
+> 상세: [proposal_experiments_20260705.md](docs/experiments/proposal_experiments_20260705.md)
 
 **1순위: Funnel Value-Add Test (구간별 가치 창출 검증)**
 
@@ -698,8 +712,10 @@ python main.py backtest <start> <end> [옵션]
   --min-is-months        최소 IS 기간 (기본: 36)
   --factor-rebal-months  Tier 1 리밸런싱 주기 (기본: 6)
   --weight-rebal-months  Tier 2 리밸런싱 주기 (기본: 3)
-  --top-factors          상위 팩터 수 (기본: 50)
+  --top-factors          상위 팩터 수 (기본: 50; cluster_method=topn 일 때만 유효)
   --selection-hysteresis 선정 히스테리시스 margin (미지정 시 config 값)
+  --cluster-method       topn / winner_median (미지정 시 config 값)
+  --style-cap            스타일 합계 상한 (미지정 시 config 0.25; 1.0=캡 해제)
 
 python main.py mp <start> <end> --benchmark
   → MP vs. 동일가중(1/N) 비교 리포트

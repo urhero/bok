@@ -96,6 +96,7 @@ def _run_rule_learning(
         slim_data, factor_abbr_list, orders,
         test_mode=bool(test_file),
         min_sector_stocks=pp["min_sector_stocks"],
+        sector_spread_geometric=bool(pp.get("sector_spread_geometric", False)),
     )
 
     # [3] 섹터 필터링 + L/N/S 라벨링
@@ -104,6 +105,7 @@ def _run_rule_learning(
     kept_abbrs, kept_names, kept_styles, _kept_idx, dropped_sec, filtered_data = filter_and_label_factors(
         factor_abbr_list, factor_name_list, style_name_list, factor_stats,
         spread_threshold_pct=pp["spread_threshold_pct"],
+        sector_drop_tstat=pp.get("sector_drop_tstat"),
     )
 
     # sort_order_map 구성 (팩터별 정렬 방향)
@@ -336,8 +338,9 @@ class WalkForwardEngine:
         if pp["optimization_mode"] == "hardcoded":
             pp["optimization_mode"] = "equal_weight"  # hardcoded는 backtest에서 사용 불가
 
-        # factor-level 백테스트 비용 보정: 종목비용 x backtest_cost_multiplier (기본 2.0 = 60bp).
-        # factor-level 백테스트는 inter-factor 비중변경 매매비용을 직접 못 잡으므로 근사 보정한다.
+        # factor-level 백테스트 비용 보정: 종목비용 x backtest_cost_multiplier (기본 0.6 -> 20bp x 0.6 = 12bp).
+        # 팩터별 전액 계상은 교차 팩터 netting(실거래는 MP 합산 후 월 1회 매매)을 무시해 과대평가
+        # -> MP-level 실측 netting ratio 0.574 로 근사 (_resolve_backtest_cost_bps 참조).
         # 이 pp 가 이후 ModelPortfolioPipeline / aggregate_factor_returns 전체에 적용됨.
         pp["transaction_cost_bps"] = _resolve_backtest_cost_bps(pp)
 
@@ -373,6 +376,7 @@ class WalkForwardEngine:
             slim_full, factor_abbr_list_full, orders_full,
             test_mode=bool(test_file),
             min_sector_stocks=pp["min_sector_stocks"],
+            sector_spread_geometric=bool(pp.get("sector_spread_geometric", False)),
         )
 
         # 2. 캐시 초기화
@@ -443,8 +447,9 @@ class WalkForwardEngine:
                 else:
                     ret_df_is.iloc[0] = 0.0  # 기준점
 
-                    # (ret_df == 0).sum() <= 10 필터
-                    valid = ret_df_is.columns[(ret_df_is == 0).sum() <= pp["max_zero_return_months"]]
+                    # 0 수익률 월 필터 (max_zero_return_frac 지정 시 IS 길이 비례)
+                    from service.pipeline.universe import resolve_zero_cap
+                    valid = ret_df_is.columns[(ret_df_is == 0).sum() <= resolve_zero_cap(pp, len(ret_df_is))]
                     ret_df_is = ret_df_is[valid]
 
                     if len(ret_df_is.columns) < MIN_REQUIRED_FACTORS:
@@ -464,10 +469,13 @@ class WalkForwardEngine:
                                 style_map_full[abbr] = style
 
                         # 팩터 랭킹 + Top-N 선정 (production mp 와 동일 로직 공유)
-                        selected, meta_top = self._rank_and_select(
+                        selected, meta_top, rank_topn = self._rank_and_select(
                             ret_df_is, style_map_full, pp, cached_selected_factors,
                         )
-                        cached_top50_factors = list(selected)
+                        # dedup 이전 순수 Top-N (equal_weight 에선 선정=weight>0 이라
+                        # 선정 집합을 넣으면 EW_Top50 곡선이 EW(선정)와 중복 -> funnel
+                        # 의 "1차 랭킹 필터" 단계가 퇴화한다. 2026-07 복원.
+                        cached_top50_factors = rank_topn
                         ret_df_selected = ret_df_is[selected]
 
                         try:
@@ -525,7 +533,9 @@ class WalkForwardEngine:
         연산 순서를 run() 의 기존 인라인 블록과 동일하게 보존한다(수치 동일성).
 
         Returns:
-            (selected, meta_top): 선정 팩터 리스트와 선정 메타 DataFrame.
+            (selected, meta_top, rank_topn): 선정 팩터 리스트, 선정 메타 DataFrame,
+            클러스터 dedup **이전** 순수 rank_score 상위 top_n 리스트
+            (Funnel Value-Add 의 B 단계 = 1차 랭킹 필터 곡선용).
         """
         months = len(ret_df_is) - 1
         cum = (1 + ret_df_is).cumprod().iloc[-1]
@@ -535,7 +545,8 @@ class WalkForwardEngine:
         monthly_rets = ret_df_is.iloc[1:]  # 첫 행(기준점 0) 제외
 
         # production mp (_evaluate_universe) 와 동일 로직 공유
-        rank_score = compute_rank_score(monthly_rets, ranking_method, style_map_full)
+        rank_score = compute_rank_score(monthly_rets, ranking_method, style_map_full,
+                                        half_life=pp.get("tstat_half_life_months"))
 
         meta_df = pd.DataFrame({
             "factorAbbreviation": ret_df_is.columns,
@@ -551,6 +562,9 @@ class WalkForwardEngine:
         meta_df = meta_df.sort_values("rank_score", ascending=False).reset_index(drop=True)
 
         top_n = min(pp["top_factor_count"], len(meta_df))
+        # dedup/히스테리시스 이전의 순수 rank_score Top-N (진단 곡선 EW_Top50 용).
+        # meta_df 는 rank_score 내림차순 정렬 상태.
+        rank_topn = meta_df["factorAbbreviation"].head(top_n).tolist()
 
         # Sprint 1-B: Hierarchical Clustering 기반 중복 제거
         if pp.get("use_cluster_dedup", False):
@@ -576,15 +590,17 @@ class WalkForwardEngine:
         # 선정 히스테리시스: 직전 보유 팩터를 margin 미만 격차의
         # 챌린저로부터 보호 (노이즈성 교체 churn 절감)
         if self.selection_hysteresis > 0 and incumbents:
+            from service.pipeline.universe import resolve_hysteresis_margin
             score_full = meta_df.set_index("factorAbbreviation")["rank_score"]
             adjusted = apply_selection_hysteresis(
                 list(selected), score_full,
-                set(incumbents), self.selection_hysteresis,
+                set(incumbents),
+                resolve_hysteresis_margin(pp, self.selection_hysteresis, score_full),
             )
             if set(adjusted) != set(selected):
                 selected = adjusted
                 meta_top = meta_df.set_index("factorAbbreviation").loc[selected].reset_index()
-        return selected, meta_top
+        return selected, meta_top, rank_topn
 
     def _assemble_oos_record(self, oos_date, precomputed_ret_df, cached_weights, cached_meta,
                              cached_top50_factors, cached_is_cew_cagr, is_rule_rebal, is_weight_rebal):

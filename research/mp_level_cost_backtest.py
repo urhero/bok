@@ -225,7 +225,7 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
                 if len(ret_is.columns) >= MIN_REQUIRED_FACTORS:
                     style_map = dict(zip(cached_rule_bundle.get("kept_abbrs", []),
                                          cached_rule_bundle.get("kept_styles", [])))
-                    selected, meta_top = engine._rank_and_select(ret_is, style_map, pp, cached_selected)
+                    selected, meta_top, _rank_topn = engine._rank_and_select(ret_is, style_map, pp, cached_selected)
                     try:
                         raw_w, _ = _run_weight_optimization(ret_is[selected], meta_top, pp)
                     except (ValueError, RuntimeError):

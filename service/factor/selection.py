@@ -18,14 +18,35 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def compute_tstat(monthly_rets: pd.DataFrame) -> pd.Series:
-    """기본 t-stat: mean / (std / sqrt(N))."""
+def compute_tstat(monthly_rets: pd.DataFrame, half_life: float | None = None) -> pd.Series:
+    """기본 t-stat: mean / (std / sqrt(N)).
+
+    half_life 지정 시 지수 가중(recency-weighted) t-stat:
+    가중 평균/분산에 Kish 유효표본수 N_eff = (sum w)^2 / sum w^2 를 사용한다.
+    expanding IS 에서 오래된 레짐이 최근과 동일 비중으로 t-stat 을 지배하는
+    문제의 실험 옵션 (pp["tstat_half_life_months"], 기본 None=현행 동일가중).
+    """
     n = len(monthly_rets)
     if n < 2:
         return pd.Series(0.0, index=monthly_rets.columns)
-    std = monthly_rets.std()
-    std_safe = std.where(std > 1e-12, np.nan)
-    t = monthly_rets.mean() / (std_safe / np.sqrt(n))
+    if half_life is None or half_life <= 0:
+        std = monthly_rets.std()
+        std_safe = std.where(std > 1e-12, np.nan)
+        t = monthly_rets.mean() / (std_safe / np.sqrt(n))
+        return t.fillna(0.0)
+
+    # 최신 행이 가중치 1, 과거로 갈수록 0.5^(age/half_life)
+    age = np.arange(n - 1, -1, -1, dtype=float)
+    w = 0.5 ** (age / float(half_life))
+    w_sum = w.sum()
+    n_eff = w_sum**2 / (w**2).sum()
+
+    x = monthly_rets.to_numpy(dtype=float)
+    mean_w = (w[:, None] * x).sum(axis=0) / w_sum
+    var_w = (w[:, None] * (x - mean_w) ** 2).sum(axis=0) / w_sum  # biased; n_eff 로 se 산출
+    std_w = np.sqrt(var_w)
+    se = np.where(std_w > 1e-12, std_w / np.sqrt(n_eff), np.nan)
+    t = pd.Series(mean_w / se, index=monthly_rets.columns)
     return t.fillna(0.0)
 
 
@@ -136,6 +157,7 @@ def compute_rank_score(
     monthly_rets: pd.DataFrame,
     method: str = "cagr",
     style_map: Mapping[str, str] | None = None,
+    half_life: float | None = None,
 ) -> pd.Series:
     """factor_ranking_method 에 따른 팩터 랭킹 점수를 계산한다.
 
@@ -147,6 +169,7 @@ def compute_rank_score(
             기준점 0 행은 제외하고 전달 (ret_df.iloc[1:]).
         method: "tstat" / "shrunk_tstat" / "cagr". 그 외 값은 경고 후 cagr.
         style_map: factorAbbreviation -> styleName (shrunk_tstat 에만 필요).
+        half_life: 지수 가중 half-life (개월). "tstat" 에만 적용, None=동일가중(현행).
 
     Returns:
         팩터별 점수 Series (높을수록 상위).
@@ -154,7 +177,7 @@ def compute_rank_score(
     if method == "shrunk_tstat":
         return compute_shrunk_tstat(monthly_rets, style_map or {})
     if method == "tstat":
-        return compute_tstat(monthly_rets)
+        return compute_tstat(monthly_rets, half_life=half_life)
     if method != "cagr":
         logger.warning("Unknown factor_ranking_method %r - falling back to 'cagr'", method)
 

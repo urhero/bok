@@ -27,8 +27,38 @@ from utils.validation import validate_return_matrix
 logger = logging.getLogger(__name__)
 
 
+def resolve_zero_cap(pipeline_params: dict, n_months: int) -> int:
+    """0 수익률 월 허용 상한을 계산한다.
+
+    max_zero_return_frac 지정 시 IS 길이 비례(round(frac x n_months), 최소 1) —
+    고정 10개월이 IS 36개월(28%)과 190개월(5%)에서 다른 의미가 되는 문제의
+    실험 옵션. None(기본)이면 현행 고정 max_zero_return_months.
+    """
+    frac = pipeline_params.get("max_zero_return_frac")
+    if frac:
+        return max(1, int(round(float(frac) * n_months)))
+    return pipeline_params["max_zero_return_months"]
+
+
+def resolve_hysteresis_margin(pipeline_params: dict, margin: float, scores: pd.Series) -> float:
+    """히스테리시스 margin 을 모드에 따라 해석한다.
+
+    hysteresis_margin_mode="iqr" 이면 margin 을 후보 rank_score IQR 의 배수로
+    해석한다 (t-stat 절대 스케일이 표본 축적에 따라 커져 고정 margin 의 실효
+    보호력이 드리프트하는 문제의 실험 옵션). 기본 "absolute"=현행 절대값.
+    """
+    if pipeline_params.get("hysteresis_margin_mode") == "iqr" and len(scores) > 1:
+        iqr = float(scores.quantile(0.75) - scores.quantile(0.25))
+        if iqr > 0:
+            return margin * iqr
+    return margin
+
+
 def evaluate_universe(kept_abbrs, kept_names, kept_styles, filtered_data, end_date, test_file, pipeline_params):
-    """팩터 유니버스를 평가하고 rank_score(factor_ranking_method) 상위 50개를 선정한다.
+    """팩터 유니버스를 평가하고 rank_score 랭킹 + 클러스터 dedup 으로 팩터를 선정한다.
+
+    cluster_method="winner_median"(기본)이면 고정 Top-N 없이 가변 개수,
+    "topn"이면 rank_score 상위 top_factor_count(50) 절단.
 
     selection_hysteresis > 0 이면 직전 회차 선정 팩터(weight history 의
     factor_styles raw_weight > 0)를 incumbent 로 보호 — 챌린저가 margin
@@ -53,7 +83,7 @@ def evaluate_universe(kept_abbrs, kept_names, kept_styles, filtered_data, end_da
         logger.warning("Duplicate factor columns detected, removing duplicates")
         ret_df = ret_df.loc[:, ~ret_df.columns.duplicated(keep="first")]
 
-    valid = ret_df.columns[(ret_df == 0).sum() <= pipeline_params["max_zero_return_months"]]
+    valid = ret_df.columns[(ret_df == 0).sum() <= resolve_zero_cap(pipeline_params, len(ret_df))]
     ret_df = ret_df[valid]
 
     meta_all = pd.DataFrame({"factorAbbreviation": kept_abbrs, "factorName": kept_names, "styleName": kept_styles})
@@ -82,7 +112,8 @@ def evaluate_universe(kept_abbrs, kept_names, kept_styles, filtered_data, end_da
     ranking_method = pipeline_params.get("factor_ranking_method", "cagr")
     style_map_full = dict(zip(meta["factorAbbreviation"], meta["styleName"]))
     meta["rank_score"] = (
-        compute_rank_score(monthly_rets, ranking_method, style_map_full)
+        compute_rank_score(monthly_rets, ranking_method, style_map_full,
+                           half_life=pipeline_params.get("tstat_half_life_months"))
         .reindex(meta["factorAbbreviation"]).values
     )
     meta["rank_style"] = meta.groupby("styleName")["rank_score"].rank(ascending=False)
@@ -136,7 +167,8 @@ def evaluate_universe(kept_abbrs, kept_names, kept_styles, filtered_data, end_da
         if prev_selected:
             score_full = meta_full.set_index("factorAbbreviation")["rank_score"]
             adjusted = apply_selection_hysteresis(
-                list(selected), score_full, prev_selected, margin,
+                list(selected), score_full, prev_selected,
+                resolve_hysteresis_margin(pipeline_params, margin, score_full),
             )
             n_reverted = len(set(adjusted) - set(selected))
             if n_reverted:

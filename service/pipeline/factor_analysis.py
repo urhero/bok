@@ -44,11 +44,16 @@ def filter_and_label_factors(
     style_name_list: list[str],
     factor_data_list: list[tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]],
     spread_threshold_pct: float = 0.10,
+    sector_drop_tstat: float | None = None,
 ) -> tuple[list[str], list[str], list[str], list[int], list[list[str]], list[pd.DataFrame]]:
     """음의 팩터 스프레드를 가진 섹터를 제거하고 L/N/S 라벨을 재계산한다.
 
     각 팩터-섹터 조합에서 팩터 스프레드(Q1-Q5)가 음수이면 해당 섹터를 제거하고,
     남은 데이터에서 임계값(팩터 스프레드의 10%) 기반으로 롱/중립/숏 라벨을 부여한다.
+
+    sector_drop_tstat 지정 시(예: 1.0) 섹터 제거에 유의성 게이트를 적용한다:
+    섹터별 월간 Q1-Q5 스프레드 시계열의 t-stat 이 -threshold 미만일 때만 제거
+    (단순 평균<0 이진 컷의 0 근처 노이즈 민감성 완화 실험 옵션. None=현행).
 
     Args:
         factor_abbr_list: 팩터 약어 리스트
@@ -82,9 +87,23 @@ def filter_and_label_factors(
             continue
 
         # 음의 스프레드 섹터 식별 및 제거
-        tmp = sector_return_df.T.reset_index()
-        tmp["spread"] = tmp["Q1"] - tmp["Q5"]
-        to_drop = tmp.loc[tmp["spread"] < 0, "sec"].tolist()
+        if sector_drop_tstat is None:
+            tmp = sector_return_df.T.reset_index()
+            tmp["spread"] = tmp["Q1"] - tmp["Q5"]
+            to_drop = tmp.loc[tmp["spread"] < 0, "sec"].tolist()
+        else:
+            # 유의성 게이트: 섹터별 월간 Q1-Q5 스프레드 t-stat < -threshold 만 제거.
+            # t 가 NaN(월 2개 미만/무분산)이면 유의성 판단 불가 -> 유지.
+            q = (
+                raw_df.groupby(["ddt", "sec", "quantile"], observed=False)["M_RETURN"]
+                .mean().unstack(fill_value=np.nan)
+            )
+            sp = (q["Q1"] - q["Q5"]).dropna()
+            g = sp.groupby(level="sec")
+            mean, std, cnt = g.mean(), g.std(), g.count()
+            se = std / np.sqrt(cnt)
+            t = mean.where(se > 1e-12, np.nan) / se
+            to_drop = t[t < -sector_drop_tstat].index.tolist()
         raw_clean = raw_df[~raw_df["sec"].isin(to_drop)].reset_index(drop=True)
 
         if raw_clean.empty:
@@ -140,6 +159,7 @@ def calculate_factor_stats_batch(
     orders: list[int],
     test_mode: bool = False,
     min_sector_stocks: int = 10,
+    sector_spread_geometric: bool = False,
 ) -> list[tuple]:
     """모든 팩터의 5분위 분석을 하이브리드 방식으로 처리한다.
 
@@ -219,10 +239,18 @@ def calculate_factor_stats_batch(
         fdf = fdf.drop(columns=["rank", "percentile", "val_lagged"])
 
         # 섹터 × 분위별 평균 수익률
-        sector_return_df = (
+        # sector_spread_geometric=True 면 시간축 산술평균 대신 기하평균(복리) 사용
+        # — 라벨링/유효성 가드(기하평균)와 평균 기준을 통일하는 실험 옵션 (기본 False=현행)
+        _monthly_sec_q = (
             fdf.groupby(["ddt", "sec", "quantile"], observed=False)["M_RETURN"]
             .mean().unstack(fill_value=0)
-        ).groupby("sec").mean().T
+        )
+        if sector_spread_geometric:
+            sector_return_df = (
+                np.exp(np.log(1 + _monthly_sec_q).groupby("sec").mean()) - 1
+            ).T
+        else:
+            sector_return_df = _monthly_sec_q.groupby("sec").mean().T
 
         # Q1-Q5 스프레드 (Q2~Q4는 불필요 — unstack 없이 Q1, Q5만 추출)
         q_mean = fdf.groupby(["ddt", "quantile"], observed=False)["M_RETURN"].mean()

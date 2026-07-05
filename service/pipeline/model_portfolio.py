@@ -111,6 +111,7 @@ class ModelPortfolioPipeline:
         kept_abbrs, kept_names, kept_styles, _, _, self.filtered_data = filter_and_label_factors(
             factor_abbr_list, factor_name_list, style_name_list, self.factor_stats,
             spread_threshold_pct=self.pipeline_params["spread_threshold_pct"],
+            sector_drop_tstat=self.pipeline_params.get("sector_drop_tstat"),
         )
 
         # [4] 롱-숏 수익률 + 팩터 유니버스 선정 — README [4]
@@ -277,7 +278,11 @@ class ModelPortfolioPipeline:
     def _analyze_factors(self, merged_data, factor_abbr_list, orders, test_file):
         """모든 팩터에 대해 5분위 분석을 실행한다 (일괄 처리)."""
         t1 = time.time()
-        result = calculate_factor_stats_batch(merged_data, factor_abbr_list, orders, test_mode=bool(test_file), min_sector_stocks=self.pipeline_params["min_sector_stocks"])
+        result = calculate_factor_stats_batch(
+            merged_data, factor_abbr_list, orders, test_mode=bool(test_file),
+            min_sector_stocks=self.pipeline_params["min_sector_stocks"],
+            sector_spread_geometric=bool(self.pipeline_params.get("sector_spread_geometric", False)),
+        )
         logger.info("Factors assigned in %.2fs", time.time() - t1)
         return result
 

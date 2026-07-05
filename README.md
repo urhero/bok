@@ -156,7 +156,7 @@
 
 ### 용어: MP vs Constrained EW
 - **MP (Model Portfolio)** — 프로덕션 산출물 (Bloomberg Optimizer 입력 CSV). 역할 이름.
-- **Constrained EW** — 현재 MP를 만드는 **구성 방식** (Top-N EW + `style_cap=25%` 재분배).
+- **Constrained EW** — 현재 MP를 만드는 **구성 방식** (선정 팩터 EW + `style_cap=25%` 재분배; winner_median 기본이라 고정 Top-N 아님).
 - 백테스트 진단 리포트는 구성 방식을 명시하기 위해 "Constrained EW" 라벨을 사용. 프로덕션 CLI/파일명/CSV 컬럼은 "MP" 유지.
 - 과거 MP는 Monte Carlo 최적화로 구성됐으나 커밋 `8dfb64e`에서 제거됨.
 
@@ -259,7 +259,7 @@ result.to_csv("output/wf.csv")      # 결과 저장
 백테스트 결과 및 과적합 진단 상세는 [`docs/backtest_results_2009_2026.md`](docs/backtest_results_2009_2026.md) 참조.
 
 **산출 파일:**
-- `output/walk_forward_results.csv` — OOS 월별 Constrained EW / EW / EW_All / EW_Top50 수익률 + 누적 수익률
+- `output/walk_forward_results.csv` — OOS 월별 Constrained EW / EW(선정) / EW_All / EW_Top50(dedup 이전 랭킹 Top-50) 수익률 + 누적 수익률 ([research.md §6.4](research.md) 곡선 정의 참조)
 - `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
 - `output/walk_forward_weight_history.csv` — 월별 팩터 가중치 이력 (대시보드 비중 추이/회전율용)
 - `output/dashboard_<date>.html` — **백테스트 실행 시 자동 생성**되는 인터랙티브 리포트 (KPI + 과적합 진단 전체 표 + 차트). `viz`로 재생성 가능
@@ -319,7 +319,7 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
 | `selection_hysteresis` | 0.5 | 선정 히스테리시스 margin (rank_score 단위, 0=off). 직전 선정 팩터는 챌린저가 이 격차 이상 이겨야 교체 | `model_portfolio.py`, `walk_forward_engine.py` (`apply_selection_hysteresis` 공유) |
 
-> **실험 결과:** [docs/experiments/cluster_turnover_20260425.md](docs/experiments/cluster_turnover_20260425.md) 참조 (43 케이스 광역 sweep). 1장 요약은 [executive_summary.md](docs/experiments/executive_summary.md). 핵심 발견: ① `OPTIMIZATION_OVERFIT` 실체 = style_cap 의 OOS 비용, ② n_clusters sweet spot 18~30, ③ Clustering 후 style_cap 효과 거의 없음, ④ smoothing α 0.1 saturation, ⑤ ranking method 는 t-stat 이 베스트, ⑥ min_is_months 는 모델에 영향 없음, ⑦ **baseline 은 2023~ Sharpe 0.27 / 21개월째 -6% 미회복 — 위험**, ⑧ **combo_18_0.1 은 같은 기간 Sharpe 0.99 / 회복 완료** (3.7배 차이). 당시 권장이던 `combo_18_0.1` 중 **clustering(n=18)은 적용 유지**, smoothing α=0.1(EMA)은 이후 절대스텝 -> 무스무딩으로 대체되었고, 2026-06 비용-인지 실험으로 **선정 히스테리시스(0.5)가 최종 적용**됨 — [smoothing_cost_experiment_20260612.md](docs/experiments/smoothing_cost_experiment_20260612.md) 참조.
+> **실험 결과:** [docs/experiments/cluster_turnover_20260425.md](docs/experiments/cluster_turnover_20260425.md) 참조 (43 케이스 광역 sweep). 1장 요약은 [executive_summary.md](docs/experiments/executive_summary.md). 핵심 발견: ① `OPTIMIZATION_OVERFIT` 실체 = style_cap 의 OOS 비용, ② n_clusters sweet spot 18~30, ③ Clustering 후 style_cap 효과 거의 없음, ④ smoothing α 0.1 saturation, ⑤ ranking method 는 t-stat 이 베스트, ⑥ min_is_months 는 모델에 영향 없음, ⑦ **baseline 은 2023~ Sharpe 0.27 / 21개월째 -6% 미회복 — 위험**, ⑧ **combo_18_0.1 은 같은 기간 Sharpe 0.99 / 회복 완료** (3.7배 차이). 당시 권장이던 `combo_18_0.1` 중 **clustering(n=18)은 적용 유지**, smoothing α=0.1(EMA)은 이후 절대스텝 -> 무스무딩으로 대체되었고, 2026-06 비용-인지 실험으로 **선정 히스테리시스(0.5)가 최종 적용**됨 — [smoothing_cost_experiment_20260612.md](docs/experiments/smoothing_cost_experiment_20260612.md) 참조. 2026-07-05 선정/필터 개선안 5종(섹터 유의성 게이트, half-life t-stat, IQR margin, 비례 zero-filter, 기하평균 스프레드)은 **A/B 전부 기각**(현행 국소 최적 재확인), EW_Top50 진단 곡선 pre-dedup 복원만 채택 — [proposal_experiments_20260705.md](docs/experiments/proposal_experiments_20260705.md) 참조.
 
 ## 보안 설정
 

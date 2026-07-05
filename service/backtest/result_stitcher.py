@@ -22,7 +22,9 @@ class WalkForwardResult:
         oos_returns: OOS 월간 Constrained EW (CEW) 수익률 Series.
         oos_ew_returns: OOS 월간 동일가중 수익률 Series (선정 팩터).
         oos_ew_all_returns: OOS 월간 전체 유효 팩터 동일가중 수익률.
-        oos_ew_top50_returns: OOS 월간 Top-50 후보군 동일가중 수익률.
+        oos_ew_top50_returns: OOS 월간 랭킹 Top-N(클러스터 dedup 이전
+            순수 rank_score 상위 top_factor_count) 동일가중 수익률.
+            Funnel Value-Add 의 B 단계 — 2026-07-05 복원 (research.md §6.4).
         oos_cumulative: OOS CEW 누적 수익률.
         oos_ew_cumulative: OOS EW 누적 수익률.
         weight_history: 팩터 가중치 이력 DataFrame.

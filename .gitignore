@@ -219,3 +219,6 @@ output/dashboard_*.html
 
 # benchmark 비교는 mp --benchmark 진단 산출물 (재생성 가능) - 추적 안 함
 output/benchmark_comparison.csv
+
+# proposal experiment raw outputs (요약은 docs/experiments 에 커밋)
+research/exp_out_*/
