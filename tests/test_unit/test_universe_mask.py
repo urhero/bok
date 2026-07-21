@@ -98,3 +98,22 @@ def test_apply_mask_unknown_stock_is_common():
     uni = pd.DataFrame({"ddt": [d], "gvkeyiid": ["y"], "universe": ["S"]})
     out = apply_universe_mask(labeled, uni)
     assert out["label"].iloc[0] == 1
+
+
+def test_apply_mask_preserves_float_label_dtype():
+    """프로덕션 라벨은 float64 (quantile.map NaN 업캐스트) -> 마스크 후에도 유지."""
+    d = pd.Timestamp("2020-01-31")
+    labeled = pd.DataFrame({
+        "ddt": [d] * 3,
+        "gvkeyiid": ["a", "b", "c"],
+        "label": [1.0, -1.0, 1.0],
+    })
+    uni = pd.DataFrame({
+        "ddt": [d] * 3,
+        "gvkeyiid": ["a", "b", "c"],
+        "universe": ["S", "S", "C"],
+    })
+    out = apply_universe_mask(labeled, uni)
+    assert out["label"].dtype == "float64"
+    assert out.set_index("gvkeyiid")["label"].tolist() == [0.0, -1.0, 1.0]
+    assert not out["label"].isna().any()
