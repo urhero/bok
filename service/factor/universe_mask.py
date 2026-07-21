@@ -27,6 +27,7 @@ def compute_universe_classification(
     windows: list[int],
     horizon_weights: list[float],
     split: list[float],
+    sector_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """종목별 (ddt, gvkeyiid, universe) 분류. universe in {"L", "C", "S"}.
 
@@ -35,35 +36,71 @@ def compute_universe_classification(
     - horizon별 횡단면 백분위 순위의 가중 평균. 이력 부족 종목은 계산 가능한
       horizon 가중치만 재정규화, 전부 불가면 "C" (fail-open)
     - 복합 순위 상위 split[0] -> "L"(숏 금지), 하위 split[2] -> "S"(롱 금지), 나머지 "C"
+    - sector_df(컬럼: ddt, gvkeyiid, sec) 제공 시 순위를 (날짜, 섹터) 그룹 내에서
+      매긴다 (섹터별 BM 대비 = 섹터 내 백분위 -- 그룹 내 스칼라 차감은 순위 불변이므로
+      별도 BM 차감 없이 groupby 순위로 동일 효과).
     """
     r = market_return_df.pivot_table(
         index="ddt", columns="gvkeyiid", values="M_RETURN", aggfunc="mean"
     ).sort_index()
     s = np.log1p(r)
 
-    num = None
-    den = None
+    if sector_df is None:
+        num = None
+        den = None
+        for h, w in zip(windows, horizon_weights):
+            # rolling.sum 은 창 내 NaN 전파 -> h개월 연속 이력 있는 종목만 신호 생성
+            pct = s.rolling(h).sum().shift(1).rank(axis=1, pct=True)
+            term = pct.fillna(0.0) * w
+            avail = pct.notna().astype(float) * w
+            num = term if num is None else num + term
+            den = avail if den is None else den + avail
+
+        comp = num / den.where(den > 0)  # 가용 horizon 가중치 재정규화; den=0 -> NaN -> "C"
+        comp_rank = comp.rank(axis=1, pct=True)
+
+        uni = pd.DataFrame("C", index=r.index, columns=r.columns)
+        uni = uni.mask(comp_rank > 1.0 - split[0], "L")
+        uni = uni.mask(comp_rank <= split[2], "S")  # NaN 비교 False -> "C" 유지
+
+        # 당월 수익률이 없는 (ddt, 종목) 셀은 방출 제외 (stack 이 NaN 행 자동 드랍).
+        # 동작 영향 없음: 미분류 종목은 후속 마스크 단계에서 "C" 취급.
+        uni = uni.where(r.notna())
+        out = uni.stack().rename("universe").reset_index()
+        out.columns = ["ddt", "gvkeyiid", "universe"]
+        return out
+
+    # --- 섹터 내(sector-relative) 경로 ---
+    sig_frames = []
     for h, w in zip(windows, horizon_weights):
-        # rolling.sum 은 창 내 NaN 전파 -> h개월 연속 이력 있는 종목만 신호 생성
-        pct = s.rolling(h).sum().shift(1).rank(axis=1, pct=True)
-        term = pct.fillna(0.0) * w
-        avail = pct.notna().astype(float) * w
-        num = term if num is None else num + term
-        den = avail if den is None else den + avail
+        sig_h = s.rolling(h).sum().shift(1)
+        long_h = sig_h.stack().rename("sig").reset_index()  # NaN 셀 자동 드랍
+        long_h.columns = ["ddt", "gvkeyiid", "sig"]
+        long_h["horizon"] = h
+        long_h["h_w"] = w
+        sig_frames.append(long_h)
+    sig_long = pd.concat(sig_frames, ignore_index=True)
 
-    comp = num / den.where(den > 0)  # 가용 horizon 가중치 재정규화; den=0 -> NaN -> "C"
-    comp_rank = comp.rank(axis=1, pct=True)
+    sec = sector_df[["ddt", "gvkeyiid", "sec"]].drop_duplicates(["ddt", "gvkeyiid"])
+    sig_long = sig_long.merge(sec, on=["ddt", "gvkeyiid"], how="left")
+    # sec 이 프로덕션 parquet 에서 Categorical dtype 일 수 있음 -> "(none)" 채우려면 object 캐스팅 필요
+    sig_long["sec"] = sig_long["sec"].astype(object).fillna("(none)")
 
-    uni = pd.DataFrame("C", index=r.index, columns=r.columns)
-    uni = uni.mask(comp_rank > 1.0 - split[0], "L")
-    uni = uni.mask(comp_rank <= split[2], "S")  # NaN 비교 False -> "C" 유지
+    # (horizon, ddt, sec) 그룹 내 백분위
+    sig_long["pct"] = sig_long.groupby(["horizon", "ddt", "sec"])["sig"].rank(pct=True)
+    sig_long["term"] = sig_long["pct"] * sig_long["h_w"]
 
-    # 당월 수익률이 없는 (ddt, 종목) 셀은 방출 제외 (stack 이 NaN 행 자동 드랍).
-    # 동작 영향 없음: 미분류 종목은 후속 마스크 단계에서 "C" 취급.
-    uni = uni.where(r.notna())
-    out = uni.stack().rename("universe").reset_index()
-    out.columns = ["ddt", "gvkeyiid", "universe"]
-    return out
+    grp = sig_long.groupby(["ddt", "gvkeyiid"])
+    comp = grp["term"].sum() / grp["h_w"].sum()  # 가용 horizon 가중치 재정규화
+    comp_sec = grp["sec"].first()
+    comp_df = pd.concat([comp.rename("comp"), comp_sec], axis=1).reset_index()
+
+    comp_df["rank_pct"] = comp_df.groupby(["ddt", "sec"])["comp"].rank(pct=True)
+    comp_df["universe"] = "C"
+    comp_df.loc[comp_df["rank_pct"] > 1.0 - split[0], "universe"] = "L"
+    comp_df.loc[comp_df["rank_pct"] <= split[2], "universe"] = "S"
+
+    return comp_df[["ddt", "gvkeyiid", "universe"]]
 
 
 def apply_universe_mask(labeled_df: pd.DataFrame, universe_df: pd.DataFrame) -> pd.DataFrame:

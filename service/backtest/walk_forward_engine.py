@@ -369,11 +369,15 @@ class WalkForwardEngine:
         # 상대 모멘텀 유니버스 (신호가 trailing-only -> 전기간 1회 계산해도 OOS look-ahead 없음)
         universe_df = None
         if pp.get("universe_mask", "off") == "on":
+            sector_df = None
+            if pp.get("universe_group", "global") == "sector":
+                sector_df = raw_data[["ddt", "gvkeyiid", "sec"]].drop_duplicates(["ddt", "gvkeyiid"])
             universe_df = compute_universe_classification(
                 market_return_df,
                 windows=pp["universe_momentum_windows"],
                 horizon_weights=pp["universe_momentum_weights"],
                 split=pp["universe_split"],
+                sector_df=sector_df,
             )
 
         all_dates = sorted(raw_data["ddt"].unique())

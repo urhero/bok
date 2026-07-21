@@ -117,7 +117,7 @@ class ModelPortfolioPipeline:
 
         # [3.5] 상대 모멘텀 유니버스 마스크 (universe_mask="on" 일 때만; off = 기존과 byte 동일)
         if self.pipeline_params.get("universe_mask", "off") == "on":
-            universe_df = self._build_universe(market_return_df)
+            universe_df = self._build_universe(raw_data, market_return_df)
             self.filtered_data = [
                 apply_universe_mask(d, universe_df) for d in self.filtered_data
             ]
@@ -179,13 +179,17 @@ class ModelPortfolioPipeline:
     # Private 메서드
     # ─────────────────────────────────────────────────────────────────────
 
-    def _build_universe(self, market_return_df):
-        """횡단면 복합 상대 모멘텀 유니버스 분류."""
+    def _build_universe(self, raw_data, market_return_df):
+        """횡단면 복합 상대 모멘텀 유니버스 분류. universe_group="sector" 면 (날짜,섹터) 내 순위."""
+        sector_df = None
+        if self.pipeline_params.get("universe_group", "global") == "sector":
+            sector_df = raw_data[["ddt", "gvkeyiid", "sec"]].drop_duplicates(["ddt", "gvkeyiid"])
         return compute_universe_classification(
             market_return_df,
             windows=self.pipeline_params["universe_momentum_windows"],
             horizon_weights=self.pipeline_params["universe_momentum_weights"],
             split=self.pipeline_params["universe_split"],
+            sector_df=sector_df,
         )
 
     def _load_data(self, start_date, end_date, test_file):

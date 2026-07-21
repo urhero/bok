@@ -60,4 +60,5 @@ PIPELINE_PARAMS = {
     "universe_momentum_windows": [1, 3, 6, 12],         # 복합 신호 horizon (개월)
     "universe_momentum_weights": [0.4, 0.3, 0.2, 0.1],  # horizon별 가중 (최근 가중)
     "universe_split": [0.3, 0.4, 0.3], # 롱/공통/숏 유니버스 비율
+    "universe_group": "global",        # "global"/"sector": 유니버스 순위 그룹 (sector = (날짜,섹터) 내 백분위)
 }

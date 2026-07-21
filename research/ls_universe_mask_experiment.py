@@ -30,6 +30,13 @@ CASES = {
         "universe_split": [0.3, 0.4, 0.3],
         "universe_momentum_weights": [0.25, 0.25, 0.25, 0.25],
     },
+    # 2026-07-21 추가: 섹터 내 유니버스 (핫/콜드 섹터 사이드 전멸 방지 가설)
+    "mask_sector_eq25_30_40_30": {
+        "universe_mask": "on",
+        "universe_group": "sector",
+        "universe_split": [0.3, 0.4, 0.3],
+        "universe_momentum_weights": [0.25, 0.25, 0.25, 0.25],
+    },
 }
 
 

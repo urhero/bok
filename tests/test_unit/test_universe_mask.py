@@ -100,6 +100,31 @@ def test_apply_mask_unknown_stock_is_common():
     assert out["label"].iloc[0] == 1
 
 
+def test_sector_relative_ranking():
+    """핫섹터(전 종목 고수익)에서도 섹터 내 하위는 S, 콜드섹터 상위는 L."""
+    dates = _dates(14)
+    rows = []
+    # 섹터 HOT: 5종목, 수익률 0.10~0.14 (전역 상위) / 섹터 COLD: 5종목, -0.14~-0.10 (전역 하위)
+    for d in dates:
+        for i in range(5):
+            rows.append({"ddt": d, "gvkeyiid": f"H{i}", "M_RETURN": 0.10 + 0.01 * i})
+            rows.append({"ddt": d, "gvkeyiid": f"C{i}", "M_RETURN": -0.14 + 0.01 * i})
+    mret = pd.DataFrame(rows)
+    sector = pd.DataFrame(
+        [{"ddt": d, "gvkeyiid": f"H{i}", "sec": "HOT"} for d in dates for i in range(5)]
+        + [{"ddt": d, "gvkeyiid": f"C{i}", "sec": "COLD"} for d in dates for i in range(5)]
+    )
+    # 전역: HOT 전원 L 후보, COLD 전원 S 후보
+    uni_g = compute_universe_classification(mret, WINDOWS, WEIGHTS, SPLIT)
+    last_g = uni_g[uni_g["ddt"] == dates[-1]].set_index("gvkeyiid")["universe"]
+    assert last_g["C4"] != "L"          # 콜드섹터 최상위도 전역에선 L 불가
+    # 섹터 내: 각 섹터가 자체 L/S 보유
+    uni_s = compute_universe_classification(mret, WINDOWS, WEIGHTS, SPLIT, sector_df=sector)
+    last_s = uni_s[uni_s["ddt"] == dates[-1]].set_index("gvkeyiid")["universe"]
+    assert last_s["H4"] == "L" and last_s["H0"] == "S"   # 핫섹터 내 상/하위
+    assert last_s["C4"] == "L" and last_s["C0"] == "S"   # 콜드섹터 내 상/하위
+
+
 def test_apply_mask_preserves_float_label_dtype():
     """프로덕션 라벨은 float64 (quantile.map NaN 업캐스트) -> 마스크 후에도 유지."""
     d = pd.Timestamp("2020-01-31")
