@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """universe_mask 유닛 테스트 (spec: 2026-07-21-ls-universe-mask-design.md)"""
 import pandas as pd
-import pytest
 
-from service.factor.universe_mask import compute_universe_classification
+from service.factor.universe_mask import apply_universe_mask, compute_universe_classification
 
 WINDOWS = [1, 3, 6, 12]
 WEIGHTS = [0.4, 0.3, 0.2, 0.1]
@@ -68,3 +67,34 @@ def test_no_history_is_common():
         pd.concat([mret, extra], ignore_index=True), WINDOWS, WEIGHTS, SPLIT)
     last = uni[uni["ddt"] == dates[-1]].set_index("gvkeyiid")["universe"]
     assert last["IPO"] == "C"
+
+
+def test_apply_mask_and_failopen():
+    d1 = pd.Timestamp("2020-01-31")
+    d2 = pd.Timestamp("2020-02-29")
+    labeled = pd.DataFrame({
+        "ddt": [d1] * 4 + [d2] * 2,
+        "gvkeyiid": ["a", "b", "c", "d", "e", "f"],
+        "label": [1, 1, -1, -1, 1, 1],
+    })
+    uni = pd.DataFrame({
+        "ddt": [d1] * 4 + [d2] * 2,
+        "gvkeyiid": ["a", "b", "c", "d", "e", "f"],
+        "universe": ["S", "C", "L", "S", "S", "S"],
+    })
+    out = apply_universe_mask(labeled, uni)
+    m = out.set_index("gvkeyiid")["label"]
+    assert m["a"] == 0      # 롱 라벨 & S 유니버스 -> 마스크
+    assert m["b"] == 1      # 롱 라벨 & C -> 유지
+    assert m["c"] == 0      # 숏 라벨 & L 유니버스 -> 마스크
+    assert m["d"] == -1     # 숏 라벨 & S -> 유지
+    assert m["e"] == 1 and m["f"] == 1  # d2 롱 사이드 전멸 -> fail-open 전원 유지
+
+
+def test_apply_mask_unknown_stock_is_common():
+    """유니버스에 없는 종목은 C 취급 (라벨 유지)."""
+    d = pd.Timestamp("2020-01-31")
+    labeled = pd.DataFrame({"ddt": [d], "gvkeyiid": ["x"], "label": [1]})
+    uni = pd.DataFrame({"ddt": [d], "gvkeyiid": ["y"], "universe": ["S"]})
+    out = apply_universe_mask(labeled, uni)
+    assert out["label"].iloc[0] == 1

@@ -4,7 +4,7 @@
 횡단면 복합 상대 모멘텀(1/3/6/12개월, 최근 가중)으로 종목을
 롱(L)/공통(C)/숏(S) 유니버스로 3분할한다. 이 모듈은 분류+마스크 담당이며,
 라벨링된 종목 데이터에서 "롱 라벨 & 숏 유니버스", "숏 라벨 & 롱 유니버스"
-종목을 중립(0)으로 마스크하는 apply_universe_mask 는 후속 커밋에서 추가된다.
+종목을 중립(0)으로 마스크하는 apply_universe_mask 도 포함한다.
 
 설계: docs/superpowers/specs/2026-07-21-ls-universe-mask-design.md
 - 신호는 t-1월까지의 수익률만 사용 (팩터 래그와 동일 규약) -> look-ahead 없음.
@@ -64,3 +64,26 @@ def compute_universe_classification(
     out = uni.stack().rename("universe").reset_index()
     out.columns = ["ddt", "gvkeyiid", "universe"]
     return out
+
+
+def apply_universe_mask(labeled_df: pd.DataFrame, universe_df: pd.DataFrame) -> pd.DataFrame:
+    """위반 종목(롱 라벨&숏 유니버스, 숏 라벨&롱 유니버스)의 라벨을 중립(0)으로 바꾼다.
+
+    fail-open 가드 2종:
+    - 유니버스 미분류 종목(merge miss)은 "C" 취급 (마스크 없음)
+    - (ddt, 라벨 사이드) 전멸 방지: 해당 날짜·사이드 전 종목이 위반이면 그 그룹은
+      마스크 미적용 (빈 포트폴리오 크래시 방지 -- 2026-06 EPSEstDispFY1C 교훈)
+    """
+    df = labeled_df.merge(universe_df, on=["ddt", "gvkeyiid"], how="left")
+    df["universe"] = df["universe"].fillna("C")
+    viol = ((df["label"] == 1) & (df["universe"] == "S")) | (
+        (df["label"] == -1) & (df["universe"] == "L")
+    )
+    all_viol = viol.groupby([df["ddt"], df["label"]]).transform("all")
+    n_failopen = int((viol & all_viol).sum())
+    if n_failopen:
+        logger.warning(
+            "universe_mask: fail-open kept %d violating rows (side-wipe guard)", n_failopen
+        )
+    df.loc[viol & ~all_viol, "label"] = 0
+    return df.drop(columns=["universe"])
