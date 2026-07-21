@@ -38,6 +38,7 @@ from service.pipeline.weight_construction import (
     calculate_style_weights,
 )
 from service.factor.factor_returns import aggregate_factor_returns  # re-export (하위호환)
+from service.factor.universe_mask import apply_universe_mask, compute_universe_classification
 from service.pipeline.universe import evaluate_universe
 from service.pipeline.weight_history import (
     load_prev_factor_weights,
@@ -114,6 +115,13 @@ class ModelPortfolioPipeline:
             sector_drop_tstat=self.pipeline_params.get("sector_drop_tstat"),
         )
 
+        # [3.5] 상대 모멘텀 유니버스 마스크 (universe_mask="on" 일 때만; off = 기존과 byte 동일)
+        if self.pipeline_params.get("universe_mask", "off") == "on":
+            universe_df = self._build_universe(market_return_df)
+            self.filtered_data = [
+                apply_universe_mask(d, universe_df) for d in self.filtered_data
+            ]
+
         # [4] 롱-숏 수익률 + 팩터 유니버스 선정 — README [4]
         self.return_matrix, self.meta = evaluate_universe(
             kept_abbrs, kept_names, kept_styles, self.filtered_data, end_date, test_file,
@@ -170,6 +178,15 @@ class ModelPortfolioPipeline:
     # ─────────────────────────────────────────────────────────────────────
     # Private 메서드
     # ─────────────────────────────────────────────────────────────────────
+
+    def _build_universe(self, market_return_df):
+        """횡단면 복합 상대 모멘텀 유니버스 분류."""
+        return compute_universe_classification(
+            market_return_df,
+            windows=self.pipeline_params["universe_momentum_windows"],
+            horizon_weights=self.pipeline_params["universe_momentum_weights"],
+            split=self.pipeline_params["universe_split"],
+        )
 
     def _load_data(self, start_date, end_date, test_file):
         """Pipeline-ready parquet 또는 테스트 CSV에서 데이터를 로드한다."""
