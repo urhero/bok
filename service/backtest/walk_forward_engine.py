@@ -27,6 +27,7 @@ from service.factor.selection import (
     cluster_winner_median_dedup,
     compute_rank_score,
 )
+from service.factor.universe_mask import apply_universe_mask, compute_universe_classification
 from service.backtest.result_stitcher import WalkForwardResult
 from service.pipeline.factor_analysis import (
     ANALYZE_COLS,
@@ -144,6 +145,7 @@ def _apply_rules_and_aggregate(
     factor_abbr_list: list[str],
     rule_bundle: dict[str, Any],
     pipeline: ModelPortfolioPipeline,
+    universe_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """IS에서 학습한 규칙을 (사전 계산된) 전체 데이터 5분위 통계에 적용하고 팩터 수익률을 사전 계산한다.
 
@@ -164,6 +166,8 @@ def _apply_rules_and_aggregate(
         factor_stats_full: run()에서 사전 계산된 전체 데이터 5분위 통계
             (calculate_factor_stats_batch 결과; factor_abbr_list 와 인덱스 정렬).
         factor_abbr_list: factor_stats_full 인덱스에 대응하는 팩터 약어 리스트.
+        universe_df: 상대 모멘텀 유니버스 분류 (run()에서 1회 계산). None 이면
+            마스크 미적용(기존과 byte 동일).
 
     Returns:
         precomputed_ret_df: (전체 월 × 유효 팩터) 수익률 행렬
@@ -219,6 +223,11 @@ def _apply_rules_and_aggregate(
         if not (has_long and has_short):
             logger.debug("Factor %s skipped - missing long or short after IS rule application", abbr)
             continue
+
+        # 상대 모멘텀 유니버스 마스크 (None 이면 미적용 -> 기존과 byte 동일).
+        # fail-open 이 (날짜,사이드) 전멸을 막으므로 has_long/has_short 은 계속 성립.
+        if universe_df is not None:
+            merged = apply_universe_mask(merged, universe_df)
 
         valid_abbrs.append(abbr)
         valid_filtered.append(merged)
@@ -357,6 +366,16 @@ class WalkForwardEngine:
             start_date, end_date, test_file
         )
 
+        # 상대 모멘텀 유니버스 (신호가 trailing-only -> 전기간 1회 계산해도 OOS look-ahead 없음)
+        universe_df = None
+        if pp.get("universe_mask", "off") == "on":
+            universe_df = compute_universe_classification(
+                market_return_df,
+                windows=pp["universe_momentum_windows"],
+                horizon_weights=pp["universe_momentum_weights"],
+                split=pp["universe_split"],
+            )
+
         all_dates = sorted(raw_data["ddt"].unique())
         oos_dates = get_oos_dates(all_dates, self.min_is_months)
         logger.info(
@@ -413,6 +432,7 @@ class WalkForwardEngine:
                 # 사전 계산된 전체 데이터 5분위 통계에 규칙 적용 + aggregate 1회 실행
                 precomputed_ret_df = _apply_rules_and_aggregate(
                     factor_stats_full, factor_abbr_list_full, cached_rule_bundle, pipeline,
+                    universe_df=universe_df,
                 )
 
                 if precomputed_ret_df.empty:
