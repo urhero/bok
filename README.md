@@ -104,9 +104,9 @@
 ### 핵심 함수
 `optimization.optimize_constrained_weights()`
 
-### 가중치 결정 모드 (2가지)
-- `mode="equal_weight"` **(기본값, 권장)**: 1/N 동일가중 + 스타일 캡 25% 재분배
-- `mode="hardcoded"`: `data/hardcoded_weights.csv`에서 프로덕션 고정 비중 로드
+### 가중치 결정 모드 (2가지, config 키 `optimization_mode`)
+- `optimization_mode="equal_weight"` **(기본값, 권장)**: 1/N 동일가중 + 스타일 캡 25% 재분배
+- `optimization_mode="hardcoded"`: `data/hardcoded_weights.csv`에서 프로덕션 고정 비중 로드
 
 > 백테스트(`python main.py backtest`)는 `equal_weight` 모드를 사용한다.
 
@@ -129,12 +129,12 @@
 
 ### (c) 결과물 산출
 - 종목 × 팩터 × 스타일 구조의 최종 가중치 패널 → CSV 출력
-  - `total_aggregated_weights_{end_date}_test.csv` — 종목×팩터 가중치
-  - `total_aggregated_weights_style_{end_date}_test.csv` — 스타일별 집계 (종목 단위)
+  - `total_aggregated_weights_{end_date}_test.csv` — 종목×팩터 가중치 (파일명의 `_test`는 고정 리터럴 — production에서도 붙음. test 모드 표시 아님)
+  - `total_aggregated_weights_style_{end_date}_test.csv` — 스타일별 집계 (종목 단위, `_test` 동일)
   - `pivoted_total_agg_wgt_{end_date}.csv` — 피벗 형태 (Optimizer 연동용)
-  - `meta_data.csv` — 팩터 성과 요약
-- factor 가중치 + style 요약 → `output/mp_weight_history/`
-  - `factor_weights_{end_date}.csv` — factor 단위 배포 가중치 (항상 저장; 다음 회차 전월대비 delta 입력용)
+  - `meta_data.csv` — 팩터 성과 요약 (test 모드에서만 `meta_data_test_*.csv`로 바뀜)
+- factor 가중치 + style 요약 → `output/mp_weight_history/` (production 실행 시 항상 저장, test 모드는 3종 모두 미저장)
+  - `factor_weights_{end_date}.csv` — factor 단위 배포 가중치 (다음 회차 전월대비 delta 입력용)
   - `factor_styles_{end_date}.csv` — factor × style + raw/prev/new 가중치 분해
   - `style_totals_{end_date}.csv` — style 단위 raw/prev/new 합계 + delta + factor 목록
 
@@ -185,6 +185,8 @@
 
 ```
 service/
+├── paths.py                    # 경로 상수 단일 출처 (PROJECT_ROOT / DATA_DIR / OUTPUT_DIR / HISTORY_DIR)
+│
 ├── factor/
 │   ├── selection.py            # rank_score 랭킹, 클러스터 dedup, 선정 히스테리시스 (production mp + 백테스트 공유 도메인)
 │   └── factor_returns.py       # aggregate_factor_returns (팩터 롱-숏 수익률 행렬, mp + 백테스트 공유)
@@ -201,13 +203,23 @@ service/
 │   ├── factor_analysis.py      # calculate_factor_stats_batch, filter_and_label_factors
 │   ├── optimization.py         # optimize_constrained_weights (hardcoded/equal_weight)
 │   ├── weight_construction.py  # build_factor_weight_frames, aggregate_mp_weights, calculate_style_weights, construct_long_short_df, calculate_vectorized_return
+│   ├── weight_history.py       # mp_weight_history CSV 3종 저장 (factor_weights / factor_styles / style_totals)
 │   └── benchmark_comparison.py # Constrained EW vs. 동일가중(1/N) 벤치마크 비교
 │
-└── backtest/
-    ├── walk_forward_engine.py  # Walk-Forward (Expanding Window) 오케스트레이터
-    ├── data_slicer.py          # 날짜 기반 IS/OOS 데이터 분할
-    ├── result_stitcher.py      # OOS 결과 접합 + 성과 계산 (WalkForwardResult)
-    └── overfit_diagnostics.py  # 과적합 진단 (Funnel Value-Add, Percentile, Strict Jaccard + 보조)
+├── backtest/
+│   ├── walk_forward_engine.py  # Walk-Forward (Expanding Window) 오케스트레이터
+│   ├── data_slicer.py          # 날짜 기반 IS/OOS 데이터 분할
+│   ├── result_stitcher.py      # OOS 결과 접합 + 성과 계산 (WalkForwardResult)
+│   └── overfit_diagnostics.py  # 과적합 진단 (Funnel Value-Add, Percentile, Strict Jaccard + 보조)
+│
+└── report/                     # 시각화/리포트 (output CSV read-only 레이어)
+    ├── dashboard.py            # 대시보드 조립: CSV -> plotly 차트 -> 단일 자체완결 HTML
+    ├── dashboard_data.py       # 대시보드 데이터 레이어 (KPI/스타일 집계/진단 파싱, read-only)
+    ├── dashboard_charts.py     # DataFrame -> plotly Figure
+    ├── report_generator.py     # 성과 리포트 생성
+    ├── reporting.py            # Rich 콘솔 리포트 출력
+    ├── diagnostics_keys.py     # overfit_diagnostics.csv 행 키 상수 (생산자/소비자 공유 계약)
+    └── style_colors.py         # 스타일 -> 색상 매핑 단일 출처
 ```
 
 ### Pipeline 사용법
@@ -305,7 +317,9 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | 파라미터 | 값 | 설명 | 사용 모듈 |
 |---------|-----|------|-----------|
 | `style_cap` | 0.25 | 스타일 캡 (프로덕션 규제 요건) | `optimization.py` |
+| `optimization_mode` | "equal_weight" | 가중치 결정 모드 (`equal_weight` / `hardcoded`) | `optimization.py` |
 | `transaction_cost_bps` | 20.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
+| `backtest_cost_multiplier` | 0.6 | 백테스트 전용 비용 배수 (20bp x 0.6 = 12bp; 편입/편출 netting 실측 0.574 기반) | `walk_forward_engine.py` |
 | `top_factor_count` | 50 | rank_score 상위 절단 수 (**`cluster_method=topn`일 때만** 적용; winner_median은 미사용) | `model_portfolio.py` |
 | `factor_ranking_method` | "tstat" | 팩터 랭킹 방식 (`shrunk_tstat` / `tstat` / `cagr`) | `model_portfolio.py`, `walk_forward_engine.py` (`compute_rank_score` 공유) |
 | `use_cluster_dedup` | True | Hierarchical Clustering 중복 제거 (Sprint 1-B, production 적용) | `model_portfolio.py`, `walk_forward_engine.py` |
@@ -317,6 +331,7 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `min_sector_stocks` | 10 | 섹터-날짜 최소 종목 수 | `factor_analysis.py` |
 | `max_zero_return_months` | 10 | 0 수익률 허용 최대 월 수 | `model_portfolio.py` |
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
+| `backtest_end` | "2026-03-31" | 백테스트 종료일 (실험 스크립트 참조용) | `research/*.py` |
 | `selection_hysteresis` | 0.5 | 선정 히스테리시스 margin (rank_score 단위, 0=off). 직전 선정 팩터는 챌린저가 이 격차 이상 이겨야 교체 | `model_portfolio.py`, `walk_forward_engine.py` (`apply_selection_hysteresis` 공유) |
 
 > **실험 결과:** [docs/experiments/cluster_turnover_20260425.md](docs/experiments/cluster_turnover_20260425.md) 참조 (43 케이스 광역 sweep). 1장 요약은 [executive_summary.md](docs/experiments/executive_summary.md). 핵심 발견: ① `OPTIMIZATION_OVERFIT` 실체 = style_cap 의 OOS 비용, ② n_clusters sweet spot 18~30, ③ Clustering 후 style_cap 효과 거의 없음, ④ smoothing α 0.1 saturation, ⑤ ranking method 는 t-stat 이 베스트, ⑥ min_is_months 는 모델에 영향 없음, ⑦ **baseline 은 2023~ Sharpe 0.27 / 21개월째 -6% 미회복 — 위험**, ⑧ **combo_18_0.1 은 같은 기간 Sharpe 0.99 / 회복 완료** (3.7배 차이). 당시 권장이던 `combo_18_0.1` 중 **clustering(n=18)은 적용 유지**, smoothing α=0.1(EMA)은 이후 절대스텝 -> 무스무딩으로 대체되었고, 2026-06 비용-인지 실험으로 **선정 히스테리시스(0.5)가 최종 적용**됨 — [smoothing_cost_experiment_20260612.md](docs/experiments/smoothing_cost_experiment_20260612.md) 참조. 2026-07-05 선정/필터 개선안 5종(섹터 유의성 게이트, half-life t-stat, IQR margin, 비례 zero-filter, 기하평균 스프레드)은 **A/B 전부 기각**(현행 국소 최적 재확인), EW_Top50 진단 곡선 pre-dedup 복원만 채택 — [proposal_experiments_20260705.md](docs/experiments/proposal_experiments_20260705.md) 참조.
