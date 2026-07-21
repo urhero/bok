@@ -381,25 +381,21 @@ from service.factor.universe_mask import apply_universe_mask, compute_universe_c
 ```python
         # [3.5] 상대 모멘텀 유니버스 마스크 (universe_mask="on" 일 때만; off = 기존과 byte 동일)
         if self.pipeline_params.get("universe_mask", "off") == "on":
-            universe_df = self._build_universe(raw_data, market_return_df)
+            universe_df = self._build_universe(market_return_df)
             self.filtered_data = [
                 apply_universe_mask(d, universe_df) for d in self.filtered_data
             ]
 ```
 
-- [ ] **Step 3: helper 메서드 추가**
+- [ ] **Step 3: helper 메서드 추가** (2026-07-21 개정: BM 제거로 LogMktCap 추출 불필요)
 
 `_load_data` 위(Private 메서드 구획)에 추가:
 
 ```python
-    def _build_universe(self, raw_data, market_return_df):
-        """상대 모멘텀 유니버스 분류 (LogMktCap 미제공 데이터는 EW BM fallback)."""
-        logcap = raw_data.loc[
-            raw_data["factorAbbreviation"] == "LogMktCap", ["ddt", "gvkeyiid", "val"]
-        ]
+    def _build_universe(self, market_return_df):
+        """횡단면 복합 상대 모멘텀 유니버스 분류."""
         return compute_universe_classification(
             market_return_df,
-            logcap if not logcap.empty else None,
             windows=self.pipeline_params["universe_momentum_windows"],
             horizon_weights=self.pipeline_params["universe_momentum_weights"],
             split=self.pipeline_params["universe_split"],
@@ -456,13 +452,11 @@ from service.factor.universe_mask import apply_universe_mask, compute_universe_c
 
 ```python
         # 상대 모멘텀 유니버스 (신호가 trailing-only -> 전기간 1회 계산해도 OOS look-ahead 없음)
+        # (2026-07-21 개정: BM 제거로 LogMktCap 추출 불필요)
         universe_df = None
         if pp.get("universe_mask", "off") == "on":
-            logcap = raw_data.loc[
-                raw_data["factorAbbreviation"] == "LogMktCap", ["ddt", "gvkeyiid", "val"]
-            ]
             universe_df = compute_universe_classification(
-                market_return_df, logcap if not logcap.empty else None,
+                market_return_df,
                 windows=pp["universe_momentum_windows"],
                 horizon_weights=pp["universe_momentum_weights"],
                 split=pp["universe_split"],
