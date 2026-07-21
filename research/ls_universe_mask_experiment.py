@@ -14,6 +14,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import PIPELINE_PARAMS  # noqa: E402
+from service.backtest.result_stitcher import WalkForwardResult  # noqa: E402
 from service.backtest.walk_forward_engine import WalkForwardEngine  # noqa: E402
 
 OUT = Path(__file__).resolve().parent / "output"
@@ -23,6 +24,12 @@ CASES = {
     "off": {},
     "mask_30_40_30": {"universe_mask": "on", "universe_split": [0.3, 0.4, 0.3]},
     "mask_20_60_20": {"universe_mask": "on", "universe_split": [0.2, 0.6, 0.2]},
+    # 2026-07-21 추가: horizon 동일가중 (1M 리버설 충돌 가설 검증)
+    "mask_eq25_30_40_30": {
+        "universe_mask": "on",
+        "universe_split": [0.3, 0.4, 0.3],
+        "universe_momentum_weights": [0.25, 0.25, 0.25, 0.25],
+    },
 }
 
 
@@ -30,6 +37,19 @@ def main():
     OUT.mkdir(exist_ok=True)
     rows = []
     for name, override in CASES.items():
+        case_csv = OUT / f"ls_universe_{name}.csv"
+        if case_csv.exists():
+            # 이미 완료된 케이스: 재실행 없이 CSV 에서 성과 재계산 (재개/증분 실행용)
+            df = pd.read_csv(case_csv, parse_dates=["date"])
+            perf = WalkForwardResult._calc_perf(df["cew_return"], df["cew_cumulative"])
+            win = float((df["cew_return"] - df["ew_return"] > 0).mean())
+            rows.append({
+                "case": name, **{f"cew_{k}": v for k, v in perf.items()},
+                "win_rate_vs_ew": win, "elapsed_min": 0.0,
+            })
+            print(f"[{name}] cached: {perf}")
+            continue
+
         t0 = time.time()
         engine = WalkForwardEngine(
             selection_hysteresis=PIPELINE_PARAMS["selection_hysteresis"],
