@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """inverse_vol 팩터 가중 A/B 실험.
 
 baseline(equal_weight)은 커밋된 output/walk_forward_results.csv 에서 성과만 재계산
