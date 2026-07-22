@@ -262,5 +262,68 @@ class TestStyleCapFeasibilityGuard:
         assert not [r for r in caplog.records if "style_cap" in r.message]
 
 
+class TestInverseVolMode:
+    """inverse_vol 모드: IS 변동성 반비례 가중 + 스타일 캡 재분배."""
+
+    def test_lower_vol_gets_higher_weight(self) -> None:
+        """저변동성 팩터가 더 큰 가중을 받고, 비율이 1/vol 에 정합."""
+        rng = np.random.default_rng(7)
+        n = 37
+        rtn_df = pd.DataFrame({
+            "low_vol": rng.normal(0.005, 0.01, n),
+            "high_vol": rng.normal(0.005, 0.05, n),
+        })
+        rtn_df.iloc[0] = 0.0  # 백테스트 관례: 첫 행 기준점
+
+        _, weights_tbl = optimize_constrained_weights(
+            rtn_df=rtn_df, style_list=["S1", "S2"],
+            mode="inverse_vol", test_mode=True,
+        )
+        w = weights_tbl.set_index("factor")["fitted_weight"]
+        assert w["low_vol"] > w["high_vol"]
+        assert np.isclose(w.sum(), 1.0, atol=1e-6)
+        # 반비례 정합: w_low / w_high ~= vol_high / vol_low (첫 행 제외 std)
+        vols = rtn_df.iloc[1:].std()
+        assert np.isclose(
+            w["low_vol"] / w["high_vol"], vols["high_vol"] / vols["low_vol"], rtol=1e-3
+        )
+
+    def test_style_cap_still_enforced(self) -> None:
+        """inverse_vol 에서도 스타일 캡 재분배가 동일하게 적용."""
+        rng = np.random.default_rng(1)
+        n = 37
+        rtn_df = pd.DataFrame({
+            f"F{i}": rng.normal(0.005, 0.01 + 0.01 * i, n) for i in range(6)
+        })
+        rtn_df.iloc[0] = 0.0
+        style_list = ["A", "A", "B", "B", "C", "C"]
+
+        _, weights_tbl = optimize_constrained_weights(
+            rtn_df=rtn_df, style_list=style_list,
+            mode="inverse_vol", style_cap=0.40, test_mode=False,
+        )
+        style_weights = weights_tbl.groupby("styleName")["fitted_weight"].sum()
+        # 재분배 루프는 float32 + 편중 초기가중에서 ~1e-4 잔차를 남길 수 있다
+        # (기존 알고리즘 특성: 초과 시 경고만 남기고 허용). 실질 캡 준수만 확인.
+        assert all(style_weights <= 0.40 + 1e-3)
+        assert np.isclose(weights_tbl["fitted_weight"].sum(), 1.0, atol=1e-6)
+
+    def test_zero_vol_factor_does_not_explode(self) -> None:
+        """무분산 팩터는 vol 하한(1e-6) 가드로 폭주하지 않는다."""
+        rng = np.random.default_rng(2)
+        n = 37
+        rtn_df = pd.DataFrame({
+            "flat": np.zeros(n),
+            "normal": rng.normal(0.005, 0.02, n),
+        })
+        _, weights_tbl = optimize_constrained_weights(
+            rtn_df=rtn_df, style_list=["S1", "S2"],
+            mode="inverse_vol", test_mode=True,
+        )
+        w = weights_tbl.set_index("factor")["fitted_weight"]
+        assert np.isfinite(w).all()
+        assert np.isclose(w.sum(), 1.0, atol=1e-6)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

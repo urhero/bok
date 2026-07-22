@@ -39,13 +39,18 @@ def _equal_weight_allocation(
     style_cap: float,
     tol: float,
     test_mode: bool,
+    base_weights: np.ndarray | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Equal-weight 모드: 1/N 동일가중 + 스타일 캡 재분배."""
+    """초기 가중(기본 1/N, base_weights 지정 시 그 값) + 스타일 캡 재분배."""
     n_factors = rtn_df.shape[1]
     factors = rtn_df.columns.to_numpy()
     styles_arr = np.asarray(style_list)
 
-    w = np.ones(n_factors, dtype=np.float32) / n_factors
+    if base_weights is None:
+        w = np.ones(n_factors, dtype=np.float32) / n_factors
+    else:
+        w = base_weights.astype(np.float32).copy()
+        w /= w.sum()
 
     # 스타일 캡 재분배 (수렴까지 반복)
     uniq_styles = np.unique(styles_arr)
@@ -115,9 +120,11 @@ def optimize_constrained_weights(
     현재 "최적화"라는 이름과 달리, 공분산/리스크 모델 기반의 진짜 최적화는
     제거됐다 (커밋 8dfb64e). 두 모드 모두 학습되는 가중치 없음.
 
-    두 가지 모드를 지원한다:
+    세 가지 모드를 지원한다:
     - "equal_weight": 1/N 동일가중 + 스타일 캡 재분배 (config.py 기본값;
       backtest 모드에서 "hardcoded"를 주면 자동으로 이 모드로 변환됨)
+    - "inverse_vol": 팩터 IS 변동성 반비례 가중 + 스타일 캡 재분배 (실험용,
+      docs/experiments 참조)
     - "hardcoded": 프로덕션용 고정 가중치 CSV (data/hardcoded_weights.csv) 반환
 
     Args:
@@ -140,4 +147,18 @@ def optimize_constrained_weights(
     if mode == "equal_weight":
         return _equal_weight_allocation(rtn_df, style_list, style_cap, tol, test_mode)
 
-    raise ValueError(f"Unknown optimization mode: {mode!r}. Use 'hardcoded' or 'equal_weight'.")
+    if mode == "inverse_vol":
+        # 팩터 IS 월간 수익률 변동성 반비례 가중. 첫 행(기준점 0) 제외는
+        # compute_rank_score 의 monthly_rets = iloc[1:] 관례와 동일.
+        vol = rtn_df.iloc[1:].std().to_numpy(dtype=np.float64)
+        # ponytail: 무분산 팩터 폭주 방지 하한. zero-filter 가 상류에서 대부분 거르므로
+        # 실전에서 밟힐 일은 드물다.
+        vol = np.maximum(vol, 1e-6)
+        base = 1.0 / vol
+        return _equal_weight_allocation(
+            rtn_df, style_list, style_cap, tol, test_mode, base_weights=base
+        )
+
+    raise ValueError(
+        f"Unknown optimization mode: {mode!r}. Use 'hardcoded', 'equal_weight' or 'inverse_vol'."
+    )
