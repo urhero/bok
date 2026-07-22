@@ -144,11 +144,12 @@ def stock_weights_at(frames, w_dep, t, backtest_start_ts):
 
 
 def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None = None,
-        out_suffix: str = "") -> pd.DataFrame:
+        out_suffix: str = "", optimization_mode: str | None = None) -> pd.DataFrame:
     """selection_cost_bps: factor-level(선정 입력) 비용 오버라이드.
     None 이면 엔진과 동일 (transaction_cost_bps x multiplier).
     MP-level 실비용(cost_stock)은 항상 base transaction_cost_bps 를 쓴다 —
     netted 실거래에는 multiplier(netting 근사)를 다시 곱하면 이중 할인.
+    optimization_mode: pp["optimization_mode"] 오버라이드 (예: "inverse_vol").
     """
     t0 = time.time()
     min_is = 4 if test_file else 36
@@ -159,6 +160,8 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
     pp["top_factor_count"] = 50
     if pp["optimization_mode"] == "hardcoded":
         pp["optimization_mode"] = "equal_weight"
+    if optimization_mode:
+        pp["optimization_mode"] = optimization_mode
     mp_cost_bps = float(pp["transaction_cost_bps"])  # 실비용: base (multiplier 미적용)
     pp["transaction_cost_bps"] = (
         _resolve_backtest_cost_bps(pp) if selection_cost_bps is None else float(selection_cost_bps)
@@ -293,7 +296,7 @@ def perf(rets: pd.Series) -> dict:
             "Calmar": cagr / abs(mdd) if mdd != 0 else 0.0}
 
 
-def summarize(df: pd.DataFrame, test_file: str | None):
+def summarize(df: pd.DataFrame, test_file: str | None, parity_csv: str | None = None):
     print("\n=== 성과 (OOS %d개월) ===" % len(df))
     for label, col in [("factor-level net (cew parity)", "cew_return"),
                        ("stock-level gross", "gross_stock"),
@@ -310,9 +313,9 @@ def summarize(df: pd.DataFrame, test_file: str | None):
     if cf.mean() > 0:
         print(f"netting ratio (실비용/팩터별 전액계상) = {cs.mean()/cf.mean():.3f}")
 
-    # parity: canonical walk_forward_results.csv 와 cew 비교
+    # parity: canonical(또는 지정) 결과 CSV 와 cew 비교
     if not test_file:
-        canon_path = PROJECT_ROOT / "output" / "walk_forward_results.csv"
+        canon_path = Path(parity_csv) if parity_csv else PROJECT_ROOT / "output" / "walk_forward_results.csv"
         if canon_path.exists():
             canon = pd.read_csv(canon_path, parse_dates=["date"]).set_index("date")
             joined = df[["cew_return"]].join(canon["cew_return"], rsuffix="_canon").dropna()
@@ -327,13 +330,22 @@ def main():
     ap.add_argument("--selection-cost-bps", type=float, default=None,
                     help="선정(factor-level) 비용 오버라이드. 0 = gross 선정. "
                          "기본: 엔진과 동일 (cost x multiplier)")
+    ap.add_argument("--optimization-mode", default=None,
+                    help="가중 모드 오버라이드 (예: inverse_vol). 기본: config")
+    ap.add_argument("--parity-csv", default=None,
+                    help="parity 비교 대상 CSV (기본: output/walk_forward_results.csv)")
     args = ap.parse_args()
     test_file = "test_data.csv" if args.test else None
     out_dir = Path(args.out) if args.out else PROJECT_ROOT / "output" / "experiments"
     suffix = "" if args.selection_cost_bps is None else f"_sel{args.selection_cost_bps:g}bp"
-    df = run(test_file, out_dir, selection_cost_bps=args.selection_cost_bps, out_suffix=suffix)
-    # parity 는 선정 비용이 엔진 기본과 같을 때만 의미 있음
-    summarize(df, test_file if args.selection_cost_bps is None else "skip-parity")
+    if args.optimization_mode:
+        suffix += f"_{args.optimization_mode}"
+    df = run(test_file, out_dir, selection_cost_bps=args.selection_cost_bps, out_suffix=suffix,
+             optimization_mode=args.optimization_mode)
+    # parity 는 선정 비용이 엔진 기본과 같을 때만 의미 있음.
+    # 모드 오버라이드 시엔 --parity-csv 로 해당 모드의 결과를 지정해야 의미 있음.
+    skip = args.selection_cost_bps is not None or (args.optimization_mode and not args.parity_csv)
+    summarize(df, test_file if not skip else "skip-parity", parity_csv=args.parity_csv)
 
 
 if __name__ == "__main__":
