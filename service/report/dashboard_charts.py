@@ -80,6 +80,34 @@ def rolling_sharpe_fig(rs: pd.Series) -> go.Figure:
     return fig
 
 
+def build_vol_regime_chart(df: pd.DataFrame) -> go.Figure:
+    """실현변동성(18M)/중위 실현변동성 라인(좌축) + 참고 배수 k(우축)."""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["realized_vol"], name="실현변동성 (18M)",
+        line=dict(color="#3b82f6", width=2),
+        hovertemplate="%{x|%Y-%m}<br>실현 %{y:.2%}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["median_vol"], name="중위 실현변동성 (확장창)",
+        line=dict(color=_MUTED, width=1.6, dash="dot"),
+        hovertemplate="%{x|%Y-%m}<br>중위 %{y:.2%}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["k"], name="참고 배수 k", yaxis="y2",
+        line=dict(color="#fcd535", width=2),
+        hovertemplate="%{x|%Y-%m}<br>k %{y:.2f}<extra></extra>",
+    ))
+    fig.update_layout(
+        title="전략 실현변동성 국면 (18M) + 참고 배수 k", height=360,
+        margin=dict(l=60, r=55, t=50, b=70), **_DARK,
+        yaxis=dict(title="연환산 변동성", tickformat=".0%"),
+        yaxis2=dict(title="k", overlaying="y", side="right", rangemode="tozero", showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.28, x=0, font=dict(size=11)),
+    )
+    return fig
+
+
 def equity_curve_fig(curves: pd.DataFrame) -> go.Figure:
     fig = go.Figure()
     for key, color, label, width in _STRAT:

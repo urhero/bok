@@ -335,6 +335,31 @@ def _backtest_stats_card(curves) -> str:
     return f'<div class="kpi-grid">{cells}</div>'
 
 
+def _vol_regime_note(summary: dict) -> str:
+    """변동성 국면 요약 텍스트 - Bloomberg multiplier/TE 타깃 정성 참고용 설명."""
+    text = (
+        f'현재 실현변동성 {summary["realized_vol"]:.1%} '
+        f'(역대 {summary["percentile"]:.0%} 백분위, '
+        f'레인지 {summary["min_vol"]:.1%}~{summary["max_vol"]:.1%}), '
+        f'중위 {summary["median_vol"]:.1%}, '
+        f'참고 배수 k={summary["k"]:.2f} (cap {summary["k_cap"]:.1f}). '
+        'Bloomberg multiplier/TE 타깃 정할 때 정성 참고용 - 예: 평소 TE 타깃 x k'
+    )
+    return escape(text)
+
+
+def _vol_regime_section(curves) -> str:
+    """변동성 국면 차트 + 요약 카드 (행 부족 등으로 계산 불가하면 빈 문자열 - 섹션 생략)."""
+    result = dd.build_vol_regime(curves)
+    if result is None:
+        return ""
+    vr_df, summary = result
+    return (
+        f'<div class="card full">{_fig_div(ch.build_vol_regime_chart(vr_df))}</div>'
+        f'<div class="card full"><div class="note">{_vol_regime_note(summary)}</div></div>'
+    )
+
+
 def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
     """백테스트 섹션 HTML 조각 리스트와 'plotly.js 포함 여부' 반환."""
     wf_path = output_dir / "walk_forward_results.csv"
@@ -384,6 +409,11 @@ def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
         churn_split = dd.selection_churn_split(wh)
         parts.append(f'<div class="card full">{_fig_div(ch.style_weight_evolution_fig(style_hist))}</div>')
         parts.append(f'<div class="card full">{_fig_div(ch.turnover_fig(turnover, churn_split))}</div>')
+
+    vol_regime_section = _vol_regime_section(curves)
+    if vol_regime_section:
+        parts.append('<h2>변동성 국면 (multiplier 참고)</h2>')
+        parts.append(vol_regime_section)
 
     diag_tbl = _diagnostics_table(output_dir, curves)
     if diag_tbl:

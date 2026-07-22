@@ -437,6 +437,75 @@ def test_rolling_sharpe_window():
     assert len(dd.rolling_sharpe(_curves(), window=6)) == 7     # 12-6+1
 
 
+# ── 변동성 국면 (vol regime) ─────────────────────────────────────────────────
+
+def _vol_regime_returns(n_high: int = 18, n_low: int = 18,
+                        high: float = 0.05, low: float = 0.001) -> pd.DataFrame:
+    """전반 고변동(+-high) n_high개월 + 후반 저변동(+-low) n_low개월 합성 수익률.
+
+    후반부는 rolling(18) 창이 완전히 저변동 구간에 들어가도록 n_low>=window 로 맞춰,
+    마지막 시점의 k 가 cap 에 걸리도록(median >> realized) 설계한다.
+    """
+    rets = [high, -high] * (n_high // 2) + [low, -low] * (n_low // 2)
+    dates = pd.date_range("2019-01-31", periods=len(rets), freq="ME")
+    return pd.DataFrame({"cew_return": rets}, index=pd.Index(dates, name="date"))
+
+
+def test_build_vol_regime_formula_first_valid_row():
+    """첫 유효 시점(window=18)은 median==realized(자기 자신) -> k==1.0 (cap 미적용)."""
+    df = _vol_regime_returns()
+    vr_df, _ = dd.build_vol_regime(df, window=18, k_cap=1.5)
+    first_valid = vr_df.dropna().iloc[0]
+    assert first_valid["realized_vol"] == pytest.approx(first_valid["median_vol"])
+    assert first_valid["k"] == pytest.approx(1.0)
+
+
+def test_build_vol_regime_cap_and_summary():
+    df = _vol_regime_returns()
+    vr_df, summary = dd.build_vol_regime(df, window=18, k_cap=1.5)
+
+    r = df["cew_return"].astype(float)
+    expected_realized = r.rolling(18).std() * (12 ** 0.5)
+    expected_median = expected_realized.expanding().median()
+    expected_k = (expected_median / expected_realized).clip(upper=1.5)
+    pd.testing.assert_series_equal(vr_df["realized_vol"], expected_realized, check_names=False)
+    pd.testing.assert_series_equal(vr_df["median_vol"], expected_median, check_names=False)
+    pd.testing.assert_series_equal(vr_df["k"], expected_k, check_names=False)
+
+    # 후반 저변동 구간 끝 -> median 이 realized 를 크게 웃돌아 cap(1.5)에 걸림
+    assert summary["k"] == pytest.approx(1.5)
+    assert summary["k_cap"] == pytest.approx(1.5)
+    assert summary["realized_vol"] == pytest.approx(expected_realized.dropna().iloc[-1])
+    assert summary["median_vol"] == pytest.approx(expected_median.dropna().iloc[-1])
+    # 마지막(최저) realized_vol 이 전체 최솟값 -> 백분위는 가장 낮은 값 근처
+    assert summary["min_vol"] == pytest.approx(summary["realized_vol"])
+    assert summary["max_vol"] == pytest.approx(expected_realized.dropna().max())
+    assert summary["percentile"] == pytest.approx(expected_realized.dropna().rank(pct=True).iloc[-1])
+    assert 0.0 < summary["percentile"] <= 1.0
+
+
+def test_build_vol_regime_accepts_path(tmp_path):
+    """경로(csv) 입력도 df 입력과 동일 결과."""
+    df = _vol_regime_returns()
+    path = tmp_path / "walk_forward_results.csv"
+    df.reset_index().to_csv(path, index=False)
+    from_path = dd.build_vol_regime(path, window=18, k_cap=1.5)
+    from_df = dd.build_vol_regime(df, window=18, k_cap=1.5)
+    assert from_path is not None
+    pd.testing.assert_frame_equal(from_path[0], from_df[0], check_freq=False)
+    assert from_path[1] == from_df[1]
+
+
+def test_build_vol_regime_none_when_rows_insufficient():
+    """window+1(19) 미만 행이면 None (선택적 데이터 처리 패턴)."""
+    short = _vol_regime_returns(n_high=18, n_low=0)  # 18행 < 19
+    assert dd.build_vol_regime(short, window=18) is None
+
+
+def test_build_vol_regime_none_when_file_missing(tmp_path):
+    assert dd.build_vol_regime(tmp_path / "nope.csv") is None
+
+
 def test_relative_metrics():
     m = dd.relative_metrics(_curves(), bench_col="ew_return")
     assert set(m) >= {"beta", "alpha_ann", "tracking_error", "info_ratio", "bench"}

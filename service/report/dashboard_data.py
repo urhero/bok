@@ -208,6 +208,61 @@ def rolling_sharpe(curves: pd.DataFrame, window: int = 12) -> pd.Series:
     return rs.dropna()
 
 
+def build_vol_regime(source, window: int = 18, k_cap: float = 1.5):
+    """전략(CEW) 월간 수익률의 실현변동성 국면 + 참고 배수 k.
+
+    k_t = clip(median_vol_t / realized_vol_t, upper=k_cap). median_vol_t/realized_vol_t 모두
+    t월까지의 데이터만 쓰는 expanding/rolling 이라, k_t 는 원래 "t월까지 알 수 있는 다음달
+    (t+1) 노출 참고치"다 (연구 docs/experiments/calmar_overlay_20260721.md 의 walk-forward
+    shift(1)과 동일 의미 — 이 함수는 계산만 하고 자동으로 shift 하지 않으니, 호출부에서
+    k.iloc[-1]을 "다음 달" 참고용으로 해석할 것). 자동 스케일링에는 쓰지 않고 Bloomberg
+    Target Portfolio 의 multiplier/TE 타깃을 수동으로 정할 때 정성 참고용으로만 쓴다.
+
+    Args:
+        source: walk_forward_results.csv 경로(Path/str) 또는 load_backtest_curves 로 이미
+            읽은 DataFrame ('cew_return' 컬럼 필요).
+        window: 실현변동성 rolling 창(개월). 기본 18 (연구 채택안, docs/experiments 참조).
+        k_cap: k 상한. 기본 1.5.
+
+    Returns:
+        (df, summary) 튜플. df 는 원본 date 인덱스에 realized_vol/median_vol/k 컬럼을 더한
+        DataFrame. summary 는 최신 시점 realized_vol/median_vol/k, k_cap, 그리고 realized_vol
+        의 역대 백분위(percentile, rank pct)/min_vol/max_vol 을 담은 dict.
+        파일이 없거나 유효 행이 window+1 미만이면 None (기존 선택적 데이터 처리 패턴,
+        예: load_style_deltas).
+    """
+    if isinstance(source, pd.DataFrame):
+        df = source
+    else:
+        p = Path(source)
+        if not p.exists():
+            return None
+        df = load_backtest_curves(p)
+
+    if len(df) < window + 1 or "cew_return" not in df.columns:
+        return None
+
+    r = df["cew_return"].astype(float)
+    realized_vol = r.rolling(window).std() * np.sqrt(12)
+    median_vol = realized_vol.expanding().median()
+    k = (median_vol / realized_vol).clip(upper=k_cap)
+    out = pd.DataFrame({"realized_vol": realized_vol, "median_vol": median_vol, "k": k})
+
+    valid = realized_vol.dropna()
+    if valid.empty:
+        return None
+    summary = {
+        "realized_vol": float(valid.iloc[-1]),
+        "median_vol": float(median_vol.dropna().iloc[-1]),
+        "k": float(k.dropna().iloc[-1]),
+        "k_cap": float(k_cap),
+        "percentile": float(valid.rank(pct=True).iloc[-1]),
+        "min_vol": float(valid.min()),
+        "max_vol": float(valid.max()),
+    }
+    return out, summary
+
+
 def relative_metrics(curves: pd.DataFrame, bench_col: str = "ew_return") -> dict:
     """벤치마크(기본 선정 EW) 대비 Beta / Alpha(연) / 추적오차(연) / 정보비율 (CEW)."""
     if bench_col not in curves.columns:
