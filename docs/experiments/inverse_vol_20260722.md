@@ -32,14 +32,25 @@ equal_weight 경로 무변경 -> off 시 byte-identical). 유닛테스트 3종.
 - 튜닝 파라미터가 없어 과적합 여지가 구조적으로 작음 (그리드 탐색 아님, 단일 명세)
 - vol targeting 오버레이(참고 지표)와 독립인 **전략 수익률 자체의 개선**
 
-## 채택 전 확인 사항
+## MP-level 비용 검증 (2026-07-22 실측 완료 — 통과)
 
-1. **MP-level 비용 검증**: inverse_vol은 expanding IS vol 변화로 팩터 가중이 완만히
-   드리프트 -> 종목 턴오버가 EW 대비 소폭 증가 가능. factor-level 백테스트는 이를
-   반영하지 않음(양쪽 동일 조건이라 비교 공정성은 유지). 결정판은
-   `research/mp_level_cost_backtest.py`에 `--optimization-mode` 옵션 추가 후 재실측.
-2. 채택 시: config `optimization_mode="inverse_vol"` 전환 + CLAUDE.md 검증 프로세스
-   (산출물 변경이 의도된 diff) + README/research.md 갱신.
+`mp_level_cost_backtest.py --optimization-mode inverse_vol` (옵션 신규 추가)로
+종목 단위 실비용(netting 반영, base 20bp) 재실측. 둘 다 parity 1e-16 통과:
+
+| (stock-level net, 163개월) | CAGR | MDD | Sharpe | Calmar | 턴오버(1-way/월) | netting |
+|---------------------------|------|-----|--------|--------|------------------|---------|
+| equal_weight | 2.05% | -10.1% | 0.562 | 0.203 | 0.263 (연 3.2x) | 0.532 |
+| **inverse_vol** | **2.32%** | -10.0% | **0.645** | **0.231** | **0.251 (연 3.0x)** | 0.527 |
+
+- 우려했던 가중 드리프트發 턴오버 증가는 **실측상 없음 — 오히려 감소** (0.263 -> 0.251).
+  IS vol 이 expanding 창에서 완만히 변해 가중이 안정적이고, 고변동 팩터(대개 교체가
+  잦은 쪽)의 비중 축소가 종목 churn 을 줄이는 방향으로 작용.
+- 실비용 기준으로도 전 지표 IV 우위 -> **채택 확정 권고**.
+
+## 채택 절차 (남은 것)
+
+- config `optimization_mode="inverse_vol"` 전환 + CLAUDE.md 검증 프로세스
+  (산출물 변경이 의도된 diff) + README/research.md 갱신 + 산출물 재생성.
 
 ## 재현
 
