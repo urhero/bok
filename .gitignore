@@ -222,3 +222,5 @@ output/benchmark_comparison.csv
 
 # proposal experiment raw outputs (요약은 docs/experiments 에 커밋)
 research/exp_out_*/
+
+research/output/
