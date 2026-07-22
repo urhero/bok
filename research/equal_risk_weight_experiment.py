@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""inverse_vol 팩터 가중 A/B 실험.
+"""equal_risk_weight 팩터 가중 A/B 실험.
 
 baseline(equal_weight)은 커밋된 output/walk_forward_results.csv 에서 성과만 재계산
-(byte-identical 이 검증된 산출물이므로 재실행 불필요). inverse_vol 만 walk-forward
+(byte-identical 이 검증된 산출물이므로 재실행 불필요). equal_risk_weight 만 walk-forward
 1회 실행 (~16분).
 """
 import sys
@@ -36,7 +36,7 @@ def main():
     # equal_risk_weight 케이스들: 완료된 케이스는 CSV 캐시에서 재계산 (재개/증분 실행)
     cases = {
         "equal_risk_weight": (
-            {"optimization_mode": "equal_risk_weight"}, "inverse_vol_results.csv"),
+            {"optimization_mode": "equal_risk_weight"}, "equal_risk_weight_results.csv"),
         "erw_riskcap": (
             {"optimization_mode": "equal_risk_weight", "style_cap_basis": "risk"},
             "erw_riskcap_results.csv"),
@@ -63,7 +63,7 @@ def main():
         print(f"[{name}] {perf}")
 
     summary = pd.DataFrame(rows)
-    summary.to_csv(OUT / "inverse_vol_summary.csv", index=False)
+    summary.to_csv(OUT / "equal_risk_weight_summary.csv", index=False)
     print(summary.to_string(index=False))
 
 

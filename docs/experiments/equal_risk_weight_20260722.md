@@ -1,7 +1,7 @@
-# Inverse-Vol 팩터 가중 A/B 실험 (2026-07-22)
+# Equal-Risk-Weight 팩터 가중 A/B 실험 (2026-07-22)
 
 - 브랜치: `feature/inverse-vol-weighting`
-- 러너: `research/inverse_vol_experiment.py` (baseline은 커밋 산출물 재계산, inverse_vol만 1런)
+- 러너: `research/equal_risk_weight_experiment.py` (baseline은 커밋 산출물 재계산, equal_risk_weight만 1런)
 - 판정: **채택 후보** — 전 하위구간 Sharpe/Calmar/MDD 동시 개선, 추가 파라미터 0개
 
 ## 아이디어
@@ -13,15 +13,15 @@
 
 구현: `optimization.py` `optimization_mode="equal_risk_weight"` (기존 캡 재분배 로직
 재사용, equal_weight 경로 무변경 -> off 시 byte-identical). 유닛테스트 3종.
-(명명: 초기 "inverse_vol"에서 2026-07-22 `equal_risk_weight`로 개명 — 의도가 드러나는
-이름. 러너/실측 CSV 파일명의 inverse_vol은 이력 보존 차원에서 유지.)
+(명명: 초명은 "inverse_vol"이었으나 2026-07-22 `equal_risk_weight`로 통일 개명 —
+의도가 드러나는 이름. 문서/러너/CSV 파일명도 전부 개명됨. git 이력에서 초명 검색 시 참고.)
 
 ## 결과 (walk-forward OOS, 동일 조건 A/B)
 
 | 케이스 | CAGR | MDD | Sharpe | Calmar |
 |--------|------|-----|--------|--------|
 | equal_weight (현행) | 1.88% | -10.23% | 0.516 | 0.184 |
-| **inverse_vol** | **2.14%** | **-10.14%** | **0.598** | **0.211** |
+| **equal_risk_weight** | **2.14%** | **-10.14%** | **0.598** | **0.211** |
 
 하위구간 분해 — **전 구간 개선, 역전 없음**:
 
@@ -36,13 +36,13 @@
 
 ## MP-level 비용 검증 (2026-07-22 실측 완료 — 통과)
 
-`mp_level_cost_backtest.py --optimization-mode inverse_vol` (옵션 신규 추가)로
+`mp_level_cost_backtest.py --optimization-mode equal_risk_weight` (옵션 신규 추가)로
 종목 단위 실비용(netting 반영, base 20bp) 재실측. 둘 다 parity 1e-16 통과:
 
 | (stock-level net, 163개월) | CAGR | MDD | Sharpe | Calmar | 턴오버(1-way/월) | netting |
 |---------------------------|------|-----|--------|--------|------------------|---------|
 | equal_weight | 2.05% | -10.1% | 0.562 | 0.203 | 0.263 (연 3.2x) | 0.532 |
-| **inverse_vol** | **2.32%** | -10.0% | **0.645** | **0.231** | **0.251 (연 3.0x)** | 0.527 |
+| **equal_risk_weight** | **2.32%** | -10.0% | **0.645** | **0.231** | **0.251 (연 3.0x)** | 0.527 |
 
 - 우려했던 가중 드리프트發 턴오버 증가는 **실측상 없음 — 오히려 감소** (0.263 -> 0.251).
   IS vol 이 expanding 창에서 완만히 변해 가중이 안정적이고, 고변동 팩터(대개 교체가
@@ -75,5 +75,5 @@
 ## 재현
 
 ```bash
-python research/inverse_vol_experiment.py   # ~16분
+python research/equal_risk_weight_experiment.py   # ~16분
 ```

@@ -1,0 +1,1373 @@
+[FULL_NAN_FACTORS] 42 factor(s) with 100% NaN: ['12QTTMCFTrend', '12QTrendTTMEPS', 'AdjAstAdjChg1YFCF', 'AdjAstAdjChg3YFCF', 'AdjChgEPS']...
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping Adj50DVolSig - insufficient quintile coverage
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 10 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'EPSEstDispFY1C', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'InvPEGC', 'LTGC', 'NIStab', 'SalesAcc']
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 10 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'EPSStab', 'EPSSurpC', 'IO_InvDuration', 'InvPEGC', 'LTGC', 'NIStab', 'SalesAcc']
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 12 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'EPSStab', 'EPSSurpC', 'IO_InvDuration', 'InvPEGC', 'InvPEGYC', 'LTGC', 'NIStab', 'STO_6M', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.25, np.str_('Historical Growth'): 0.25}
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 11 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'EPSEstDispFY1C', 'EPSStab', 'EPSSurpC', 'IO_InvDuration', 'InvPEGC', 'LTGC', 'NIStab', 'SalesAcc']
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 13 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'EPSEstDispFY1C', 'EPSEstDispFY2C', 'EPSStab', 'EPSSurpC', 'IO_InvDuration', 'InvPEGC', 'InvPEGYC', 'LTGC', 'NIStab', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.25, np.str_('Earnings Quality'): 0.25}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Earnings Quality'): 0.2501}
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 12 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'EPSEstDispFY2C', 'EPSStab', 'EPSSurpC', 'IO_InvDuration', 'InvPEGC', 'InvPEGYC', 'LTGC', 'NIStab', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Earnings Quality'): 0.2501}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2523, np.str_('Earnings Quality'): 0.2523, np.str_('Historical Growth'): 0.2523}
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 12 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'EPSEstDispFY2C', 'EPSStab', 'EPSSurpC', 'IO_InvDuration', 'InvPEGC', 'InvPEGYC', 'LTGC', 'NIStab', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2609, np.str_('Earnings Quality'): 0.2609, np.str_('Historical Growth'): 0.2609}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2564, np.str_('Earnings Quality'): 0.2564, np.str_('Historical Growth'): 0.2564}
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 13 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'EPSEstDispFY2C', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'InvPEGYC', 'LTGC', 'NIStab', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2528, np.str_('Earnings Quality'): 0.2528, np.str_('Historical Growth'): 0.2528}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2534, np.str_('Earnings Quality'): 0.2534, np.str_('Historical Growth'): 0.2534}
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 15 factors with NaN: ['10DMACD', '3MSalesMom', '5DVolSig', '6MTTMSalesMom', 'Adj50DVolSig', 'AnnVol12M', 'EPSEstDispFY2C', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTGC', 'NIStab', 'SalesAcc']
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 16 factors with NaN: ['10DMACD', '3MSalesMom', '5DVolSig', '6MTTMSalesMom', 'Adj50DVolSig', 'Amihud', 'EPSEstDispFY2C', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTDE', 'LTGC', 'NIStab', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Historical Growth'): 0.2501}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Historical Growth'): 0.2501}
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 16 factors with NaN: ['10DMACD', '3MSalesMom', '52WVPT20DLag', '6MTTMSalesMom', 'Adj50DVolSig', 'Amihud', 'EPSEstDispFY2C', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTDE', 'LTGC', 'NIStab', 'SalesAcc']
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 14 factors with NaN: ['10DMACD', '3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Amihud', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTDE', 'LTGC', 'NIStab', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Historical Growth'): 0.2501}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2521, np.str_('Earnings Quality'): 0.2521, np.str_('Historical Growth'): 0.2521}
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping RDInt - insufficient quintile coverage
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 14 factors with NaN: ['10DMACD', '3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Amihud', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTDE', 'LTGC', 'NIStab', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2516, np.str_('Earnings Quality'): 0.2516, np.str_('Historical Growth'): 0.2516}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2516, np.str_('Earnings Quality'): 0.2516, np.str_('Historical Growth'): 0.2516}
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 14 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Amihud', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTDE', 'LTGC', 'NIStab', 'RDInt', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Earnings Quality'): 0.2501}
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 14 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Amihud', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTDE', 'LTGC', 'NIStab', 'RDInt', 'SalesAcc']
+Skipping BuyBackChg - insufficient quintile coverage
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 16 factors with NaN: ['10DMACD', '3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Amihud', 'AnnVol12M', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTDE', 'LTGC', 'NIStab', 'RDInt', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.25, np.str_('Historical Growth'): 0.25}
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 16 factors with NaN: ['10DMACD', '3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Amihud', 'AnnVol12M', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTDE', 'LTGC', 'NIStab', 'RDInt', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Historical Growth'): 0.2501}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2502, np.str_('Historical Growth'): 0.2502}
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 18 factors with NaN: ['10DMACD', '3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Amihud', 'AnnVol12M', 'BuyBackChg', 'CVVolPrc60D', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTDE', 'LTGC', 'NIStab', 'RDInt', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Historical Growth'): 0.2501}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Historical Growth'): 0.2501}
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 17 factors with NaN: ['10DMACD', '3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Amihud', 'BuyBackChg', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'InvPEGYC', 'LTDE', 'LTGC', 'NIStab', 'RDInt', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.25, np.str_('Historical Growth'): 0.25}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2527, np.str_('Capital Efficiency'): 0.2527, np.str_('Historical Growth'): 0.2527}
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 16 factors with NaN: ['10DMACD', '3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Amihud', 'BuyBackChg', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTDE', 'LTGC', 'NIStab', 'RDInt', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2527, np.str_('Earnings Quality'): 0.2527, np.str_('Historical Growth'): 0.2527}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2503, np.str_('Historical Growth'): 0.2503}
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 17 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Alpha12M6MPChg', 'Amihud', 'BuyBackChg', 'CVVolPrc60D', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTDE', 'LTGC', 'NIStab', 'RDInt', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2531, np.str_('Earnings Quality'): 0.2531, np.str_('Historical Growth'): 0.2531}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2531, np.str_('Earnings Quality'): 0.2531, np.str_('Historical Growth'): 0.2531}
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 17 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Alpha12M6MPChg', 'Amihud', 'BuyBackChg', 'CVVolPrc60D', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTGC', 'NIStab', 'RDInt', 'ROA60MSlope', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2521, np.str_('Earnings Quality'): 0.2521, np.str_('Historical Growth'): 0.2521}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Earnings Quality'): 0.2501}
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 16 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Alpha12M6MPChg', 'BuyBackChg', 'CVVolPrc60D', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'InvPEGYC', 'LTGC', 'NIStab', 'RDInt', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Earnings Quality'): 0.2501}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Earnings Quality'): 0.2501}
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 15 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'BuyBackChg', 'CVVolPrc60D', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTGC', 'NIStab', 'RDInt', 'ROA60MSlope', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Earnings Quality'): 0.2501}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2501, np.str_('Earnings Quality'): 0.2501}
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 15 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Alpha12M6MPChg', 'BuyBackChg', 'CVVolPrc60D', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTGC', 'NIStab', 'RDInt', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2502, np.str_('Earnings Quality'): 0.2502}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2502, np.str_('Earnings Quality'): 0.2502}
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 15 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Alpha12M6MPChg', 'BuyBackChg', 'CVVolPrc60D', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTGC', 'NIStab', 'RDInt', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2502, np.str_('Earnings Quality'): 0.2502}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2502, np.str_('Earnings Quality'): 0.2502}
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 15 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'BuyBackChg', 'CVVolPrc60D', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTGC', 'NIStab', 'RDInt', 'ROA60MSlope', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2549, np.str_('Earnings Quality'): 0.2549, np.str_('Historical Growth'): 0.2549}
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2591, np.str_('Earnings Quality'): 0.2591, np.str_('Historical Growth'): 0.2591}
+Skipping ShortIntRatio - insufficient history
+Skipping ShortIntTrdVol - insufficient history
+Skipping IndiDivP - insufficient history
+Skipping OCFStab - insufficient history
+Skipping AdjAstAdjChg1YFCF - insufficient history
+Skipping AdjAstAdjChg3YFCF - insufficient history
+Skipping AdjChgEPS - insufficient history
+Skipping AdjFCFP - insufficient history
+Skipping AdjEBITDAEV - insufficient history
+Skipping AdjGFP - insufficient history
+Skipping ChgNonPerfLnGL - insufficient history
+Skipping ProvChgOffSales - insufficient history
+Skipping FCFStab - insufficient history
+Skipping CashAdjEV - insufficient history
+Skipping ChgNonPerAsttoAst - insufficient history
+Skipping ChgChgOfftoGL - insufficient history
+Skipping ChgNonPerAsttoResLnLos - insufficient history
+Skipping OCFAst - insufficient history
+Skipping OCFIC - insufficient history
+Skipping ChgATO - insufficient history
+Skipping FCFP_BK - insufficient history
+Skipping BVEV - insufficient history
+Skipping EBITDAMargin - insufficient history
+Skipping NonPerfAstResLnLs - insufficient history
+Skipping Chg4QSalesTrend - insufficient history
+Skipping 12QTTMCFTrend - insufficient history
+Skipping 12QTrendTTMEPS - insufficient history
+Skipping ConsQPosChginTTMCF - insufficient history
+Skipping ConsQPosChgTTMEPS - insufficient history
+Skipping CQDOHtoSales - insufficient history
+Skipping CQDRItoSales - insufficient history
+Skipping CQPTTMCFtoSales - insufficient history
+Skipping TTMEPStoTTMSales - insufficient history
+Skipping EBITP - insufficient history
+Skipping stdRR36M - insufficient history
+Skipping ROEStab - insufficient history
+Skipping ROASTAB - insufficient history
+Skipping AdjRev3MFY1C - insufficient history
+Skipping AdjFwdFCFPC - insufficient history
+Skipping AdjInvPEGC - insufficient history
+Skipping IO_ChgofIO_HF - insufficient history
+Skipping IO_NAT - insufficient history
+C:\Users\IKM\bok\service\backtest\walk_forward_engine.py:122: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
+  q_labels = fd.groupby("quantile")["label"].first().to_dict()
+Dropped 16 factors with NaN: ['3MSalesMom', '6MTTMSalesMom', 'Adj50DVolSig', 'Alpha12M6MPChg', 'BuyBackChg', 'CVVolPrc60D', 'EPSStab', 'EPSSurpC', 'IO_ChgofNumBY', 'IO_InvDuration', 'InvPEGC', 'LTGC', 'NIStab', 'RDInt', 'ROA60MSlope', 'SalesAcc']
+style_cap 0.25 violated after redistribution: {np.str_('Analyst Expectations'): 0.2591, np.str_('Earnings Quality'): 0.2591, np.str_('Historical Growth'): 0.2591}

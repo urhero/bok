@@ -149,7 +149,7 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
     None 이면 엔진과 동일 (transaction_cost_bps x multiplier).
     MP-level 실비용(cost_stock)은 항상 base transaction_cost_bps 를 쓴다 —
     netted 실거래에는 multiplier(netting 근사)를 다시 곱하면 이중 할인.
-    optimization_mode: pp["optimization_mode"] 오버라이드 (예: "inverse_vol").
+    optimization_mode: pp["optimization_mode"] 오버라이드 (예: "equal_risk_weight").
     """
     t0 = time.time()
     min_is = 4 if test_file else 36
@@ -331,7 +331,7 @@ def main():
                     help="선정(factor-level) 비용 오버라이드. 0 = gross 선정. "
                          "기본: 엔진과 동일 (cost x multiplier)")
     ap.add_argument("--optimization-mode", default=None,
-                    help="가중 모드 오버라이드 (예: inverse_vol). 기본: config")
+                    help="가중 모드 오버라이드 (예: equal_risk_weight). 기본: config")
     ap.add_argument("--parity-csv", default=None,
                     help="parity 비교 대상 CSV (기본: output/walk_forward_results.csv)")
     args = ap.parse_args()
