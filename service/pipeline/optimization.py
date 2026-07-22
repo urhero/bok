@@ -42,7 +42,7 @@ def _redistribute_to_cap(
 ) -> np.ndarray:
     """스타일 합이 cap 을 넘지 않도록 비례 축소 + 재정규화 (수렴까지 최대 10회).
 
-    x 는 캡을 적용할 단위의 벡터 (weight basis 면 금액 비중, risk basis 면
+    x 는 캡을 적용할 단위의 벡터 (weight basis 면 비중, risk basis 면
     리스크 예산 w*sigma). 연산 순서는 기존 인라인 루프와 동일 (byte 보존).
     """
     for _ in range(10):
@@ -79,7 +79,7 @@ def _equal_weight_allocation(
     """초기 가중(기본 1/N, base_weights 지정 시 그 값) + 스타일 캡 재분배.
 
     cap_scale 지정 시(risk basis) 캡 재분배를 x = w * cap_scale (리스크 예산)
-    공간에서 수행한 뒤 금액 비중으로 환산한다. None 이면 기존 금액 기준 그대로.
+    공간에서 수행한 뒤 비중으로 환산한다. None 이면 기존 비중 기준 그대로.
     """
     n_factors = rtn_df.shape[1]
     factors = rtn_df.columns.to_numpy()
@@ -104,13 +104,13 @@ def _equal_weight_allocation(
         if cap_scale is None:
             w = _redistribute_to_cap(w, styles_arr, uniq_styles, style_cap, tol)
         else:
-            # risk basis: 리스크 예산 공간에서 캡 적용 후 금액으로 환산
+            # risk basis: 리스크 예산 공간에서 캡 적용 후 비중으로 환산
             x = (w * cap_scale.astype(np.float32))
             x /= x.sum()
             x = _redistribute_to_cap(x, styles_arr, uniq_styles, style_cap, tol)
             w = x / cap_scale.astype(np.float32)
             w /= w.sum()
-            # 진단: 금액(notional) 기준 캡 위반 여부 (규제 요건이 금액 기준일 경우 참고)
+            # 진단: 비중(notional) 기준 캡 위반 여부 (규제 요건이 비중 기준일 경우 참고)
             notional = {
                 s: float(w[styles_arr == s].sum())
                 for s in uniq_styles if w[styles_arr == s].sum() > style_cap + 1e-6
@@ -195,7 +195,7 @@ def optimize_constrained_weights(
         # 실전에서 밟힐 일은 드물다.
         vol = np.maximum(vol, 1e-6)
         base = 1.0 / vol
-        # style_cap_basis="risk": 캡을 금액이 아닌 리스크 예산(w*sigma) 기준으로 적용
+        # style_cap_basis="risk": 캡을 비중이 아닌 리스크 예산(w*sigma) 기준으로 적용
         cap_scale = vol if style_cap_basis == "risk" else None
         return _equal_weight_allocation(
             rtn_df, style_list, style_cap, tol, test_mode,
