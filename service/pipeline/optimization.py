@@ -79,7 +79,7 @@ def _equal_weight_allocation(
     """초기 가중(기본 1/N, base_weights 지정 시 그 값) + 스타일 캡 재분배.
 
     cap_scale 지정 시(risk basis) 캡 재분배를 x = w * cap_scale (리스크 예산)
-    공간에서 수행한 뒤 비중으로 환산한다. None 이면 기존 비중 기준 그대로.
+    공간에서 수행한 뒤 명목비중으로 환산한다. None 이면 기존 명목비중 기준 그대로.
     """
     n_factors = rtn_df.shape[1]
     factors = rtn_df.columns.to_numpy()
@@ -104,13 +104,13 @@ def _equal_weight_allocation(
         if cap_scale is None:
             w = _redistribute_to_cap(w, styles_arr, uniq_styles, style_cap, tol)
         else:
-            # risk basis: 리스크 예산 공간에서 캡 적용 후 비중으로 환산
+            # risk basis: 리스크 예산 공간에서 캡 적용 후 명목비중으로 환산
             x = (w * cap_scale.astype(np.float32))
             x /= x.sum()
             x = _redistribute_to_cap(x, styles_arr, uniq_styles, style_cap, tol)
             w = x / cap_scale.astype(np.float32)
             w /= w.sum()
-            # 진단: 비중(notional) 기준 캡 위반 여부 (규제 요건이 비중 기준일 경우 참고)
+            # 진단: 명목비중(notional) 기준 캡 위반 여부 (규제 요건이 명목비중 기준일 경우 참고)
             notional = {
                 s: float(w[styles_arr == s].sum())
                 for s in uniq_styles if w[styles_arr == s].sum() > style_cap + 1e-6
