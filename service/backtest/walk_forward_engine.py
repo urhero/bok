@@ -281,6 +281,7 @@ def _run_weight_optimization(
         ret_subset, style_list,
         mode=pp["optimization_mode"],
         style_cap=pp["style_cap"],
+        style_cap_basis=pp.get("style_cap_basis", "weight"),
     )
 
     weights_dict = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))

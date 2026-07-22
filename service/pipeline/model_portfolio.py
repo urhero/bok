@@ -138,6 +138,7 @@ class ModelPortfolioPipeline:
             ret_subset, style_list, test_mode=bool(test_file),
             mode=self.pipeline_params["optimization_mode"],
             style_cap=self.pipeline_params["style_cap"],
+            style_cap_basis=self.pipeline_params.get("style_cap_basis", "weight"),
         )
 
         # [6.5] 배포 가중치 = 목표 가중치 (스무딩 제거: production 은 항상 목표 그대로 배포)

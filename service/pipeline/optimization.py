@@ -33,6 +33,40 @@ def _get_hardcoded_weights() -> tuple[pd.DataFrame, pd.DataFrame]:
     return best_stats, weights_tbl
 
 
+def _redistribute_to_cap(
+    x: np.ndarray,
+    styles_arr: np.ndarray,
+    uniq_styles: np.ndarray,
+    style_cap: float,
+    tol: float,
+) -> np.ndarray:
+    """스타일 합이 cap 을 넘지 않도록 비례 축소 + 재정규화 (수렴까지 최대 10회).
+
+    x 는 캡을 적용할 단위의 벡터 (weight basis 면 금액 비중, risk basis 면
+    리스크 예산 w*sigma). 연산 순서는 기존 인라인 루프와 동일 (byte 보존).
+    """
+    for _ in range(10):
+        for s in uniq_styles:
+            mask_s = styles_arr == s
+            style_w = x[mask_s].sum()
+            if style_w > style_cap + tol:
+                x[mask_s] *= style_cap / style_w
+        x /= x.sum()
+        if all(x[styles_arr == s].sum() <= style_cap + tol for s in uniq_styles):
+            break
+    # 10회 내 미수렴 시 위반 스타일 보고 (float32 오차 허용 1e-6)
+    violations = {
+        s: float(x[styles_arr == s].sum())
+        for s in uniq_styles if x[styles_arr == s].sum() > style_cap + 1e-6
+    }
+    if violations:
+        logger.warning(
+            "style_cap %.2f violated after redistribution: %s",
+            style_cap, {s: round(v, 4) for s, v in violations.items()},
+        )
+    return x
+
+
 def _equal_weight_allocation(
     rtn_df: pd.DataFrame,
     style_list: list[str],
@@ -40,8 +74,13 @@ def _equal_weight_allocation(
     tol: float,
     test_mode: bool,
     base_weights: np.ndarray | None = None,
+    cap_scale: np.ndarray | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """초기 가중(기본 1/N, base_weights 지정 시 그 값) + 스타일 캡 재분배."""
+    """초기 가중(기본 1/N, base_weights 지정 시 그 값) + 스타일 캡 재분배.
+
+    cap_scale 지정 시(risk basis) 캡 재분배를 x = w * cap_scale (리스크 예산)
+    공간에서 수행한 뒤 금액 비중으로 환산한다. None 이면 기존 금액 기준 그대로.
+    """
     n_factors = rtn_df.shape[1]
     factors = rtn_df.columns.to_numpy()
     styles_arr = np.asarray(style_list)
@@ -62,25 +101,25 @@ def _equal_weight_allocation(
                 "style_cap %.2f infeasible with %d styles (max %.0f%% < 100%%) - constraint will be violated",
                 style_cap, len(uniq_styles), len(uniq_styles) * style_cap * 100,
             )
-        for _ in range(10):
-            for s in uniq_styles:
-                mask_s = styles_arr == s
-                style_w = w[mask_s].sum()
-                if style_w > style_cap + tol:
-                    w[mask_s] *= style_cap / style_w
+        if cap_scale is None:
+            w = _redistribute_to_cap(w, styles_arr, uniq_styles, style_cap, tol)
+        else:
+            # risk basis: 리스크 예산 공간에서 캡 적용 후 금액으로 환산
+            x = (w * cap_scale.astype(np.float32))
+            x /= x.sum()
+            x = _redistribute_to_cap(x, styles_arr, uniq_styles, style_cap, tol)
+            w = x / cap_scale.astype(np.float32)
             w /= w.sum()
-            if all(w[styles_arr == s].sum() <= style_cap + tol for s in uniq_styles):
-                break
-        # 10회 내 미수렴 시 위반 스타일 보고 (float32 오차 허용 1e-6)
-        violations = {
-            s: float(w[styles_arr == s].sum())
-            for s in uniq_styles if w[styles_arr == s].sum() > style_cap + 1e-6
-        }
-        if violations:
-            logger.warning(
-                "style_cap %.2f violated after redistribution: %s",
-                style_cap, {s: round(v, 4) for s, v in violations.items()},
-            )
+            # 진단: 금액(notional) 기준 캡 위반 여부 (규제 요건이 금액 기준일 경우 참고)
+            notional = {
+                s: float(w[styles_arr == s].sum())
+                for s in uniq_styles if w[styles_arr == s].sum() > style_cap + 1e-6
+            }
+            if notional:
+                logger.info(
+                    "style_cap(risk basis): notional share exceeds %.2f: %s",
+                    style_cap, {s: round(v, 4) for s, v in notional.items()},
+                )
 
     weights_tbl = pd.DataFrame({
         "factor": factors,
@@ -114,6 +153,7 @@ def optimize_constrained_weights(
     style_cap: float = 0.25,
     tol: float = 1e-12,
     test_mode: bool = False,
+    style_cap_basis: str = "weight",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """스타일 캡 하 포트폴리오 가중치를 결정한다.
 
@@ -155,8 +195,11 @@ def optimize_constrained_weights(
         # 실전에서 밟힐 일은 드물다.
         vol = np.maximum(vol, 1e-6)
         base = 1.0 / vol
+        # style_cap_basis="risk": 캡을 금액이 아닌 리스크 예산(w*sigma) 기준으로 적용
+        cap_scale = vol if style_cap_basis == "risk" else None
         return _equal_weight_allocation(
-            rtn_df, style_list, style_cap, tol, test_mode, base_weights=base
+            rtn_df, style_list, style_cap, tol, test_mode,
+            base_weights=base, cap_scale=cap_scale,
         )
 
     raise ValueError(

@@ -56,6 +56,7 @@ PIPELINE_PARAMS = {
     "cluster_method": "winner_median", # "winner_median"(기본): 클러스터 1등 보호 + 전역 중위값 바닥(top_n 고정 없음, ~18~54 가변) / "topn": 클러스터당 상위3 -> 전역 rank_score Top-N
     "newey_west_lag": 3,               # Newey-West 보정 lag (meta_data.csv 진단용)
     "selection_hysteresis": 0.5,       # 선정 히스테리시스 margin (rank_score 단위). 0=off. 실험 근거: smoothing_cost_experiment_20260612.md
+    "style_cap_basis": "weight",       # "weight"(금액, 기본)/"risk": 스타일 캡 적용 기준. risk 는 equal_risk_weight 전용 (w*sigma 예산 기준 캡)
     "universe_mask": "off",            # "off"/"on": 상대 모멘텀 유니버스 마스크 (docs/superpowers/specs/2026-07-21-ls-universe-mask-design.md)
     "universe_momentum_windows": [1, 3, 6, 12],         # 복합 신호 horizon (개월)
     "universe_momentum_weights": [0.4, 0.3, 0.2, 0.1],  # horizon별 가중 (최근 가중)

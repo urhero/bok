@@ -33,18 +33,34 @@ def main():
                  "elapsed_min": 0.0})
     print(f"[equal_weight] cached: {perf}")
 
-    # inverse_vol: walk-forward 실행
-    t0 = time.time()
-    engine = WalkForwardEngine(
-        selection_hysteresis=PIPELINE_PARAMS["selection_hysteresis"],
-        pipeline_params_override={"optimization_mode": "equal_risk_weight"},
-    )
-    result = engine.run(PIPELINE_PARAMS["backtest_start"], PIPELINE_PARAMS["backtest_end"])
-    result.to_csv(str(OUT / "inverse_vol_results.csv"))
-    perf = result.calc_performance()
-    rows.append({"case": "equal_risk_weight", **{f"cew_{k}": v for k, v in perf.items()},
-                 "elapsed_min": round((time.time() - t0) / 60, 1)})
-    print(f"[inverse_vol] {perf}")
+    # equal_risk_weight 케이스들: 완료된 케이스는 CSV 캐시에서 재계산 (재개/증분 실행)
+    cases = {
+        "equal_risk_weight": (
+            {"optimization_mode": "equal_risk_weight"}, "inverse_vol_results.csv"),
+        "erw_riskcap": (
+            {"optimization_mode": "equal_risk_weight", "style_cap_basis": "risk"},
+            "erw_riskcap_results.csv"),
+    }
+    for name, (override, fname) in cases.items():
+        case_csv = OUT / fname
+        if case_csv.exists():
+            df = pd.read_csv(case_csv, parse_dates=["date"])
+            perf = WalkForwardResult._calc_perf(df["cew_return"], df["cew_cumulative"])
+            rows.append({"case": name, **{f"cew_{k}": v for k, v in perf.items()},
+                         "elapsed_min": 0.0})
+            print(f"[{name}] cached: {perf}")
+            continue
+        t0 = time.time()
+        engine = WalkForwardEngine(
+            selection_hysteresis=PIPELINE_PARAMS["selection_hysteresis"],
+            pipeline_params_override=override,
+        )
+        result = engine.run(PIPELINE_PARAMS["backtest_start"], PIPELINE_PARAMS["backtest_end"])
+        result.to_csv(str(case_csv))
+        perf = result.calc_performance()
+        rows.append({"case": name, **{f"cew_{k}": v for k, v in perf.items()},
+                     "elapsed_min": round((time.time() - t0) / 60, 1)})
+        print(f"[{name}] {perf}")
 
     summary = pd.DataFrame(rows)
     summary.to_csv(OUT / "inverse_vol_summary.csv", index=False)

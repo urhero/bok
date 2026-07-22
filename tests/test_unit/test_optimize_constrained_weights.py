@@ -308,6 +308,40 @@ class TestEqualRiskWeightMode:
         assert all(style_weights <= 0.40 + 1e-3)
         assert np.isclose(weights_tbl["fitted_weight"].sum(), 1.0, atol=1e-6)
 
+    def test_risk_basis_caps_risk_budget_not_notional(self) -> None:
+        """style_cap_basis="risk": 스타일별 리스크 예산(w*sigma) 합이 cap 이하.
+
+        저변동 스타일은 금액 비중이 cap 을 넘을 수 있다 (리스크 기준이므로 정상).
+        """
+        rng = np.random.default_rng(3)
+        n = 61
+        # 스타일 A: 저변동 4팩터, 스타일 B/C/D/E: 고변동 각 2팩터
+        cols, styles = {}, []
+        for i in range(4):
+            cols[f"A{i}"] = rng.normal(0.003, 0.01, n)
+            styles.append("A")
+        for s in ["B", "C", "D", "E"]:
+            for i in range(2):
+                cols[f"{s}{i}"] = rng.normal(0.003, 0.05, n)
+                styles.append(s)
+        rtn_df = pd.DataFrame(cols)
+        rtn_df.iloc[0] = 0.0
+
+        _, weights_tbl = optimize_constrained_weights(
+            rtn_df=rtn_df, style_list=styles,
+            mode="equal_risk_weight", style_cap=0.25, test_mode=False,
+            style_cap_basis="risk",
+        )
+        w = weights_tbl.set_index("factor")["fitted_weight"]
+        vols = rtn_df.iloc[1:].std()
+        risk = (w * vols)
+        risk_share = risk.groupby(np.asarray(styles)).sum() / risk.sum()
+        assert all(risk_share <= 0.25 + 1e-3)  # 리스크 예산 기준 캡 준수
+        assert np.isclose(w.sum(), 1.0, atol=1e-6)
+        # 저변동 스타일 A는 금액 비중이 25%를 넘는 것이 정상 (리스크 기준 캡의 정의)
+        notional_share = w.groupby(np.asarray(styles)).sum()
+        assert notional_share["A"] > 0.25
+
     def test_zero_vol_factor_does_not_explode(self) -> None:
         """무분산 팩터는 vol 하한(1e-6) 가드로 폭주하지 않는다."""
         rng = np.random.default_rng(2)
