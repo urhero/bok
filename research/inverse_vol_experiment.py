@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """inverse_vol 팩터 가중 A/B 실험.
 
 baseline(equal_weight)은 커밋된 output/walk_forward_results.csv 에서 성과만 재계산
@@ -37,12 +37,12 @@ def main():
     t0 = time.time()
     engine = WalkForwardEngine(
         selection_hysteresis=PIPELINE_PARAMS["selection_hysteresis"],
-        pipeline_params_override={"optimization_mode": "inverse_vol"},
+        pipeline_params_override={"optimization_mode": "equal_risk_weight"},
     )
     result = engine.run(PIPELINE_PARAMS["backtest_start"], PIPELINE_PARAMS["backtest_end"])
     result.to_csv(str(OUT / "inverse_vol_results.csv"))
     perf = result.calc_performance()
-    rows.append({"case": "inverse_vol", **{f"cew_{k}": v for k, v in perf.items()},
+    rows.append({"case": "equal_risk_weight", **{f"cew_{k}": v for k, v in perf.items()},
                  "elapsed_min": round((time.time() - t0) / 60, 1)})
     print(f"[inverse_vol] {perf}")
 

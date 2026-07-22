@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """스타일 캡 하 가중치 최적화 모듈.
 
 스타일 캡(기본 25%) 제약 하에서 팩터별 가중치를 결정한다.
@@ -123,7 +123,7 @@ def optimize_constrained_weights(
     세 가지 모드를 지원한다:
     - "equal_weight": 1/N 동일가중 + 스타일 캡 재분배 (config.py 기본값;
       backtest 모드에서 "hardcoded"를 주면 자동으로 이 모드로 변환됨)
-    - "inverse_vol": 팩터 IS 변동성 반비례 가중 + 스타일 캡 재분배 (실험용,
+    - "equal_risk_weight": 팩터 IS 변동성 반비례 가중 + 스타일 캡 재분배 (실험용,
       docs/experiments 참조)
     - "hardcoded": 프로덕션용 고정 가중치 CSV (data/hardcoded_weights.csv) 반환
 
@@ -147,7 +147,7 @@ def optimize_constrained_weights(
     if mode == "equal_weight":
         return _equal_weight_allocation(rtn_df, style_list, style_cap, tol, test_mode)
 
-    if mode == "inverse_vol":
+    if mode == "equal_risk_weight":
         # 팩터 IS 월간 수익률 변동성 반비례 가중. 첫 행(기준점 0) 제외는
         # compute_rank_score 의 monthly_rets = iloc[1:] 관례와 동일.
         vol = rtn_df.iloc[1:].std().to_numpy(dtype=np.float64)
@@ -160,5 +160,5 @@ def optimize_constrained_weights(
         )
 
     raise ValueError(
-        f"Unknown optimization mode: {mode!r}. Use 'hardcoded', 'equal_weight' or 'inverse_vol'."
+        f"Unknown optimization mode: {mode!r}. Use 'hardcoded', 'equal_weight' or 'equal_risk_weight'."
     )

@@ -11,8 +11,10 @@
 지배하게 방치 — 1/sigma는 팩터별 리스크 기여를 비슷하게 맞춘다 (risk parity의
 상관 무시 단순형). 추가 튜닝 파라미터 없음 (vol 하한 1e-6 가드뿐).
 
-구현: `optimization.py` `optimization_mode="inverse_vol"` (기존 캡 재분배 로직 재사용,
-equal_weight 경로 무변경 -> off 시 byte-identical). 유닛테스트 3종.
+구현: `optimization.py` `optimization_mode="equal_risk_weight"` (기존 캡 재분배 로직
+재사용, equal_weight 경로 무변경 -> off 시 byte-identical). 유닛테스트 3종.
+(명명: 초기 "inverse_vol"에서 2026-07-22 `equal_risk_weight`로 개명 — 의도가 드러나는
+이름. 러너/실측 CSV 파일명의 inverse_vol은 이력 보존 차원에서 유지.)
 
 ## 결과 (walk-forward OOS, 동일 조건 A/B)
 
@@ -49,7 +51,7 @@ equal_weight 경로 무변경 -> off 시 byte-identical). 유닛테스트 3종.
 
 ## 채택 절차 (남은 것)
 
-- config `optimization_mode="inverse_vol"` 전환 + CLAUDE.md 검증 프로세스
+- config `optimization_mode="equal_risk_weight"` 전환 + CLAUDE.md 검증 프로세스
   (산출물 변경이 의도된 diff) + README/research.md 갱신 + 산출물 재생성.
 
 ## 재현

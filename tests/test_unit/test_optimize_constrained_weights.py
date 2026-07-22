@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Unit tests for optimize_constrained_weights() function.
 
@@ -262,8 +262,8 @@ class TestStyleCapFeasibilityGuard:
         assert not [r for r in caplog.records if "style_cap" in r.message]
 
 
-class TestInverseVolMode:
-    """inverse_vol 모드: IS 변동성 반비례 가중 + 스타일 캡 재분배."""
+class TestEqualRiskWeightMode:
+    """equal_risk_weight 모드: IS 변동성 반비례 가중 + 스타일 캡 재분배."""
 
     def test_lower_vol_gets_higher_weight(self) -> None:
         """저변동성 팩터가 더 큰 가중을 받고, 비율이 1/vol 에 정합."""
@@ -277,7 +277,7 @@ class TestInverseVolMode:
 
         _, weights_tbl = optimize_constrained_weights(
             rtn_df=rtn_df, style_list=["S1", "S2"],
-            mode="inverse_vol", test_mode=True,
+            mode="equal_risk_weight", test_mode=True,
         )
         w = weights_tbl.set_index("factor")["fitted_weight"]
         assert w["low_vol"] > w["high_vol"]
@@ -289,7 +289,7 @@ class TestInverseVolMode:
         )
 
     def test_style_cap_still_enforced(self) -> None:
-        """inverse_vol 에서도 스타일 캡 재분배가 동일하게 적용."""
+        """equal_risk_weight 에서도 스타일 캡 재분배가 동일하게 적용."""
         rng = np.random.default_rng(1)
         n = 37
         rtn_df = pd.DataFrame({
@@ -300,7 +300,7 @@ class TestInverseVolMode:
 
         _, weights_tbl = optimize_constrained_weights(
             rtn_df=rtn_df, style_list=style_list,
-            mode="inverse_vol", style_cap=0.40, test_mode=False,
+            mode="equal_risk_weight", style_cap=0.40, test_mode=False,
         )
         style_weights = weights_tbl.groupby("styleName")["fitted_weight"].sum()
         # 재분배 루프는 float32 + 편중 초기가중에서 ~1e-4 잔차를 남길 수 있다
@@ -318,7 +318,7 @@ class TestInverseVolMode:
         })
         _, weights_tbl = optimize_constrained_weights(
             rtn_df=rtn_df, style_list=["S1", "S2"],
-            mode="inverse_vol", test_mode=True,
+            mode="equal_risk_weight", test_mode=True,
         )
         w = weights_tbl.set_index("factor")["fitted_weight"]
         assert np.isfinite(w).all()
