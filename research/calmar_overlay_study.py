@@ -55,9 +55,9 @@ def main():
     base = calc_metrics(r)
     rows = [{"overlay": "baseline", "param": "-", **base, "scaled_months": 0}]
 
-    for target in [0.03, 0.04, 0.05, 0.06]:
-        for window in [6, 12]:
-            for cap in [1.0, 1.5]:
+    for target in [0.02, 0.03, 0.04, 0.05, 0.06]:
+        for window in [6, 9, 12, 18, 24]:
+            for cap in [1.0, 1.5, 2.0]:
                 rr = vol_target_overlay(r, target, window, cap)
                 realized = r.rolling(window).std().shift(1) * np.sqrt(12)
                 k = (target / realized).clip(upper=cap).fillna(1.0)
@@ -65,6 +65,16 @@ def main():
                     "overlay": "vol_target", "param": f"t={target:.0%},w={window},cap={cap}",
                     **calc_metrics(rr), "scaled_months": int((k < 0.999).sum()),
                 })
+
+    # adaptive: 타깃 = 확장창 중위 실현변동성 (파라미터 프리)
+    from research.calmar_overlay_robustness import adaptive_vol_target_overlay
+    for window in [9, 12, 18, 24]:
+        for cap in [1.0, 1.5, 2.0]:
+            rr = adaptive_vol_target_overlay(r, window, cap)
+            rows.append({
+                "overlay": "adaptive", "param": f"w={window},cap={cap}",
+                **calc_metrics(rr), "scaled_months": -1,
+            })
 
     for thresh in [0.03, 0.05, 0.07]:
         for scale in [0.5, 0.0]:
