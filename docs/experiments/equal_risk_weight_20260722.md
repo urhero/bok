@@ -67,10 +67,11 @@
 - 규제 요건(명목비중 기준일 가능성)과도 정합 -> **명목비중 캡 유지 확정.**
   risk 옵션은 코드에 잔류 (config 기본 "weight", 실험 재현용).
 
-## 채택 절차 (남은 것)
+## 채택 완료 (2026-07-22 프로덕션 전환)
 
-- config `optimization_mode="equal_risk_weight"` 전환 + CLAUDE.md 검증 프로세스
-  (산출물 변경이 의도된 diff) + README/research.md 갱신 + 산출물 재생성.
+- config `optimization_mode="equal_risk_weight"` 전환 + 산출물 재생성(의도된 diff)
+  + README/research.md 갱신 완료. 백테스트 canonical(walk_forward_results.csv)도
+  equal_risk_weight 기준으로 갱신됨 — 이후 byte-diff 회귀의 기준선.
 
 ## 재현
 

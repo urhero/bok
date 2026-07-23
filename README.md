@@ -104,15 +104,16 @@
 ### 핵심 함수
 `optimization.optimize_constrained_weights()`
 
-### 가중치 결정 모드 (2가지, config 키 `optimization_mode`)
-- `optimization_mode="equal_weight"` **(기본값, 권장)**: 1/N 동일가중 + 스타일 캡 25% 재분배
-- `optimization_mode="hardcoded"`: `data/hardcoded_weights.csv`에서 프로덕션 고정 비중 로드
+### 가중치 결정 모드 (3가지, config 키 `optimization_mode`)
+- `optimization_mode="equal_risk_weight"` **(기본값, 2026-07-22 채택)**: IS 변동성 반비례(1/σ) 가중 + 스타일 캡 25% 재분배 — 각 팩터의 리스크 예산(w×σ)을 균등화. [채택 근거](docs/experiments/equal_risk_weight_20260722.md)
+- `optimization_mode="equal_weight"`: 1/N 동일가중 + 스타일 캡 재분배 (구 기본)
+- `optimization_mode="hardcoded"`: `data/hardcoded_weights.csv`에서 고정 비중 로드
 
-> 백테스트(`python main.py backtest`)는 `equal_weight` 모드를 사용한다.
+> 백테스트(`python main.py backtest`)는 config의 `optimization_mode`를 그대로 사용한다 (`hardcoded`만 `equal_weight`로 자동 변환).
 
-### 절차 (equal_weight 모드)
-- 선정된 팩터에 1/N 동일가중 부여
-- 스타일별 비중 합계가 **스타일 캡(25%)**을 넘지 않도록 비례 재분배
+### 절차 (equal_risk_weight 모드)
+- 선정된 팩터에 IS 전체 기간 월간 수익률 변동성의 역수(1/σ)에 비례한 가중 부여
+- 스타일별 명목비중 합계가 **스타일 캡(25%)**을 넘지 않도록 비례 재분배 (`style_cap_basis="weight"` 기본; 리스크 예산 기준 캡은 A/B 열위로 기각, 옵션 잔류)
 
 ---
 
@@ -156,7 +157,7 @@
 
 ### 용어: MP vs Constrained EW
 - **MP (Model Portfolio)** — 프로덕션 산출물 (Bloomberg Optimizer 입력 CSV). 역할 이름.
-- **Constrained EW** — 현재 MP를 만드는 **구성 방식** (선정 팩터 EW + `style_cap=25%` 재분배; winner_median 기본이라 고정 Top-N 아님).
+- **Constrained EW** — MP를 만드는 **구성 방식**의 관례적 라벨 (선정 팩터 가중 + `style_cap=25%` 재분배; winner_median 기본이라 고정 Top-N 아님). 2026-07-22부터 팩터 가중이 EW(1/N)에서 **equal_risk_weight(1/σ)**로 바뀌었으나, 백테스트 리포트/CSV 컬럼의 "CEW" 라벨은 호환을 위해 유지.
 - 백테스트 진단 리포트는 구성 방식을 명시하기 위해 "Constrained EW" 라벨을 사용. 프로덕션 CLI/파일명/CSV 컬럼은 "MP" 유지.
 - 과거 MP는 Monte Carlo 최적화로 구성됐으나 커밋 `8dfb64e`에서 제거됨.
 
@@ -317,7 +318,8 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | 파라미터 | 값 | 설명 | 사용 모듈 |
 |---------|-----|------|-----------|
 | `style_cap` | 0.25 | 스타일 캡 (프로덕션 규제 요건) | `optimization.py` |
-| `optimization_mode` | "equal_weight" | 가중치 결정 모드 (`equal_weight` / `hardcoded`) | `optimization.py` |
+| `optimization_mode` | "equal_risk_weight" | 가중치 결정 모드 (`equal_risk_weight`(1/σ, 2026-07-22 채택) / `equal_weight` / `hardcoded`) | `optimization.py` |
+| `style_cap_basis` | "weight" | 스타일 캡 적용 기준 (`weight`=명목비중 / `risk`=w×σ 예산, risk는 A/B 기각 후 옵션 잔류) | `optimization.py` |
 | `transaction_cost_bps` | 20.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
 | `backtest_cost_multiplier` | 0.6 | 백테스트 전용 비용 배수 (20bp x 0.6 = 12bp; 편입/편출 netting 실측 0.574 기반) | `walk_forward_engine.py` |
 | `top_factor_count` | 50 | rank_score 상위 절단 수 (**`cluster_method=topn`일 때만** 적용; winner_median은 미사용) | `model_portfolio.py` |

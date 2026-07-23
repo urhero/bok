@@ -28,7 +28,8 @@ if not PARAM["user_name"]:
 # ── 파이프라인 비즈니스 파라미터 ──────────────────────────────────────────────
 #
 # [최적화 모드 가이드]
-#   optimization_mode: "equal_weight"(기본, 권장) / "hardcoded"(프로덕션 고정 가중치)
+#   optimization_mode: "equal_risk_weight"(기본, 2026-07-22 채택: IS 변동성 반비례 1/sigma)
+#                      / "equal_weight"(구 기본 1/N) / "hardcoded"(프로덕션 고정 가중치)
 #   factor_ranking_method: "shrunk_tstat"(Sprint 1-A) / "tstat" / "cagr"
 #   use_cluster_dedup: Sprint 1-B Hierarchical Clustering 중복 제거 on/off
 #
@@ -48,7 +49,7 @@ PIPELINE_PARAMS = {
     "max_zero_return_months": 10,      # 0 수익률 허용 최대 월 수
     "backtest_start": "2009-12-31",    # 백테스트 시작일
     "backtest_end": "2026-03-31",      # 백테스트 종료일
-    "optimization_mode": "equal_weight", # "hardcoded": 고정 가중치, "equal_weight": 동일가중 (권장)
+    "optimization_mode": "equal_risk_weight", # "equal_risk_weight"(1/sigma, 2026-07-22 채택) / "equal_weight"(1/N) / "hardcoded"(고정 가중치). 근거: docs/experiments/equal_risk_weight_20260722.md
     "factor_ranking_method": "tstat",  # "shrunk_tstat" / "tstat"(현 기본) / "cagr" — mp+backtest 공통 선정 기준
     "use_cluster_dedup": True,         # Sprint 1-B: Top-N Hierarchical Clustering 중복 제거 (production 적용)
     "n_clusters": 18,                  # 클러스터 수 (use_cluster_dedup=True일 때)
