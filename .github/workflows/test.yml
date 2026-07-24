@@ -19,13 +19,15 @@ jobs:
       - name: Install system deps
         run: sudo apt-get install -y unixodbc-dev
       - name: Install Python deps
-        # prod 패키지는 Pipfile.lock 기반 설치 - 손으로 관리하던 목록이 Pipfile과
+        # Pipfile [packages] 를 직접 파싱해 설치 - 손으로 관리하던 목록이 Pipfile과
         # 드리프트해 joblib 누락으로 CI가 깨졌던 문제(2026-07)의 근본 수정.
-        # --dev 는 제외: lock 이 Windows 에서 생성돼 Windows 전용 의존성(pywinpty,
-        # jupyter 계열)이 ubuntu 빌드를 깨뜨림. 테스트 도구 3종만 별도 설치.
+        # Pipfile.lock 은 Windows 에서 생성돼 default 섹션에도 Windows 전용 핀
+        # (pywinpty 등)이 있어 ubuntu 에서 사용 불가 -> 이름만 가져와 Linux 에서 재해석.
+        # 버전 스펙은 문자열이면 그대로 전달 (현재는 전부 "*").
         run: |
-          pip install pipenv
-          pipenv sync --system
-          pip install pytest pytest-cov pytest-xdist
+          pip install tomli
+          python -c "import tomli; d = tomli.load(open('Pipfile','rb'))['packages']; print('\n'.join(k + ('' if v == '*' else v) for k, v in d.items() if isinstance(v, str)))" > ci-reqs.txt
+          cat ci-reqs.txt
+          pip install -r ci-reqs.txt pytest pytest-cov pytest-xdist
       - name: Run unit tests
         run: pytest tests/test_unit/ -v --tb=short --cov=service --cov-report=term-missing
