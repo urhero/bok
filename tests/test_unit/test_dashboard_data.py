@@ -548,3 +548,28 @@ def test_diagnostics_table_folds_oos_and_hides_funnel_variants(tmp_path):
     assert "NORMAL" in html                        # 패턴 행 유지
     assert "&gt;" in html and "C > B" not in html  # 패턴 해석 escape
     assert "0.8%" not in html                      # funnel 변형 CSV 행은 숨김(곡선값으로 대체)
+
+
+# ── factor_tilt / aggregate_style_weights: 중립 첫 행 누락 회귀 (2026-07-22) ──
+
+def test_factor_tilt_includes_factor_with_neutral_first_row():
+    """첫 행이 중립 종목(factor_weight=0)인 팩터도 tilt 에서 누락되면 안 된다."""
+    w = pd.DataFrame({
+        "factor": ["A", "A", "B"],
+        "style": ["S1", "S1", "S2"],
+        "factor_weight": [0.0, 0.6, 0.4],  # A 의 첫 행이 중립
+    })
+    tilt = dd.factor_tilt(w)
+    assert set(tilt["factor"]) == {"A", "B"}
+    assert tilt.set_index("factor").loc["A", "factor_weight"] == 0.6
+
+
+def test_aggregate_style_weights_includes_neutral_first_row_factor():
+    w = pd.DataFrame({
+        "factor": ["A", "A", "B"],
+        "style": ["S1", "S1", "S2"],
+        "factor_weight": [0.0, 0.6, 0.4],
+    })
+    agg = dd.aggregate_style_weights(w)
+    assert agg["S1"] == 0.6
+    assert agg["S2"] == 0.4

@@ -357,9 +357,14 @@ def active_factors(weights: pd.DataFrame) -> set:
 
 
 def aggregate_style_weights(weights: pd.DataFrame) -> pd.Series:
-    """스타일별 배분: 팩터 단위로 dedup 후 factor_weight 를 style 로 합산 (합 ~= 1)."""
-    uniq = weights[["factor", "style", "factor_weight"]].drop_duplicates(subset=["factor"])
-    uniq = uniq[uniq["factor_weight"] > 0]
+    """스타일별 배분: 팩터 단위로 dedup 후 factor_weight 를 style 로 합산 (합 ~= 1).
+
+    주의: weight>0 필터를 dedup **이전**에 적용해야 한다. 종목 단위 행에서 중립
+    종목은 factor_weight=0 이라, dedup 을 먼저 하면 첫 행이 중립인 팩터가 통째로
+    누락된다 (2026-07-22 수정 — 구 코드는 선정 팩터 일부를 빠뜨렸음).
+    """
+    nz = weights[weights["factor_weight"] > 0]
+    uniq = nz[["factor", "style", "factor_weight"]].drop_duplicates(subset=["factor"])
     return uniq.groupby("style")["factor_weight"].sum().sort_values(ascending=False)
 
 
@@ -377,9 +382,14 @@ def style_allocation(weights: pd.DataFrame, style_deltas: pd.DataFrame | None = 
 
 
 def factor_tilt(weights: pd.DataFrame, top_n: int | None = None) -> pd.DataFrame:
-    """팩터별 비중(factor_weight) 내림차순 (factor, style, factor_weight)."""
-    uniq = weights[["factor", "style", "factor_weight"]].drop_duplicates(subset=["factor"])
-    uniq = uniq[uniq["factor_weight"] > 0].sort_values("factor_weight", ascending=False)
+    """팩터별 비중(factor_weight) 내림차순 (factor, style, factor_weight).
+
+    weight>0 필터를 dedup 이전에 적용 (aggregate_style_weights 와 동일 사유,
+    2026-07-22 수정 — 구 코드는 첫 행이 중립 종목인 팩터를 누락).
+    """
+    nz = weights[weights["factor_weight"] > 0]
+    uniq = nz[["factor", "style", "factor_weight"]].drop_duplicates(subset=["factor"])
+    uniq = uniq.sort_values("factor_weight", ascending=False)
     if top_n:
         uniq = uniq.head(top_n)
     return uniq.reset_index(drop=True)

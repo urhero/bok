@@ -471,7 +471,7 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
     meta_path = output_dir / "meta_data.csv"
     if meta_path.exists():
         meta = dd.load_meta(meta_path)
-        cards.append(f'<div class="card">{_fig_div(ch.leaderboard_fig(meta, selected))}</div>')
+        cards.append(f'<div class="card">{_fig_div(ch.leaderboard_fig(meta, selected, tilt))}</div>')
 
     if deltas is not None and not deltas.empty:
         cards.append(f'<div class="card">{_fig_div(ch.style_delta_fig(deltas))}</div>')

@@ -192,24 +192,49 @@ def factor_tilt_fig(tilt_df: pd.DataFrame, top_n: int = 25) -> go.Figure:
     return fig
 
 
-def leaderboard_fig(meta: pd.DataFrame, selected: set) -> go.Figure:
+def leaderboard_fig(meta: pd.DataFrame, selected: set,
+                    tilt_df: pd.DataFrame | None = None) -> go.Figure:
+    """팩터 리더보드: 미선정=회색 소점, 선정=스타일 색(현재 포트 섹션과 동일) +
+    비중 비례 크기(면적 비례 -> sqrt 스케일, 지름 4~11px)."""
     m = meta.copy()
     m["selected"] = m["factorAbbreviation"].isin(selected)
+    w_map = ({} if tilt_df is None or tilt_df.empty
+             else dict(zip(tilt_df["factor"], tilt_df["factor_weight"])))
+
     fig = go.Figure()
-    for flag, color, label, size in [
-        (False, _MUTED, "미선정", 6),
-        (True, "#fcd535", "선정", 9),
-    ]:
-        sub = m[m["selected"] == flag]
+
+    sub = m[~m["selected"]]
+    fig.add_trace(go.Scatter(
+        x=sub["tstat"], y=sub["cagr"], mode="markers", name="미선정",
+        marker=dict(color=_MUTED, size=4, line=dict(width=0)),
+        text=sub["factorAbbreviation"], customdata=sub["styleName"],
+        hovertemplate="%{text} (%{customdata})<br>tstat %{x:.2f}<br>CAGR %{y:.2%}<extra></extra>",
+    ))
+
+    sel = m[m["selected"]].copy()
+    sel["weight"] = sel["factorAbbreviation"].map(w_map).fillna(0.0)
+    w_max = float(sel["weight"].max()) if len(sel) else 0.0
+    # 면적이 비중에 비례하도록 지름은 sqrt 스케일 (비중 정보 없으면 일률 6px)
+    smin, smax = 4.0, 11.0
+    if w_max > 0:
+        sel["size"] = smin + (sel["weight"] / w_max) ** 0.5 * (smax - smin)
+    else:
+        sel["size"] = 6.0
+    # 스타일 범례는 스타일 합산 비중 내림차순 (스타일 배분 차트와 같은 순서감)
+    style_order = (sel.groupby("styleName")["weight"].sum()
+                   .sort_values(ascending=False).index)
+    for st in style_order:
+        s = sel[sel["styleName"] == st]
         fig.add_trace(go.Scatter(
-            x=sub["tstat"], y=sub["cagr"], mode="markers", name=label,
-            marker=dict(color=color, size=size, line=dict(width=0)),
-            text=sub["factorAbbreviation"], customdata=sub["styleName"],
-            hovertemplate="%{text} (%{customdata})<br>tstat %{x:.2f}<br>CAGR %{y:.2%}<extra></extra>",
+            x=s["tstat"], y=s["cagr"], mode="markers", name=st,
+            marker=dict(color=_style_color(st), size=s["size"], line=dict(width=0)),
+            text=s["factorAbbreviation"], customdata=s["weight"],
+            hovertemplate="%{text} (" + st + ")<br>비중 %{customdata:.2%}<br>tstat %{x:.2f}<br>CAGR %{y:.2%}<extra></extra>",
         ))
-    fig.update_layout(title="팩터 리더보드 (tstat vs CAGR)", height=420,
+
+    fig.update_layout(title="팩터 리더보드 (tstat vs CAGR, 크기=비중)", height=440,
                       xaxis_title="tstat", yaxis_title="CAGR", yaxis_tickformat=".0%",
-                      legend=dict(orientation="h", yanchor="bottom", y=-0.25, x=0),
+                      legend=dict(orientation="h", yanchor="bottom", y=-0.3, x=0),
                       **_BASE_LAYOUT)
     return fig
 
