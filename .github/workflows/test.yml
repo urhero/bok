@@ -19,6 +19,10 @@ jobs:
       - name: Install system deps
         run: sudo apt-get install -y unixodbc-dev
       - name: Install Python deps
-        run: pip install pandas numpy scipy pyarrow python-dotenv rich pyodbc sqlalchemy pytest pytest-cov pytest-xdist
+        # Pipfile.lock 기반 설치 - 손으로 관리하던 패키지 목록이 Pipfile과 드리프트해
+        # joblib 누락으로 CI가 깨졌던 문제(2026-07)의 근본 수정
+        run: |
+          pip install pipenv
+          pipenv sync --system --dev
       - name: Run unit tests
         run: pytest tests/test_unit/ -v --tb=short --cov=service --cov-report=term-missing
