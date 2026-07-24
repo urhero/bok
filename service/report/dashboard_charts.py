@@ -165,15 +165,47 @@ def style_allocation_fig(style_weights: pd.Series, style_cap: float = 0.25) -> g
     return fig
 
 
-def longs_shorts_fig(ls_df: pd.DataFrame) -> go.Figure:
+def longs_shorts_fig(ls_df: pd.DataFrame, decomp_df: pd.DataFrame | None = None) -> go.Figure:
     d = ls_df.sort_values("weight")
-    colors = [_LONG_COLOR if s == "long" else _SHORT_COLOR for s in d["side"]]
-    fig = go.Figure(go.Bar(
-        x=d["weight"], y=d["ticker"], orientation="h", marker_color=colors,
-        hovertemplate="%{y}<br>%{x:.3%}<extra></extra>",
+    if decomp_df is None or decomp_df.empty:
+        # 분해 데이터 없으면 기존 단일 막대 (하위호환)
+        colors = [_LONG_COLOR if s == "long" else _SHORT_COLOR for s in d["side"]]
+        fig = go.Figure(go.Bar(
+            x=d["weight"], y=d["ticker"], orientation="h", marker_color=colors,
+            hovertemplate="%{y}<br>%{x:.3%}<extra></extra>",
+        ))
+        fig.update_layout(title="종목별 순비중 상위 롱/숏", height=max(360, 22 * len(d) + 80),
+                          xaxis_tickformat=".2%", yaxis=dict(automargin=True), **_BASE_LAYOUT)
+        return fig
+
+    # 스타일 스택 분해: 양/음 기여가 0 양쪽으로 갈려 '줄다리기'가 보인다 (barmode=relative).
+    ticker_order = d["ticker"].tolist()  # 순비중 오름차순 (기존 정렬 유지)
+    fig = go.Figure()
+    style_order = (decomp_df.groupby("style")["contrib"]
+                   .apply(lambda s: s.abs().sum()).sort_values(ascending=False).index)
+    for st in style_order:
+        s = decomp_df[decomp_df["style"] == st]
+        fig.add_trace(go.Bar(
+            x=s["contrib"], y=s["ticker"], orientation="h", name=st,
+            marker=dict(color=_style_color(st), line=dict(width=0)),
+            customdata=s["detail"],
+            hovertemplate="%{y} · " + st + " %{x:+.2%}<br>%{customdata}<extra></extra>",
+        ))
+    # 순비중(합산) 마커 — 스택 위에서 종목별 최종 순노출 위치 표시
+    nets = decomp_df.drop_duplicates("ticker").set_index("ticker")["net"].reindex(ticker_order)
+    fig.add_trace(go.Scatter(
+        x=nets.values, y=nets.index, mode="markers", name="순비중",
+        marker=dict(symbol="diamond", size=7, color="#eaecef",
+                    line=dict(width=1, color="#181a20")),
+        hovertemplate="%{y} 순비중 %{x:+.2%}<extra></extra>",
     ))
-    fig.update_layout(title="종목별 순비중 상위 롱/숏", height=max(360, 22 * len(d) + 80),
-                      xaxis_tickformat=".2%", yaxis=dict(automargin=True), **_BASE_LAYOUT)
+    fig.update_layout(
+        title="종목별 순비중 상위 롱/숏 (스타일 분해, ◆=순비중)",
+        barmode="relative", height=max(400, 22 * len(ticker_order) + 110),
+        xaxis_tickformat=".2%",
+        yaxis=dict(automargin=True, categoryorder="array", categoryarray=ticker_order),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.18, x=0),
+        **_BASE_LAYOUT)
     return fig
 
 

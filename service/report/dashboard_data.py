@@ -395,6 +395,44 @@ def factor_tilt(weights: pd.DataFrame, top_n: int | None = None) -> pd.DataFrame
     return uniq.reset_index(drop=True)
 
 
+def longs_shorts_style_decomposition(weights: pd.DataFrame, n: int = 15,
+                                     top_factors: int = 5) -> pd.DataFrame:
+    """상위 롱/숏 종목의 (ticker, style) 순기여 분해 + 호버용 팩터 상세.
+
+    top_longs_shorts 와 동일한 종목 집합(순비중 상위 롱 n + 숏 n)에 대해,
+    스타일별 mp_ls_weight 합(contrib)과 그 스타일 안에서 |기여| 상위
+    top_factors 개 팩터 문자열(detail, "외 N개 합계" 포함)을 만든다.
+
+    Returns:
+        (ticker, style, contrib, net, detail) DataFrame.
+        contrib 를 ticker 로 합치면 net(종목 순비중)과 일치한다.
+    """
+    net = weights.groupby("ticker")["mp_ls_weight"].sum()
+    net = net[net != 0]
+    sel = pd.concat([net.sort_values(ascending=False).head(n), net.sort_values().head(n)])
+    sel = sel[~sel.index.duplicated()]
+
+    sub = weights[weights["ticker"].isin(sel.index)]
+    per_f = (sub.groupby(["ticker", "style", "factor"], observed=True)["mp_ls_weight"]
+             .sum().reset_index())
+    per_f = per_f[per_f["mp_ls_weight"] != 0]
+
+    # (ticker, style) 그룹은 최대 2n x 스타일수 (~240개) — viz 레이어 소규모 루프 허용
+    rows = []
+    for (t, st), g in per_f.groupby(["ticker", "style"], observed=True):
+        g = g.reindex(g["mp_ls_weight"].abs().sort_values(ascending=False).index)
+        top = g.head(top_factors)
+        parts = [f"{r.factor} {r.mp_ls_weight:+.2%}" for r in top.itertuples()]
+        rest = len(g) - len(top)
+        if rest > 0:
+            parts.append(f"외 {rest}개 {g['mp_ls_weight'].iloc[top_factors:].sum():+.2%}")
+        rows.append({
+            "ticker": t, "style": st, "contrib": float(g["mp_ls_weight"].sum()),
+            "net": float(net[t]), "detail": "<br>".join(parts),
+        })
+    return pd.DataFrame(rows)
+
+
 def top_longs_shorts(weights: pd.DataFrame, n: int = 15) -> pd.DataFrame:
     """종목별 순비중(mp_ls_weight 합) 상위 롱 n + 하위(숏) n -> (ticker, weight, side)."""
     net = weights.groupby("ticker")["mp_ls_weight"].sum()

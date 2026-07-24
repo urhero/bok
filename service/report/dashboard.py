@@ -465,7 +465,8 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
             if not sec_series.empty:
                 cards.append(f'<div class="card">{_fig_div(ch.sector_net_fig(sec_series))}</div>')
 
-    cards.append(f'<div class="card">{_fig_div(ch.longs_shorts_fig(ls_df))}</div>')
+    ls_decomp = dd.longs_shorts_style_decomposition(weights, n=15)
+    cards.append(f'<div class="card">{_fig_div(ch.longs_shorts_fig(ls_df, ls_decomp))}</div>')
     cards.append(f'<div class="card">{_fig_div(ch.factor_tilt_fig(tilt))}</div>')
 
     meta_path = output_dir / "meta_data.csv"
