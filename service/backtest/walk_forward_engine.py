@@ -98,6 +98,10 @@ def _run_rule_learning(
         test_mode=bool(test_file),
         min_sector_stocks=pp["min_sector_stocks"],
         sector_spread_geometric=bool(pp.get("sector_spread_geometric", False)),
+        # 커버리지 필터는 IS 학습에만 적용 (규칙으로서 kept_abbrs 에 반영됨).
+        # 전체 데이터 사전계산(factor_stats_full)에는 미적용 — IS/full 커버리지가
+        # 임계 근처에서 엇갈릴 때 kept 팩터의 stats 가 사라지는 불일치 방지.
+        min_coverage_pct=float(pp.get("min_coverage_pct", 0.0)),
     )
 
     # [3] 섹터 필터링 + L/N/S 라벨링

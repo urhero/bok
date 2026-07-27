@@ -304,6 +304,7 @@ class ModelPortfolioPipeline:
             merged_data, factor_abbr_list, orders, test_mode=bool(test_file),
             min_sector_stocks=self.pipeline_params["min_sector_stocks"],
             sector_spread_geometric=bool(self.pipeline_params.get("sector_spread_geometric", False)),
+            min_coverage_pct=float(self.pipeline_params.get("min_coverage_pct", 0.0)),
         )
         logger.info("Factors assigned in %.2fs", time.time() - t1)
         return result

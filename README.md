@@ -331,6 +331,7 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `newey_west_lag` | 3 | Newey-West 보정 lag (meta_data 진단 컬럼) | `factor/selection.py` |
 | `spread_threshold_pct` | 0.10 | L/N/S 라벨링 임계값 | `factor_analysis.py` |
 | `min_sector_stocks` | 10 | 섹터-날짜 최소 종목 수 | `factor_analysis.py` |
+| `min_coverage_pct` | 0.10 | 팩터 최소 단면 커버리지 (유니버스 대비 유효 관측 비율, IS 기준). 은행 전용 등 초저커버리지 팩터 제외 (2026-07-27 MXWO A/B 채택) | `factor_analysis.py` |
 | `max_zero_return_months` | 10 | 0 수익률 허용 최대 월 수 | `model_portfolio.py` |
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
 | `backtest_end` | "2026-03-31" | 백테스트 종료일 (실험 스크립트 참조용) | `research/*.py` |

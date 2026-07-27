@@ -73,6 +73,30 @@ class TestCalculateFactorStatsBatch:
         )
         assert batch[0] == (None, None, None, None)
 
+    @staticmethod
+    def _sparse_fb_frame() -> pd.DataFrame:
+        """FB 의 val 을 8종목 중 4종목만 남긴 프레임 (FB 커버리지 50%)."""
+        df = _make_multi_factor_frame()
+        sparse = df["gvkeyiid"].isin({"G04", "G05", "G06", "G07"})
+        df.loc[(df["factorAbbreviation"] == "FB") & sparse, "val"] = np.nan
+        return df
+
+    def test_low_coverage_factor_excluded(self) -> None:
+        """min_coverage_pct: 유니버스 대비 유효 관측 비율(FB 50%)이 임계(60%)
+        미만이면 (None,)*4. FA(100%)는 유지."""
+        batch = calculate_factor_stats_batch(
+            self._sparse_fb_frame(), ["FA", "FB"], [1, 1], test_mode=True, min_coverage_pct=0.6,
+        )
+        assert batch[0][0] is not None
+        assert batch[1] == (None, None, None, None)
+
+    def test_coverage_filter_off_by_default(self) -> None:
+        """min_coverage_pct 기본값 0.0 이면 희소 팩터도 유지 (기존 동작 보존)."""
+        batch = calculate_factor_stats_batch(
+            self._sparse_fb_frame(), ["FA", "FB"], [1, 1], test_mode=True,
+        )
+        assert batch[1][0] is not None
+
     def test_result_order_follows_abbr_list(self) -> None:
         """결과 리스트 순서는 factor_abbr_list 순서 (데이터 순서 아님)."""
         df = _make_multi_factor_frame(factors=("FB", "FA"))

@@ -1,0 +1,7 @@
+style,raw_weight,prev_weight,new_weight,delta,factor_count,factors
+Price Momentum,0.25001985393464565,,0.25001984741487004,,8,Alpha36M6MPChg;IO_ChgofIO_AM;ShortIntTrdVol;50DVolSig;IO_InvDuration;IO_ChgofNumBY;RskAdjRS;stdRR36M
+Earnings Quality,0.25001984275877476,,0.2500198362389994,,10,AssetTurn;InvToAstChg1Y;SalesToInvCap;DepToCapex;UnexpectedRecChg;AdjAccruals;CashCycle;UnexpectedInvChg;InvToAst;WCapToSales
+Historical Growth,0.17555519007146358,,0.17555518549350538,,6,SusGrwRate;CQDOHtoSales;CQDRItoSales;CQPTTMCFtoSales;AdjAstAdjChg3YFCF;ConsQPosChginTTMCF
+Capital Efficiency,0.13266196474432945,,0.13266196128489924,,3,DA;WCTurn;ShareChg
+Analyst Expectations,0.12747738137841225,,0.12747737805418058,,3,6MAvgChg1MRecC;EPSSurpC;Rev3MFY1C
+Volatility,0.0642657931894064,,0.06426579151354529,,2,Adj50DVolSig;Amihud

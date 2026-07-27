@@ -189,6 +189,8 @@ for factor_abbr in factor_abbr_list:
 
 **sort_order 처리**: `sort_order=0`(낮을수록 좋은 팩터)이면 `val_lagged *= -1`로 방향 통일. 이후 모든 rank는 ascending=True.
 
+**단면 커버리지 필터** (`min_coverage_pct`, 기본 0.10, 2026-07-27 채택): 월별 (유효 관측 종목수 / 유니버스 종목수)의 기간 평균이 임계 미만인 팩터를 lag 직후 배치로 제외. 은행 전용 팩터(MXWO에서 NaN ~99%, 7종)처럼 구조적으로 희소한 팩터는 L/S 폭이 좁아 노이즈가 큰데도 클러스터 선정 슬롯과 스타일 예산을 차지하는 문제를 방지. MXWO A/B: 제외 시 CEW 전체 Sharpe 0.106→0.160, 최근 3년 0.056→0.230 (EW_Top50/EW_All 불변 — 효과는 전량 선정 단계에서 발생). **walk-forward에서는 IS 학습(`_run_rule_learning`)에만 적용**하고 전체 데이터 사전계산(`factor_stats_full`)에는 적용하지 않는다 — IS에서 탈락한 팩터는 `kept_abbrs`에서 빠져 OOS에 반영되고, 임계 근처에서 IS/full 커버리지가 엇갈릴 때 kept 팩터의 full stats가 사라지는 불일치를 피하기 위함.
+
 **반환값**: `List[(sector_return_df, None, spread_series, merged_df)]` — quantile_return_df는 None (downstream에서 재계산하므로 불필요)
 
 #### [3] filter_and_label_factors: 섹터 필터 + L/N/S 라벨링

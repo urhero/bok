@@ -160,6 +160,7 @@ def calculate_factor_stats_batch(
     test_mode: bool = False,
     min_sector_stocks: int = 10,
     sector_spread_geometric: bool = False,
+    min_coverage_pct: float = 0.0,
 ) -> list[tuple]:
     """모든 팩터의 5분위 분석을 하이브리드 방식으로 처리한다.
 
@@ -189,6 +190,21 @@ def calculate_factor_stats_batch(
     # [3] History 체크 (배치)
     date_counts = df.groupby("factorAbbreviation")["ddt"].nunique()
     sufficient_factors = set(date_counts[date_counts > 2].index)
+
+    # [3.5] 단면 커버리지 필터: 월별 (유효 관측 종목수 / 유니버스 종목수)의 기간
+    # 평균이 min_coverage_pct 미만인 팩터 제외. 은행 전용 팩터처럼 구조적으로
+    # 희소한 팩터는 L/S 폭이 좁아 노이즈가 큰데도 선정 슬롯·스타일 예산을 차지
+    # 하는 문제 방지 (2026-07-27 MXWO A/B 근거로 채택. IS 데이터로만 계산되어
+    # walk-forward 에서 look-ahead 없음 — full-data 사전계산 경로에는 미적용).
+    if min_coverage_pct > 0:
+        uni = merged_data[["ddt", "gvkeyiid"]].drop_duplicates().groupby("ddt").size()
+        obs = df.groupby(["factorAbbreviation", "ddt"], observed=True).size()
+        cov = obs.div(uni, level="ddt").groupby(level="factorAbbreviation", observed=True).mean()
+        low_cov = {fa for fa in valid_factors if cov.get(fa, 0.0) < min_coverage_pct}
+        if low_cov:
+            logger.info("Coverage filter: %d factor(s) below %.0f%% excluded: %s",
+                        len(low_cov), min_coverage_pct * 100, sorted(low_cov))
+            valid_factors -= low_cov
 
     # [4] Sort order 통일: factorOrder=0(높을수록 좋음) 팩터의 val_lagged 에 -1
     #     -> 전 팩터가 "낮을수록 좋음"이 되어 ascending rank 1 = Q1 = 좋은 종목
