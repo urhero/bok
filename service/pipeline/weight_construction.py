@@ -11,6 +11,8 @@ import logging
 import numpy as np
 import pandas as pd
 
+from config import PARAM
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,10 +60,13 @@ def build_factor_weight_frames(
         df["ls_weight"] = df["label"] / count_per_group
         df["factor_weight"] = fitted_weight
         df["style"] = style_name
-        df["name"] = f"MXCN1A_{style_name}"
+        df["name"] = f"{PARAM['benchmark']}_{style_name}"
         df["factor"] = factor_abbr
         df["count"] = count_per_group
-        df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
+        # Bloomberg 티커 포맷은 중국 A주(MXCN1A) 전용. 그 외 유니버스(MXWO 등)는
+        # 다국가 로컬 티커라 그대로 두고 ISIN을 식별자로 사용한다.
+        if PARAM["benchmark"] == "MXCN1A":
+            df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
 
         weight_frames.append(df[["ddt", "ticker", "isin", "gvkeyiid", "mp_ls_weight", "ls_weight", "factor_weight", "factor", "style", "name", "count"]].reset_index(drop=True))
 
@@ -90,7 +95,7 @@ def aggregate_mp_weights(
     """
     agg_w = weight_raw.groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)[["mp_ls_weight", "factor_weight"]].sum()
     agg_w["style"] = "MP"
-    agg_w["name"] = "MXCN1A_MP"
+    agg_w["name"] = f"{PARAM['benchmark']}_MP"
     agg_w = agg_w[agg_w["ddt"] == end_date_ts].reset_index(drop=True)
     agg_w["count"] = agg_w.groupby(["ddt", agg_w["mp_ls_weight"] > 0])["mp_ls_weight"].transform("size")
     agg_w["factor"] = "AGG"

@@ -85,6 +85,11 @@ class GenerateQueryStructure:
         df = pd.read_sql_query(query_raw, con=engine, params={"start_date": self.start_date, "end_date": self.end_date})
         engine.dispose()
 
+        # 서버에 따라 ddt가 datetime.date(object)로 내려온다 (kb_global의 date 컬럼).
+        # 파이프라인 전역이 datetime64를 가정하므로 fetch 지점에서 정규화한다.
+        if not df.empty:
+            df["ddt"] = pd.to_datetime(df["ddt"])
+
         if df.empty:
             logger.warning("No rows returned for given date range.")
         else:

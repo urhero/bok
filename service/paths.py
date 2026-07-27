@@ -11,7 +11,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from config import PARAM
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
-OUTPUT_DIR = PROJECT_ROOT / "output"
+# 유니버스별 출력 분리: MXCN1A는 기존 output/ 유지(하위호환), 그 외는 output/{benchmark}/
+_BENCHMARK = PARAM["benchmark"]
+OUTPUT_DIR = PROJECT_ROOT / "output" if _BENCHMARK == "MXCN1A" else PROJECT_ROOT / "output" / _BENCHMARK
 HISTORY_DIR = OUTPUT_DIR / "mp_weight_history"
