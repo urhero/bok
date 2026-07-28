@@ -298,6 +298,12 @@ def run_download_pipeline(
                      f"{total_rows:,}", time.time() - t0, total_mb, len(saved_paths),
                      mreturn_path.stat().st_size / 1024**2)
 
+    # ─── 국가 매핑 재생성 (지역 중립 랭킹용 — 증분 신규 종목 자동 반영) ───
+    from db.factor_query import fetch_country_map
+    cmap = fetch_country_map()
+    cmap.to_parquet(out_dir / f"{benchmark}_country_map.parquet", index=False, compression="zstd")
+    logger.info("Country map refreshed (%d stocks)", len(cmap))
+
     # ─── 검증 ───
     if validate:
         warnings_list, factor_df, mret_df = validate_parquet_coverage(out_dir, benchmark, mreturn_path)

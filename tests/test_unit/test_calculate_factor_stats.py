@@ -97,6 +97,46 @@ class TestCalculateFactorStatsBatch:
         )
         assert batch[1][0] is not None
 
+    def test_region_sector_ranking_groups_within_region(self) -> None:
+        """ranking_group='region_sector': 분위가 (ddt, region, sec) 그룹 내에서
+        결정된다. 두 지역의 val 수준이 크게 달라도 지역별로 Q1~Q5 가 고르게
+        나와야 한다 (글로벌 랭킹이면 저값 지역이 Q1 독식)."""
+        df = _make_multi_factor_frame(factors=("FA",), n_stocks=8)
+        df["sec"] = "S1"  # 단일 섹터로 단순화
+        df["region"] = np.where(df["gvkeyiid"].isin({"G00", "G01", "G02", "G03"}), "R1", "R2")
+        df.loc[df["region"] == "R2", "val"] += 1000.0  # R2 를 전부 고값으로
+
+        batch = calculate_factor_stats_batch(
+            df, ["FA"], [1], test_mode=True, ranking_group="region_sector",
+        )
+        fdf = batch[0][3]
+        per_region_q = fdf.groupby("region", observed=True)["quantile"].nunique()
+        assert (per_region_q >= 2).all(), "각 지역 내에서 분위가 나뉘어야 함"
+
+        # 글로벌(sector) 랭킹이면 R1(저값)이 Q1 쪽을 독식 -> region 별 Q1 존재로 구분 검증
+        q1_regions = fdf.loc[fdf["quantile"] == "Q1", "region"].unique()
+        assert set(q1_regions) == {"R1", "R2"}, "지역 중립이면 양 지역 모두 Q1 보유"
+
+    def test_region_sector_requires_region_column(self) -> None:
+        """region 컬럼 없이 region_sector 요청 시 명시적 에러."""
+        df = _make_multi_factor_frame(factors=("FA",))
+        with pytest.raises(ValueError, match="region"):
+            calculate_factor_stats_batch(
+                df, ["FA"], [1], test_mode=True, ranking_group="region_sector",
+            )
+
+    def test_unmapped_region_rows_excluded(self) -> None:
+        """region NaN(미분류 국가) 종목은 분위 배정에서 제외된다."""
+        df = _make_multi_factor_frame(factors=("FA",), n_stocks=8)
+        df["sec"] = "S1"
+        df["region"] = "R1"
+        df.loc[df["gvkeyiid"] == "G00", "region"] = np.nan
+        batch = calculate_factor_stats_batch(
+            df, ["FA"], [1], test_mode=True, ranking_group="region_sector",
+        )
+        fdf = batch[0][3]
+        assert "G00" not in set(fdf["gvkeyiid"]), "NaN region 종목은 분위 제외"
+
     def test_result_order_follows_abbr_list(self) -> None:
         """결과 리스트 순서는 factor_abbr_list 순서 (데이터 순서 아님)."""
         df = _make_multi_factor_frame(factors=("FB", "FA"))
@@ -104,6 +144,27 @@ class TestCalculateFactorStatsBatch:
         # spread 컬럼명으로 위치 검증
         assert batch[0][2].columns[0] == "FA"
         assert batch[1][2].columns[0] == "FB"
+
+
+class TestRollingIsStart:
+    """walk_forward_engine.rolling_is_start (롤링 IS 윈도우 경계)."""
+
+    def test_none_window_is_expanding(self) -> None:
+        from service.backtest.walk_forward_engine import rolling_is_start
+        dates = list(pd.date_range("2020-01-31", periods=12, freq="ME"))
+        assert rolling_is_start(dates, 5, None) is None
+        assert rolling_is_start(dates, 5, 0) is None
+
+    def test_window_slices_last_n_months(self) -> None:
+        from service.backtest.walk_forward_engine import rolling_is_start
+        dates = list(pd.date_range("2020-01-31", periods=12, freq="ME"))
+        # is_end_idx=9 (2020-10-31), window 6 -> 시작 idx 4 (2020-05-31)
+        assert rolling_is_start(dates, 9, 6) == dates[4]
+
+    def test_short_history_falls_back_to_full(self) -> None:
+        from service.backtest.walk_forward_engine import rolling_is_start
+        dates = list(pd.date_range("2020-01-31", periods=12, freq="ME"))
+        assert rolling_is_start(dates, 3, 60) == dates[0]
 
 
 if __name__ == "__main__":

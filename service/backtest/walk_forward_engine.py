@@ -62,6 +62,16 @@ def deploy_weights(
 MIN_REQUIRED_FACTORS = 5
 
 
+def rolling_is_start(all_dates: list, is_end_idx: int, window_months: int | None):
+    """롤링 IS 시작 날짜를 반환한다. window 미지정(None/0)이면 None(=expanding).
+
+    윈도우가 가용 이력보다 길면 처음부터 사용한다 (expanding 과 동일).
+    """
+    if not window_months:
+        return None
+    return all_dates[max(0, is_end_idx - window_months + 1)]
+
+
 def _run_rule_learning(
     is_raw: pd.DataFrame | None,
     is_mret: pd.DataFrame | None,
@@ -102,6 +112,8 @@ def _run_rule_learning(
         # 전체 데이터 사전계산(factor_stats_full)에는 미적용 — IS/full 커버리지가
         # 임계 근처에서 엇갈릴 때 kept 팩터의 stats 가 사라지는 불일치 방지.
         min_coverage_pct=float(pp.get("min_coverage_pct", 0.0)),
+        # 랭킹 그룹은 구조 파라미터 — IS/full 양쪽 동일 적용 (횡단면, look-ahead 없음)
+        ranking_group=("sector" if test_file else pp.get("ranking_group", "sector")),
     )
 
     # [3] 섹터 필터링 + L/N/S 라벨링
@@ -315,6 +327,7 @@ class WalkForwardEngine:
         top_factors: int = 50,
         selection_hysteresis: float = 0.0,
         pipeline_params_override: dict | None = None,
+        is_window_months: int | None = None,
     ):
         self.min_is_months = min_is_months
         self.factor_rebal_months = factor_rebal_months
@@ -322,6 +335,9 @@ class WalkForwardEngine:
         self.top_factors = top_factors
         self.selection_hysteresis = selection_hysteresis
         self.pipeline_params_override = pipeline_params_override
+        # 롤링 IS 윈도우 (개월). None=expanding(기존). 지정 시 Tier 1 규칙 학습과
+        # Tier 2 선정/가중 IS 를 모두 최근 N개월로 제한 — 레짐 적응용 (2026-07-28).
+        self.is_window_months = is_window_months
 
     def run(
         self,
@@ -405,6 +421,8 @@ class WalkForwardEngine:
             test_mode=bool(test_file),
             min_sector_stocks=pp["min_sector_stocks"],
             sector_spread_geometric=bool(pp.get("sector_spread_geometric", False)),
+            # 랭킹 그룹은 IS 학습과 동일해야 함 (구조 파라미터, 횡단면이라 안전)
+            ranking_group=("sector" if test_file else pp.get("ranking_group", "sector")),
         )
 
         # 2. 캐시 초기화
@@ -422,6 +440,7 @@ class WalkForwardEngine:
         for i, oos_date in enumerate(track(oos_dates, description="Walk-Forward OOS...")):
             is_end_idx = self.min_is_months + i - 1
             is_end_date = all_dates[is_end_idx]
+            is_start_date = rolling_is_start(all_dates, is_end_idx, self.is_window_months)
 
             is_rule_rebal = False
             is_weight_rebal = False
@@ -433,6 +452,10 @@ class WalkForwardEngine:
                 #   merged_full[ddt<=cutoff] == _prepare_metadata(is_raw)  (동일 행·순서, inner merge 키에 ddt 포함)
                 #   -> byte-identical. factor_metadata/abbr/orders 도 전체와 동일(factor_info.csv 고정).
                 merged_is = merged_full[merged_full["ddt"] <= pd.Timestamp(is_end_date)]
+                if is_start_date is not None:
+                    # 롤링 IS: lag(shift 1) 소실 방지를 위해 시작 1개월 이전부터 슬라이스
+                    lag_start = pd.Timestamp(is_start_date) - pd.DateOffset(months=1, days=5)
+                    merged_is = merged_is[merged_is["ddt"] >= lag_start]
                 prepared_is = (_meta_full, merged_is, factor_abbr_list_full, orders_full)
                 cached_rule_bundle = _run_rule_learning(
                     None, None, pipeline, test_file, prepared=prepared_is,
@@ -467,7 +490,10 @@ class WalkForwardEngine:
                 is_weight_rebal = True
 
                 # IS 구간 슬라이스 (aggregate 재실행 불필요)
-                ret_df_is = precomputed_ret_df[precomputed_ret_df.index <= is_end_date].copy()
+                ret_df_is = precomputed_ret_df[precomputed_ret_df.index <= is_end_date]
+                if is_start_date is not None:
+                    ret_df_is = ret_df_is[ret_df_is.index >= pd.Timestamp(is_start_date)]
+                ret_df_is = ret_df_is.copy()
 
                 if len(ret_df_is) < 3:
                     logger.warning("OOS %s: IS 구간 너무 짧음 (%d), 이전 가중치 유지", oos_date, len(ret_df_is))

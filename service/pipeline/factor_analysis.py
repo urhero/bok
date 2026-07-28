@@ -16,10 +16,42 @@ logger = logging.getLogger(__name__)
 
 # 5분위 분석 입력 컬럼 (calculate_factor_stats_batch 입력 스키마 단일 출처).
 # model_portfolio / walk_forward_engine 가 동일 projection 에 사용한다.
+# region 은 ranking_group="region_sector" 일 때만 존재 (없으면 projection 에서 자연 제외).
 ANALYZE_COLS = [
     "gvkeyiid", "ticker", "isin", "ddt", "sec", "val",
-    "M_RETURN", "factorAbbreviation", "factorOrder",
+    "M_RETURN", "factorAbbreviation", "factorOrder", "region",
 ]
+
+# ── 지역 중립 랭킹용 국가 -> 지역 분류 (2026-07-28 스펙) ─────────────────────
+# 미등재 국가(BMU/CYM 등 역외 등록지, 전체의 ~1%)는 region NaN -> 랭킹 자동 제외.
+REGION_MAP = {
+    # 북미
+    "USA": "NA", "CAN": "NA", "MEX": "NA",
+    # 유럽 (ISR 포함 — MSCI 선진 EMEA 관행)
+    "GBR": "EUR", "DEU": "EUR", "FRA": "EUR", "CHE": "EUR", "SWE": "EUR",
+    "NLD": "EUR", "ITA": "EUR", "ESP": "EUR", "IRL": "EUR", "DNK": "EUR",
+    "ISR": "EUR", "FIN": "EUR", "NOR": "EUR", "BEL": "EUR", "LUX": "EUR",
+    "AUT": "EUR", "PRT": "EUR", "JEY": "EUR", "IMN": "EUR", "GRC": "EUR",
+    # 일본 (규모·특성상 단독 지역)
+    "JPN": "JPN",
+    # 아시아태평양
+    "AUS": "APAC", "HKG": "APAC", "SGP": "APAC", "NZL": "APAC",
+    "MAC": "APAC", "CHN": "APAC", "TWN": "APAC",
+}
+
+
+def attach_region(merged_data: pd.DataFrame, country_map_path) -> pd.DataFrame:
+    """country map parquet(gvkeyiid, country)을 조인해 region 컬럼을 부착한다.
+
+    gvkeyiid -> country 는 정적 속성 (전 이력 복수 국가 종목 0개 확인).
+    REGION_MAP 미등재 국가는 region NaN 으로 남아 지역 랭킹에서 자동 제외된다.
+    """
+    cmap = pd.read_parquet(country_map_path)
+    cmap["region"] = cmap["country"].map(REGION_MAP)
+    unmapped = cmap.loc[cmap["region"].isna(), "country"].unique().tolist()
+    if unmapped:
+        logger.warning("Region unmapped countries (excluded from ranking): %s", sorted(unmapped))
+    return merged_data.merge(cmap[["gvkeyiid", "region"]], on="gvkeyiid", how="left")
 
 
 def prepend_start_zero(series: pd.DataFrame) -> pd.DataFrame:
@@ -161,6 +193,7 @@ def calculate_factor_stats_batch(
     min_sector_stocks: int = 10,
     sector_spread_geometric: bool = False,
     min_coverage_pct: float = 0.0,
+    ranking_group: str = "sector",
 ) -> list[tuple]:
     """모든 팩터의 5분위 분석을 하이브리드 방식으로 처리한다.
 
@@ -181,6 +214,21 @@ def calculate_factor_stats_batch(
     # [1] 팩터 메타 준비
     order_map = dict(zip(factor_abbr_list, orders))
     valid_factors = set(merged_data["factorAbbreviation"].unique()) & set(factor_abbr_list)
+
+    # [1.5] 랭킹 그룹 결정 (2026-07-28 지역 중립 랭킹 스펙)
+    # "region_sector": (날짜, 지역, 섹터) 내 랭킹 — 다국가 유니버스에서 팩터
+    # 베팅이 국가 베팅으로 오염되는 것을 방지. 횡단면 연산이라 look-ahead 없음.
+    if ranking_group == "region_sector":
+        if "region" not in merged_data.columns:
+            raise ValueError(
+                "ranking_group='region_sector' requires 'region' column — "
+                "attach_region() 조인 누락"
+            )
+        rank_keys = ["ddt", "region", "sec"]
+    elif ranking_group == "sector":
+        rank_keys = ["ddt", "sec"]
+    else:
+        raise ValueError(f"Unknown ranking_group '{ranking_group}'")
 
     # [2] NaN 제거 + batch lag (전체에서 한번에 — 팩터별보다 빠름)
     df = merged_data.dropna(subset=["val", "M_RETURN"]).copy()
@@ -233,7 +281,9 @@ def calculate_factor_stats_batch(
         fdf = grouped.get_group(factor_abbr).copy()
 
         # rank + count (2키 groupby — 팩터당 ~53K행, ~900그룹)
-        grp = fdf.groupby(["ddt", "sec"])["val_lagged"]
+        # region_sector 면 3키 — 그룹 키에 NaN(미분류 지역)인 행은 rank/count 가
+        # NaN 이 되어 분위 배정에서 자동 제외된다.
+        grp = fdf.groupby(rank_keys)["val_lagged"]
         fdf["rank"] = grp.rank(method="average", ascending=True)
         count_series = grp.transform("count")
 

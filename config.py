@@ -47,6 +47,7 @@ PIPELINE_PARAMS = {
     "spread_threshold_pct": 0.10,      # L/N/S 라벨링 임계값 (스프레드의 10%)
     "min_sector_stocks": 10,           # 섹터-날짜 최소 종목 수 (프로덕션)
     "min_coverage_pct": 0.10,          # 팩터 최소 단면 커버리지 (유니버스 대비 유효 관측 비율, IS 기준). 은행 전용 등 초저커버리지 팩터 제외 (2026-07-27 MXWO A/B 채택)
+    "ranking_group": "region_sector",  # 5분위 랭킹 그룹: "sector"=(날짜,섹터, 기존) / "region_sector"=(날짜,지역,섹터) — 다국가 유니버스 국가 오염 방지 (2026-07-28 스펙, mxwo_region_neutral 실험)
     "max_zero_return_months": 10,      # 0 수익률 허용 최대 월 수
     "backtest_start": "2009-12-31",    # 백테스트 시작일
     "backtest_end": "2026-03-31",      # 백테스트 종료일

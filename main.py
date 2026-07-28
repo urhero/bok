@@ -67,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
                                        "winner_median=1등보호+중위값바닥)")
     parser_backtest.add_argument("--style-cap", type=float, default=None,
                                   help="Style 합계 상한 (default: config 0.25; 1.0=캡 해제)")
+    parser_backtest.add_argument("--is-window-months", type=int, default=None,
+                                  help="롤링 IS 윈도우 개월 수 (default: None=expanding)")
 
     # viz: 기존 output CSV -> 인터랙티브 HTML 대시보드 (read-only, 파이프라인 미수정)
     parser_viz = subparsers.add_parser("viz", help="Generate interactive HTML dashboard from existing outputs.")
@@ -230,6 +232,7 @@ def _run_backtest(args):
         top_factors=args.top_factors,
         selection_hysteresis=selection_hysteresis,
         pipeline_params_override=override,
+        is_window_months=args.is_window_months,
     )
 
     result = engine.run(args.start_date, args.end_date, test_file=getattr(args, "test_file", None))

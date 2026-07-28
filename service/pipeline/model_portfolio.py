@@ -294,6 +294,17 @@ class ModelPortfolioPipeline:
             how="inner",
         )
 
+        # 지역 중립 랭킹용 region 부착 (테스트 모드 제외 — 테스트 데이터는
+        # country map 커버리지가 없어 전 종목 랭킹 제외가 되므로)
+        if (
+            self.pipeline_params.get("ranking_group", "sector") == "region_sector"
+            and not self.is_test
+        ):
+            from service.pipeline.factor_analysis import attach_region
+            merged = attach_region(
+                merged, DATA_DIR / f"{self.config['benchmark']}_country_map.parquet"
+            )
+
         logger.info("[Trace] Merged data shape: %s", merged.shape)
         return factor_metadata, merged, factor_abbr_list, orders
 
@@ -305,6 +316,9 @@ class ModelPortfolioPipeline:
             min_sector_stocks=self.pipeline_params["min_sector_stocks"],
             sector_spread_geometric=bool(self.pipeline_params.get("sector_spread_geometric", False)),
             min_coverage_pct=float(self.pipeline_params.get("min_coverage_pct", 0.0)),
+            # 테스트 데이터는 country map 커버리지가 없어 sector 랭킹으로 고정
+            ranking_group=("sector" if test_file
+                           else self.pipeline_params.get("ranking_group", "sector")),
         )
         logger.info("Factors assigned in %.2fs", time.time() - t1)
         return result
