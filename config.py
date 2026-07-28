@@ -42,16 +42,19 @@ PIPELINE_PARAMS = {
     # 실제 종목매매비용 / 팩터별 전액계상 비용 = 0.574 (2026-07-03,
     # docs/experiments/mp_level_cost_20260703.md) -> 0.6 으로 근사 적용 (20bp x 0.6 = 12bp).
     # mp(운영) 파이프라인에는 적용되지 않음 (백테스트 전용).
-    "backtest_cost_multiplier": 0.6,
+    "backtest_cost_multiplier": 0.6,   # 선정 입력용 비용 (12bp; 비용 인지 선정이 A/B 최적 — 0/22bp 모두 열위). 주의: factor-level 성과 회계는 고회전 구성에서 실비용 과소계상 -> 정본 성과 판단은 mp_level_cost_backtest 실측 기준 (step0.5 실측 netting 1.09, net Sharpe 0.564)
     "top_factor_count": 50,            # 상위 팩터 선정 수
-    "spread_threshold_pct": 0.10,      # L/N/S 라벨링 임계값 (스프레드의 10%)
+    "spread_threshold_pct": 0.05,      # L/N/S 라벨링 임계값. MXWO: 0.05 채택 (2026-07-29, 0.025~0.05 고원; 구 0.10)
     "min_sector_stocks": 10,           # 섹터-날짜 최소 종목 수 (프로덕션)
     "min_coverage_pct": 0.10,          # 팩터 최소 단면 커버리지 (유니버스 대비 유효 관측 비율, IS 기준). 은행 전용 등 초저커버리지 팩터 제외 (2026-07-27 MXWO A/B 채택)
     "ranking_group": "sector",         # 5분위 랭킹 그룹: "sector"(기본, 채택) / "region_sector"=(날짜,지역,섹터). 지역 중립화는 전 윈도우에서 열위로 기각 (2026-07-28 A/B — 국가 모멘텀이 알파원)
     "max_zero_return_months": 10,      # 0 수익률 허용 최대 월 수
     "backtest_start": "2009-12-31",    # 백테스트 시작일
     "backtest_end": "2026-03-31",      # 백테스트 종료일
-    "optimization_mode": "equal_risk_weight", # "equal_risk_weight"(1/sigma, 2026-07-22 채택) / "equal_weight"(1/N) / "hardcoded"(고정 가중치). 근거: docs/experiments/equal_risk_weight_20260722.md
+    "optimization_mode": "erc",        # "erc"(상관 인지 ERC, 2026-07-29 채택) / "equal_risk_weight"(1/sigma) / "equal_weight"(1/N) / "hardcoded". 근거: docs/experiments/mxwo_sharpe_ladder_20260729.md
+    "erc_shrinkage": 0.7,              # ERC cov 대각 수축 비율 (0.5~0.7 유효, 0.7 채택)
+    "deploy_step": 0.5,                # 부분 조정 배포: 목표 비중으로 step만큼만 이동 (실측 net 0.448->0.564). 1.0=전량 조정
+    "weight_rebal_months": 1,          # Tier 2 가중 리밸 주기 (백테스트 CLI 기본, 월간 채택 2026-07-29)
     "factor_ranking_method": "tstat",  # "shrunk_tstat" / "tstat"(현 기본) / "cagr" — mp+backtest 공통 선정 기준
     "use_cluster_dedup": False,        # MXWO: 롤링 IS와 winner_median 궁합 문제로 off (2026-07-28 A/B: on -0.12 / off +0.41 Sharpe). MXCN1A(main 브랜치)는 True 유지
     "is_window_months": 48,            # 롤링 IS 윈도우 (개월). None=expanding. MXWO w36~72 스윕 중 내부 고원점 w48 채택 (2026-07-28, full Sharpe 0.16->0.41)
@@ -59,7 +62,7 @@ PIPELINE_PARAMS = {
     "per_cluster_keep": 3,             # 클러스터당 유지 팩터 수
     "cluster_method": "winner_median", # "winner_median"(기본): 클러스터 1등 보호 + 전역 중위값 바닥(top_n 고정 없음, ~18~54 가변) / "topn": 클러스터당 상위3 -> 전역 rank_score Top-N
     "newey_west_lag": 3,               # Newey-West 보정 lag (meta_data.csv 진단용)
-    "selection_hysteresis": 0.5,       # 선정 히스테리시스 margin (rank_score 단위). 0=off. 실험 근거: smoothing_cost_experiment_20260612.md
+    "selection_hysteresis": 0.25,      # 선정 히스테리시스 margin (rank_score 단위). 0=off. MXWO 0.25 채택 (2026-07-29; 구 0.5)
     "style_cap_basis": "weight",       # "weight"(명목비중, 기본)/"risk": 스타일 캡 적용 기준. risk 는 equal_risk_weight 전용 (w*sigma 예산 기준 캡)
     "universe_mask": "off",            # "off"/"on": 상대 모멘텀 유니버스 마스크 (docs/superpowers/specs/2026-07-21-ls-universe-mask-design.md)
     "universe_momentum_windows": [1, 3, 6, 12],         # 복합 신호 horizon (개월)

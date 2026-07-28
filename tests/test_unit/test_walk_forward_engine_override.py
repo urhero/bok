@@ -76,6 +76,7 @@ def test_backtest_cost_respects_multiplier():
 
 
 def test_config_has_backtest_cost_multiplier():
-    """config 에 figure 가 존재하고 기본 0.6 (netting ratio 0.574 실측 근사)."""
+    """config 에 multiplier 가 존재하고 양수 (실측 netting ratio 근사 — 구성별 재보정:
+    MXCN1A/구채택본 0.6(실측 0.574~0.62), MXWO step0.5 1.1(실측 1.09))."""
     from config import PIPELINE_PARAMS
-    assert PIPELINE_PARAMS.get("backtest_cost_multiplier") == 0.6
+    assert PIPELINE_PARAMS.get("backtest_cost_multiplier", 0) > 0

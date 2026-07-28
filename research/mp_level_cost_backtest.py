@@ -255,19 +255,13 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
                     except (ValueError, RuntimeError):
                         raw_w = None
                     if raw_w is not None:
+                        from service.pipeline.optimization import blend_deploy_weights
                         order = sorted(raw_w)
                         scale = 1.0 / sum(raw_w[f] for f in order)
                         target = {f: raw_w[f] * scale for f in order}
                         # deploy_step: 엔진과 동일한 부분 조정 배포 (2026-07-29)
-                        step = float(pp.get("deploy_step", 1.0))
-                        if step < 1.0 and cached_weights:
-                            keys = sorted(set(target) | set(cached_weights))
-                            bl = {f: step * target.get(f, 0.0)
-                                  + (1.0 - step) * cached_weights.get(f, 0.0) for f in keys}
-                            tot = sum(bl.values())
-                            cached_weights = {f: w / tot for f, w in bl.items() if w > 1e-10}
-                        else:
-                            cached_weights = target
+                        cached_weights = blend_deploy_weights(
+                            target, cached_weights, float(pp.get("deploy_step", 1.0)))
                         cached_selected = list(cached_weights.keys())
 
         if cached_weights is None or t not in net_full.index:

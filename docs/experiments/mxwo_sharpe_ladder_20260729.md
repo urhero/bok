@@ -1,7 +1,16 @@
 # MXWO Sharpe 사다리 실험 로그 (2026-07-28 ~ 07-29, mxwo_sharpe1 브랜치)
 
-목표: 전체 기간(OOS 97개월) Sharpe 1.0. 도달치: **0.809** (탐색 최대치, ~45회 백테스트).
-모든 수치는 walk-forward OOS, 거래비용 반영 (20bp x 0.6).
+목표: 전체 기간(OOS 97개월) Sharpe 1.0.
+**최종 채택 (2026-07-29): 실측(MP-level) net Sharpe 0.564 / gross 0.893** — 목표 미달로
+사용자 승인 하에 목표 조정. 신호 천장(gross)이 ~1.0이라 현 데이터·아키텍처에서 1.0 불가.
+gross 선정(selection-cost 0) 변형도 실측 net 0.463으로 기각 (비용 인지 선정 우위 재확인).
+
+채택 config: optimization_mode=erc(shrink 0.7), spread_threshold_pct=0.05,
+selection_hysteresis=0.25, weight_rebal_months=1, deploy_step=0.5,
+backtest_cost_multiplier=1.1(실측 netting 1.09), 기존: w48/dedup off/sector/tstat/top50.
+
+아래는 1차 factor-level 사다리 기록 (당시 multiplier 0.6 회계 기준 — 이후 실측으로
+고회전 구성에서 비용 과소계상이 확인돼 절대값은 상향 편의가 있음. 상대 비교 참고용).
 
 ## 사다리 (누적 채택)
 

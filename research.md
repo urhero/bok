@@ -201,6 +201,17 @@ MXWO 에서 off** — 롤링 IS 의 출렁이는 rank_score 분포에서 winner_
 "region_sector"`)은 전 윈도우에서 sector 대비 열위로 기각 — 국가 편중(특히 미국
 모멘텀)이 노이즈가 아니라 알파원이었음 (docs/superpowers/specs/2026-07-28-mxwo-region-neutral-ranking-design.md).
 
+**2026-07-29 Sharpe 사다리 채택분** (상세: docs/experiments/mxwo_sharpe_ladder_20260729.md):
+`optimization_mode="erc"`(상관 인지 ERC, cov 48M 대각수축 0.7) + `spread_threshold_pct=0.05`
++ `selection_hysteresis=0.25` + `weight_rebal_months=1` + `deploy_step=0.5`(부분 조정 배포,
+`blend_deploy_weights()` — mp/엔진/비용스크립트 공용). **비용의 두 역할 분리가 핵심**:
+`backtest_cost_multiplier=0.6`은 선정 입력용(비용 인지 선정이 A/B 최적; 22bp로 올리면
+선정 왜곡으로 정본 0.19까지 붕괴)이고, factor-level 성과 회계는 고회전 구성에서 실비용을
+최대 1.8배 과소계상하므로 **정본 성과 판단은 `research/mp_level_cost_backtest.py` 실측 기준**
+(채택 구성 실측: net Sharpe 0.564 / gross 0.893 / 월비용 11bp / netting 1.09; factor-level
+정본 CSV 는 0.710으로 과대). mp_level_cost_backtest 는 `--weight-rebal-months/--hysteresis/
+--is-window-months/--pp-json` 으로 임의 구성 실측 가능 (parity 9.9e-17 검증).
+
 **단면 커버리지 필터** (`min_coverage_pct`, 기본 0.10, 2026-07-27 채택): 월별 (유효 관측 종목수 / 유니버스 종목수)의 기간 평균이 임계 미만인 팩터를 lag 직후 배치로 제외. 은행 전용 팩터(MXWO에서 NaN ~99%, 7종)처럼 구조적으로 희소한 팩터는 L/S 폭이 좁아 노이즈가 큰데도 클러스터 선정 슬롯과 스타일 예산을 차지하는 문제를 방지. MXWO A/B: 제외 시 CEW 전체 Sharpe 0.106→0.160, 최근 3년 0.056→0.230 (EW_Top50/EW_All 불변 — 효과는 전량 선정 단계에서 발생). **walk-forward에서는 IS 학습(`_run_rule_learning`)에만 적용**하고 전체 데이터 사전계산(`factor_stats_full`)에는 적용하지 않는다 — IS에서 탈락한 팩터는 `kept_abbrs`에서 빠져 OOS에 반영되고, 임계 근처에서 IS/full 커버리지가 엇갈릴 때 kept 팩터의 full stats가 사라지는 불일치를 피하기 위함.
 
 **반환값**: `List[(sector_return_df, None, spread_series, merged_df)]` — quantile_return_df는 None (downstream에서 재계산하므로 불필요)

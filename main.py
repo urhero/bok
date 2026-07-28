@@ -55,8 +55,8 @@ def main(argv: list[str] | None = None) -> int:
                                   help="Minimum IS period in months (default: 36)")
     parser_backtest.add_argument("--factor-rebal-months", type=int, default=6,
                                   help="Tier 1 rebalancing frequency (default: 6)")
-    parser_backtest.add_argument("--weight-rebal-months", type=int, default=3,
-                                  help="Tier 2 rebalancing frequency (default: 3)")
+    parser_backtest.add_argument("--weight-rebal-months", type=int, default=None,
+                                  help="Tier 2 rebalancing frequency (default: config weight_rebal_months)")
     parser_backtest.add_argument("--top-factors", type=int, default=50,
                                   help="Number of top factors to select (default: 50)")
     parser_backtest.add_argument("--selection-hysteresis", type=float, default=None,
@@ -228,7 +228,8 @@ def _run_backtest(args):
     engine = WalkForwardEngine(
         min_is_months=args.min_is_months,
         factor_rebal_months=args.factor_rebal_months,
-        weight_rebal_months=args.weight_rebal_months,
+        weight_rebal_months=(args.weight_rebal_months if args.weight_rebal_months is not None
+                             else int(PIPELINE_PARAMS.get("weight_rebal_months", 3))),
         top_factors=args.top_factors,
         selection_hysteresis=selection_hysteresis,
         pipeline_params_override=override,

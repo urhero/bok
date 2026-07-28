@@ -563,17 +563,9 @@ class WalkForwardEngine:
                             _order = sorted(raw_new_weights)
                             _wscale = 1.0 / sum(raw_new_weights[f] for f in _order)
                             _target = {f: raw_new_weights[f] * _wscale for f in _order}
-                            # deploy_step<1: 부분 조정 배포 (목표로 step 만큼만 이동).
-                            # 신호는 매월 반영하되 트레이드 크기를 줄여 실측 비용 절감 (2026-07-29).
-                            _step = float(pp.get("deploy_step", 1.0))
-                            if _step < 1.0 and cached_weights:
-                                _keys = sorted(set(_target) | set(cached_weights))
-                                _bl = {f: _step * _target.get(f, 0.0)
-                                       + (1.0 - _step) * cached_weights.get(f, 0.0) for f in _keys}
-                                _tot = sum(_bl.values())
-                                cached_weights = {f: w / _tot for f, w in _bl.items() if w > 1e-10}
-                            else:
-                                cached_weights = _target
+                            from service.pipeline.optimization import blend_deploy_weights
+                            cached_weights = blend_deploy_weights(
+                                _target, cached_weights, float(pp.get("deploy_step", 1.0)))
                             cached_selected_factors = list(cached_weights.keys())
 
             if cached_weights is None or cached_selected_factors is None:

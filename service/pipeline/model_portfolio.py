@@ -153,7 +153,8 @@ class ModelPortfolioPipeline:
             erw_vol_window=self.pipeline_params.get("erw_vol_window"),
         )
 
-        # [6.5] 배포 가중치 = 목표 가중치 (스무딩 제거: production 은 항상 목표 그대로 배포)
+        # [6.5] 배포 가중치: deploy_step<1 이면 직전 배포 비중에서 step 만큼만 이동
+        # (부분 조정 — 2026-07-29 실측 채택, walk-forward 엔진과 동일 의미).
         weights_tbl = sim_result[1]
         target_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
         # 구 step_smooth(step=1.0) 동작 보존(출력 byte 동일): 정렬 순서 + 합 1.0 재정규화.
@@ -166,8 +167,13 @@ class ModelPortfolioPipeline:
         full_style_map = dict(zip(factor_info["factorAbbreviation"], factor_info["styleName"]))
 
         if not test_file:                                   # 테스트 모드는 history 저장 skip
-            # prev_weights 는 델타 리포트(factor_styles/style_totals)용으로 로드
+            # prev_weights 는 블렌딩 + 델타 리포트(factor_styles/style_totals)용
             prev_weights, _ = load_prev_factor_weights(HISTORY_DIR, end_date)
+            from service.pipeline.optimization import blend_deploy_weights
+            deployed = blend_deploy_weights(
+                deployed, prev_weights or None,
+                float(self.pipeline_params.get("deploy_step", 1.0)),
+            )
             save_factor_weights(HISTORY_DIR, end_date, deployed)               # 다음 회차 prev
             save_factor_styles(HISTORY_DIR, end_date, target_weights, prev_weights,
                                deployed, full_style_map)

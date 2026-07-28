@@ -146,6 +146,25 @@ def _equal_weight_allocation(
     return best_stats, weights_tbl
 
 
+def blend_deploy_weights(
+    target: dict[str, float],
+    prev: dict[str, float] | None,
+    step: float,
+) -> dict[str, float]:
+    """부분 조정 배포: prev 에서 target 으로 step 만큼만 이동 후 합 1 재정규화.
+
+    step>=1 또는 prev 없음 -> target 그대로 (기존 동작 보존).
+    월간 신호를 유지하면서 트레이드 크기를 줄여 실측 비용을 절감한다
+    (2026-07-29 MP-level 실측: step 0.5 에서 net Sharpe 0.448->0.564).
+    """
+    if step >= 1.0 or not prev:
+        return dict(target)
+    keys = sorted(set(target) | set(prev))
+    blended = {f: step * target.get(f, 0.0) + (1.0 - step) * prev.get(f, 0.0) for f in keys}
+    total = sum(blended.values())
+    return {f: w / total for f, w in blended.items() if w > 1e-10}
+
+
 def optimize_constrained_weights(
     rtn_df: pd.DataFrame,
     style_list: list[str],

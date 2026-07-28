@@ -318,10 +318,14 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | 파라미터 | 값 | 설명 | 사용 모듈 |
 |---------|-----|------|-----------|
 | `style_cap` | 0.25 | 스타일 캡 (프로덕션 규제 요건) | `optimization.py` |
+| `optimization_mode` "erc" | - | 상관 인지 Equal Risk Contribution 가중 (2026-07-29 채택; cov 48M) | `optimization.py` |
+| `erc_shrinkage` | 0.7 | ERC cov 대각 수축 비율 | `optimization.py` |
+| `deploy_step` | 0.5 | 부분 조정 배포 — 목표 비중으로 step만큼만 이동 (실측 net 0.448->0.564) | `optimization.py`, `model_portfolio.py`, `walk_forward_engine.py` |
+| `weight_rebal_months` | 1 | Tier 2 가중 리밸 주기 (월간 채택) | `walk_forward_engine.py` |
 | `optimization_mode` | "equal_risk_weight" | 가중치 결정 모드 (`equal_risk_weight`(1/σ, 2026-07-22 채택) / `equal_weight` / `hardcoded`) | `optimization.py` |
 | `style_cap_basis` | "weight" | 스타일 캡 적용 기준 (`weight`=명목비중 / `risk`=w×σ 예산, risk는 A/B 기각 후 옵션 잔류) | `optimization.py` |
 | `transaction_cost_bps` | 20.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
-| `backtest_cost_multiplier` | 0.6 | 백테스트 전용 비용 배수 (20bp x 0.6 = 12bp; 편입/편출 netting 실측 0.574 기반) | `walk_forward_engine.py` |
+| `backtest_cost_multiplier` | 0.6 | **선정 입력용** 비용 배수 (비용 인지 선정 최적). factor-level 성과 회계는 고회전 구성에서 과소계상 — **정본 성과 판단은 `research/mp_level_cost_backtest.py` 실측 기준** (step0.5 실측 net Sharpe 0.564) | `walk_forward_engine.py` |
 | `top_factor_count` | 50 | rank_score 상위 절단 수 (**`cluster_method=topn`일 때만** 적용; winner_median은 미사용) | `model_portfolio.py` |
 | `factor_ranking_method` | "tstat" | 팩터 랭킹 방식 (`shrunk_tstat` / `tstat` / `cagr`) | `model_portfolio.py`, `walk_forward_engine.py` (`compute_rank_score` 공유) |
 | `use_cluster_dedup` | False | Hierarchical Clustering 중복 제거. **MXWO: off** — 롤링 IS와 winner_median 궁합 문제 (2026-07-28 절단 실험: on -0.12 / off +0.41 Sharpe). MXCN1A(main)는 True | `model_portfolio.py`, `walk_forward_engine.py` |
@@ -331,13 +335,13 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `n_clusters` | 18 | 클러스터 수 (`use_cluster_dedup=True`일 때) | `factor/selection.py` |
 | `per_cluster_keep` | 3 | 클러스터당 유지 팩터 수 | `factor/selection.py` |
 | `newey_west_lag` | 3 | Newey-West 보정 lag (meta_data 진단 컬럼) | `factor/selection.py` |
-| `spread_threshold_pct` | 0.10 | L/N/S 라벨링 임계값 | `factor_analysis.py` |
+| `spread_threshold_pct` | 0.05 | L/N/S 라벨링 임계값 (2026-07-29 0.05 채택, 0.025~0.05 고원) | `factor_analysis.py` |
 | `min_sector_stocks` | 10 | 섹터-날짜 최소 종목 수 | `factor_analysis.py` |
 | `min_coverage_pct` | 0.10 | 팩터 최소 단면 커버리지 (유니버스 대비 유효 관측 비율, IS 기준). 은행 전용 등 초저커버리지 팩터 제외 (2026-07-27 MXWO A/B 채택) | `factor_analysis.py` |
 | `max_zero_return_months` | 10 | 0 수익률 허용 최대 월 수 | `model_portfolio.py` |
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |
 | `backtest_end` | "2026-03-31" | 백테스트 종료일 (실험 스크립트 참조용) | `research/*.py` |
-| `selection_hysteresis` | 0.5 | 선정 히스테리시스 margin (rank_score 단위, 0=off). 직전 선정 팩터는 챌린저가 이 격차 이상 이겨야 교체 | `model_portfolio.py`, `walk_forward_engine.py` (`apply_selection_hysteresis` 공유) |
+| `selection_hysteresis` | 0.25 | 선정 히스테리시스 margin (rank_score 단위, 0=off). 직전 선정 팩터는 챌린저가 이 격차 이상 이겨야 교체 | `model_portfolio.py`, `walk_forward_engine.py` (`apply_selection_hysteresis` 공유) |
 
 > **실험 결과:** [docs/experiments/cluster_turnover_20260425.md](docs/experiments/cluster_turnover_20260425.md) 참조 (43 케이스 광역 sweep). 1장 요약은 [executive_summary.md](docs/experiments/executive_summary.md). 핵심 발견: ① `OPTIMIZATION_OVERFIT` 실체 = style_cap 의 OOS 비용, ② n_clusters sweet spot 18~30, ③ Clustering 후 style_cap 효과 거의 없음, ④ smoothing α 0.1 saturation, ⑤ ranking method 는 t-stat 이 베스트, ⑥ min_is_months 는 모델에 영향 없음, ⑦ **baseline 은 2023~ Sharpe 0.27 / 21개월째 -6% 미회복 — 위험**, ⑧ **combo_18_0.1 은 같은 기간 Sharpe 0.99 / 회복 완료** (3.7배 차이). 당시 권장이던 `combo_18_0.1` 중 **clustering(n=18)은 적용 유지**, smoothing α=0.1(EMA)은 이후 절대스텝 -> 무스무딩으로 대체되었고, 2026-06 비용-인지 실험으로 **선정 히스테리시스(0.5)가 최종 적용**됨 — [smoothing_cost_experiment_20260612.md](docs/experiments/smoothing_cost_experiment_20260612.md) 참조. 2026-07-05 선정/필터 개선안 5종(섹터 유의성 게이트, half-life t-stat, IQR margin, 비례 zero-filter, 기하평균 스프레드)은 **A/B 전부 기각**(현행 국소 최적 재확인), EW_Top50 진단 곡선 pre-dedup 복원만 채택 — [proposal_experiments_20260705.md](docs/experiments/proposal_experiments_20260705.md) 참조.
 

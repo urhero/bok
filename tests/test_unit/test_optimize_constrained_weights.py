@@ -20,6 +20,30 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from service.pipeline.optimization import optimize_constrained_weights
 
 
+class TestBlendDeployWeights:
+    """blend_deploy_weights (부분 조정 배포, 2026-07-29 채택)."""
+
+    def test_step1_or_no_prev_passthrough(self) -> None:
+        from service.pipeline.optimization import blend_deploy_weights
+        t = {"A": 0.6, "B": 0.4}
+        assert blend_deploy_weights(t, {"A": 1.0}, 1.0) == t
+        assert blend_deploy_weights(t, None, 0.5) == t
+        assert blend_deploy_weights(t, {}, 0.5) == t
+
+    def test_half_step_blends_and_renormalizes(self) -> None:
+        from service.pipeline.optimization import blend_deploy_weights
+        out = blend_deploy_weights({"A": 1.0}, {"B": 1.0}, 0.5)
+        assert abs(out["A"] - 0.5) < 1e-12 and abs(out["B"] - 0.5) < 1e-12
+        assert abs(sum(out.values()) - 1.0) < 1e-12
+
+    def test_prev_position_decays(self) -> None:
+        from service.pipeline.optimization import blend_deploy_weights
+        w = {"OLD": 1.0}
+        for _ in range(3):
+            w = blend_deploy_weights({"NEW": 1.0}, w, 0.5)
+        assert w["OLD"] < 0.13 and w["NEW"] > 0.87
+
+
 class TestErwVolWindow:
     """equal_risk_weight 의 erw_vol_window (최근 N개월 실현 vol 가중)."""
 
