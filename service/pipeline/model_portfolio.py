@@ -150,6 +150,7 @@ class ModelPortfolioPipeline:
             mode=self.pipeline_params["optimization_mode"],
             style_cap=self.pipeline_params["style_cap"],
             style_cap_basis=self.pipeline_params.get("style_cap_basis", "weight"),
+            erw_vol_window=self.pipeline_params.get("erw_vol_window"),
         )
 
         # [6.5] 배포 가중치 = 목표 가중치 (스무딩 제거: production 은 항상 목표 그대로 배포)
@@ -316,6 +317,16 @@ class ModelPortfolioPipeline:
                 merged, DATA_DIR / f"{self.config['benchmark']}_country_map.parquet"
             )
 
+        # 국가 모멘텀 합성 팩터 주입 (실험 플래그, 2026-07-28 Sharpe 목표)
+        if self.pipeline_params.get("inject_country_momentum") and not self.is_test:
+            from service.pipeline.factor_analysis import inject_country_momentum
+            merged, synth_meta = inject_country_momentum(
+                merged, DATA_DIR / f"{self.config['benchmark']}_country_map.parquet"
+            )
+            factor_metadata = pd.concat([factor_metadata, synth_meta], ignore_index=True)
+            factor_abbr_list = factor_metadata.factorAbbreviation.tolist()
+            orders = factor_metadata.factorOrder.tolist()
+
         logger.info("[Trace] Merged data shape: %s", merged.shape)
         return factor_metadata, merged, factor_abbr_list, orders
 
@@ -330,6 +341,7 @@ class ModelPortfolioPipeline:
             # 테스트 데이터는 country map 커버리지가 없어 sector 랭킹으로 고정
             ranking_group=("sector" if test_file
                            else self.pipeline_params.get("ranking_group", "sector")),
+            n_quantiles=int(self.pipeline_params.get("n_quantiles", 5)),
         )
         logger.info("Factors assigned in %.2fs", time.time() - t1)
         return result

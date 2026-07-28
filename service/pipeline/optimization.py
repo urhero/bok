@@ -154,6 +154,9 @@ def optimize_constrained_weights(
     tol: float = 1e-12,
     test_mode: bool = False,
     style_cap_basis: str = "weight",
+    erw_vol_window: int | None = None,
+    erc_shrinkage: float = 0.5,
+    erc_shrink_target: str = "diag",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """스타일 캡 하 포트폴리오 가중치를 결정한다.
 
@@ -190,7 +193,12 @@ def optimize_constrained_weights(
     if mode == "equal_risk_weight":
         # 팩터 IS 월간 수익률 변동성 반비례 가중. 첫 행(기준점 0) 제외는
         # compute_rank_score 의 monthly_rets = iloc[1:] 관례와 동일.
-        vol = rtn_df.iloc[1:].std().to_numpy(dtype=np.float64)
+        # erw_vol_window 지정 시 최근 N개월 실현 변동성만 사용 (내부 vol 타이밍:
+        # 총 비중 합 1 불변 — 포트폴리오 배수가 아니라 팩터 믹스 재배분).
+        vol_src = rtn_df.iloc[1:]
+        if erw_vol_window and len(vol_src) > erw_vol_window:
+            vol_src = vol_src.iloc[-erw_vol_window:]
+        vol = vol_src.std().to_numpy(dtype=np.float64)
         # ponytail: 무분산 팩터 폭주 방지 하한. zero-filter 가 상류에서 대부분 거르므로
         # 실전에서 밟힐 일은 드물다.
         vol = np.maximum(vol, 1e-6)
@@ -202,6 +210,43 @@ def optimize_constrained_weights(
             base_weights=base, cap_scale=cap_scale,
         )
 
+    if mode == "erc":
+        # Equal Risk Contribution: 팩터 간 상관을 반영해 리스크 기여를 균등화.
+        # 1/sigma(ERW)의 상관 무시 한계 보완 — 총 비중 합 1 불변 (배수 아님).
+        # cov 는 진단 대각 50% 수축(shrinkage)으로 추정 노이즈 완화.
+        vol_src = rtn_df.iloc[1:]
+        if erw_vol_window and len(vol_src) > erw_vol_window:
+            vol_src = vol_src.iloc[-erw_vol_window:]
+        cov = vol_src.cov().to_numpy(dtype=np.float64)
+        # erc_shrinkage: 수축 비율 (0=표본 cov 그대로).
+        # erc_shrink_target: "diag"=무상관 타깃(1/sigma 방향) /
+        #   "cc"=상수상관 타깃(Ledoit-Wolf constant-correlation 계열 — 평균 상관 보존)
+        sd = np.sqrt(np.maximum(np.diag(cov), 1e-18))
+        if erc_shrink_target == "cc":
+            corr = cov / np.outer(sd, sd)
+            n_ = corr.shape[0]
+            rho_bar = (corr.sum() - n_) / (n_ * (n_ - 1)) if n_ > 1 else 0.0
+            target = rho_bar * np.outer(sd, sd)
+            np.fill_diagonal(target, sd ** 2)
+        else:
+            target = np.diag(np.diag(cov))
+        cov = (1.0 - erc_shrinkage) * cov + erc_shrinkage * target
+        n = cov.shape[0]
+        w = np.full(n, 1.0 / n)
+        # ponytail: 곱셈 반복법 (수렴 단순·양수 보장). 실패해도 마지막 w 사용.
+        for _ in range(200):
+            rc = w * (cov @ w)
+            rc = np.maximum(rc, 1e-18)
+            w_new = w * (rc.mean() / rc) ** 0.5
+            w_new /= w_new.sum()
+            if np.abs(w_new - w).max() < 1e-10:
+                w = w_new
+                break
+            w = w_new
+        return _equal_weight_allocation(
+            rtn_df, style_list, style_cap, tol, test_mode, base_weights=w,
+        )
+
     raise ValueError(
-        f"Unknown optimization mode: {mode!r}. Use 'hardcoded', 'equal_weight' or 'equal_risk_weight'."
+        f"Unknown optimization mode: {mode!r}. Use 'hardcoded', 'equal_weight', 'equal_risk_weight' or 'erc'."
     )

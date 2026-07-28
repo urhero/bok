@@ -114,6 +114,7 @@ def _run_rule_learning(
         min_coverage_pct=float(pp.get("min_coverage_pct", 0.0)),
         # 랭킹 그룹은 구조 파라미터 — IS/full 양쪽 동일 적용 (횡단면, look-ahead 없음)
         ranking_group=("sector" if test_file else pp.get("ranking_group", "sector")),
+        n_quantiles=int(pp.get("n_quantiles", 5)),
     )
 
     # [3] 섹터 필터링 + L/N/S 라벨링
@@ -298,6 +299,9 @@ def _run_weight_optimization(
         mode=pp["optimization_mode"],
         style_cap=pp["style_cap"],
         style_cap_basis=pp.get("style_cap_basis", "weight"),
+        erw_vol_window=pp.get("erw_vol_window"),
+        erc_shrinkage=float(pp.get("erc_shrinkage", 0.5)),
+        erc_shrink_target=pp.get("erc_shrink_target", "diag"),
     )
 
     weights_dict = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
@@ -423,6 +427,7 @@ class WalkForwardEngine:
             sector_spread_geometric=bool(pp.get("sector_spread_geometric", False)),
             # 랭킹 그룹은 IS 학습과 동일해야 함 (구조 파라미터, 횡단면이라 안전)
             ranking_group=("sector" if test_file else pp.get("ranking_group", "sector")),
+            n_quantiles=int(pp.get("n_quantiles", 5)),
         )
 
         # 2. 캐시 초기화

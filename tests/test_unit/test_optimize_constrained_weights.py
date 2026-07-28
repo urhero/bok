@@ -20,6 +20,43 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from service.pipeline.optimization import optimize_constrained_weights
 
 
+class TestErwVolWindow:
+    """equal_risk_weight 의 erw_vol_window (최근 N개월 실현 vol 가중)."""
+
+    @staticmethod
+    def _regime_frame() -> tuple[pd.DataFrame, list[str]]:
+        """FA: 과거 고변동 -> 최근 저변동, FB: 반대. 24개월 + 기준점 행."""
+        rng = np.random.default_rng(3)
+        early_a, late_a = rng.normal(0, 0.10, 12), rng.normal(0, 0.01, 12)
+        early_b, late_b = rng.normal(0, 0.01, 12), rng.normal(0, 0.10, 12)
+        idx = pd.date_range("2023-01-31", periods=25, freq="ME")
+        df = pd.DataFrame({
+            "FA": np.concatenate([[0.0], early_a, late_a]),
+            "FB": np.concatenate([[0.0], early_b, late_b]),
+        }, index=idx)
+        return df, ["S1", "S2"]
+
+    def test_window_uses_recent_vol(self) -> None:
+        rtn_df, styles = self._regime_frame()
+        _, full = optimize_constrained_weights(
+            rtn_df, styles, mode="equal_risk_weight", test_mode=True)
+        _, recent = optimize_constrained_weights(
+            rtn_df, styles, mode="equal_risk_weight", test_mode=True, erw_vol_window=12)
+        wf = dict(zip(full["factor"], full["fitted_weight"]))
+        wr = dict(zip(recent["factor"], recent["fitted_weight"]))
+        # 전체 기간 vol 은 두 팩터 대칭 -> 비슷한 비중. 최근 12개월은 FA 저변동 -> FA 과중.
+        assert abs(wf["FA"] - wf["FB"]) < 0.2
+        assert wr["FA"] > 0.8
+
+    def test_none_window_unchanged(self) -> None:
+        rtn_df, styles = self._regime_frame()
+        _, a = optimize_constrained_weights(
+            rtn_df, styles, mode="equal_risk_weight", test_mode=True)
+        _, b = optimize_constrained_weights(
+            rtn_df, styles, mode="equal_risk_weight", test_mode=True, erw_vol_window=None)
+        assert a["fitted_weight"].tolist() == b["fitted_weight"].tolist()
+
+
 class TestOptimizeConstrainedWeightsBasic:
     """optimize_constrained_weights 기본 기능 테스트"""
 
