@@ -144,7 +144,9 @@ def stock_weights_at(frames, w_dep, t, backtest_start_ts):
 
 
 def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None = None,
-        out_suffix: str = "", optimization_mode: str | None = None) -> pd.DataFrame:
+        out_suffix: str = "", optimization_mode: str | None = None,
+        weight_rebal_override: int | None = None, hysteresis_override: float | None = None,
+        is_window_months: int | None = None, pp_override: dict | None = None) -> pd.DataFrame:
     """selection_cost_bps: factor-level(선정 입력) 비용 오버라이드.
     None 이면 엔진과 동일 (transaction_cost_bps x multiplier).
     MP-level 실비용(cost_stock)은 항상 base transaction_cost_bps 를 쓴다 —
@@ -154,10 +156,16 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
     t0 = time.time()
     min_is = 4 if test_file else 36
     factor_rebal, weight_rebal = 6, 3
+    if weight_rebal_override:
+        weight_rebal = int(weight_rebal_override)
     hyst = float(PIPELINE_PARAMS.get("selection_hysteresis", 0.0))
+    if hysteresis_override is not None:
+        hyst = float(hysteresis_override)
 
     pp = dict(PIPELINE_PARAMS)
     pp["top_factor_count"] = 50
+    if pp_override:
+        pp.update(pp_override)
     if pp["optimization_mode"] == "hardcoded":
         pp["optimization_mode"] = "equal_weight"
     if optimization_mode:
@@ -205,6 +213,13 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
         if cached_rule_bundle is None or i % factor_rebal == 0:
             is_rule_rebal = True
             merged_is = merged_full[merged_full["ddt"] <= pd.Timestamp(is_end)]
+            if is_window_months:
+                # 엔진 rolling IS 와 동일: 시작 1개월 이전부터 (lag 기저)
+                from service.backtest.walk_forward_engine import rolling_is_start
+                is_start = rolling_is_start(all_dates, min_is + i - 1, is_window_months)
+                if is_start is not None:
+                    lag_start = pd.Timestamp(is_start) - pd.DateOffset(months=1, days=5)
+                    merged_is = merged_is[merged_is["ddt"] >= lag_start]
             prepared = (meta_full, merged_is, abbrs_full, orders_full)
             cached_rule_bundle = _run_rule_learning(None, None, pipeline, test_file, prepared=prepared)
             net_full, cost_full, frames = apply_rules_keep_frames(
@@ -220,7 +235,13 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
 
         # -- Tier 2 (엔진과 동일) --
         if cached_weights is None or is_rule_rebal or i % weight_rebal == 0:
-            ret_is = net_full[net_full.index <= is_end].copy()
+            ret_is = net_full[net_full.index <= is_end]
+            if is_window_months:
+                from service.backtest.walk_forward_engine import rolling_is_start
+                is_start = rolling_is_start(all_dates, min_is + i - 1, is_window_months)
+                if is_start is not None:
+                    ret_is = ret_is[ret_is.index >= pd.Timestamp(is_start)]
+            ret_is = ret_is.copy()
             if len(ret_is) >= 3:
                 ret_is.iloc[0] = 0.0
                 valid = ret_is.columns[(ret_is == 0).sum() <= pp["max_zero_return_months"]]
@@ -236,8 +257,18 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
                     if raw_w is not None:
                         order = sorted(raw_w)
                         scale = 1.0 / sum(raw_w[f] for f in order)
-                        cached_weights = {f: raw_w[f] * scale for f in order}
-                        cached_selected = list(raw_w.keys())
+                        target = {f: raw_w[f] * scale for f in order}
+                        # deploy_step: 엔진과 동일한 부분 조정 배포 (2026-07-29)
+                        step = float(pp.get("deploy_step", 1.0))
+                        if step < 1.0 and cached_weights:
+                            keys = sorted(set(target) | set(cached_weights))
+                            bl = {f: step * target.get(f, 0.0)
+                                  + (1.0 - step) * cached_weights.get(f, 0.0) for f in keys}
+                            tot = sum(bl.values())
+                            cached_weights = {f: w / tot for f, w in bl.items() if w > 1e-10}
+                        else:
+                            cached_weights = target
+                        cached_selected = list(cached_weights.keys())
 
         if cached_weights is None or t not in net_full.index:
             continue
@@ -334,14 +365,28 @@ def main():
                     help="가중 모드 오버라이드 (예: equal_risk_weight). 기본: config")
     ap.add_argument("--parity-csv", default=None,
                     help="parity 비교 대상 CSV (기본: output/walk_forward_results.csv)")
+    ap.add_argument("--weight-rebal-months", type=int, default=None, help="Tier 2 주기 오버라이드")
+    ap.add_argument("--hysteresis", type=float, default=None, help="선정 히스테리시스 오버라이드")
+    ap.add_argument("--is-window-months", type=int, default=None, help="롤링 IS 윈도우 (엔진과 동일 의미)")
+    ap.add_argument("--pp-json", default=None,
+                    help='PIPELINE_PARAMS 오버라이드 JSON (예: {"spread_threshold_pct":0.05})')
     args = ap.parse_args()
     test_file = "test_data.csv" if args.test else None
     out_dir = Path(args.out) if args.out else PROJECT_ROOT / "output" / "experiments"
     suffix = "" if args.selection_cost_bps is None else f"_sel{args.selection_cost_bps:g}bp"
     if args.optimization_mode:
         suffix += f"_{args.optimization_mode}"
+    pp_override = None
+    if args.pp_json:
+        import json
+        pp_override = json.loads(args.pp_json)
+        suffix += "_ppov"
     df = run(test_file, out_dir, selection_cost_bps=args.selection_cost_bps, out_suffix=suffix,
-             optimization_mode=args.optimization_mode)
+             optimization_mode=args.optimization_mode,
+             weight_rebal_override=args.weight_rebal_months,
+             hysteresis_override=args.hysteresis,
+             is_window_months=args.is_window_months,
+             pp_override=pp_override)
     # parity 는 선정 비용이 엔진 기본과 같을 때만 의미 있음.
     # 모드 오버라이드 시엔 --parity-csv 로 해당 모드의 결과를 지정해야 의미 있음.
     skip = args.selection_cost_bps is not None or (args.optimization_mode and not args.parity_csv)
