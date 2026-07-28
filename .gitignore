@@ -196,6 +196,9 @@ cython_debug/
 data/*
 !data/MXCN1A_factor_*.parquet
 !data/MXCN1A_mreturn.parquet
+!data/MXWO_factor_*.parquet
+!data/MXWO_mreturn.parquet
+!data/MXWO_country_map.parquet
 !data/factor_info.csv
 !data/hardcoded_weights.csv
 data_backup/
