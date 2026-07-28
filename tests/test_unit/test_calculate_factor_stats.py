@@ -146,6 +146,28 @@ class TestCalculateFactorStatsBatch:
         assert batch[1][2].columns[0] == "FB"
 
 
+class TestSliceRecentMonths:
+    """factor_analysis.slice_recent_months (mp 파이프라인 롤링 IS 슬라이스)."""
+
+    def test_none_window_returns_input(self) -> None:
+        from service.pipeline.factor_analysis import slice_recent_months
+        df = _make_multi_factor_frame(n_months=12)
+        assert slice_recent_months(df, None) is df
+        assert slice_recent_months(df, 0) is df
+
+    def test_keeps_window_plus_lag_base(self) -> None:
+        from service.pipeline.factor_analysis import slice_recent_months
+        df = _make_multi_factor_frame(n_months=12)
+        out = slice_recent_months(df, 6)
+        assert out["ddt"].nunique() == 7  # 6개월 + lag 기저 1개월
+        assert out["ddt"].max() == df["ddt"].max()
+
+    def test_short_history_noop(self) -> None:
+        from service.pipeline.factor_analysis import slice_recent_months
+        df = _make_multi_factor_frame(n_months=5)
+        assert slice_recent_months(df, 6) is df
+
+
 class TestRollingIsStart:
     """walk_forward_engine.rolling_is_start (롤링 IS 윈도우 경계)."""
 

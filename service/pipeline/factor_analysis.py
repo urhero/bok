@@ -185,6 +185,22 @@ def filter_and_label_factors(
     return kept_factor_abbrs, kept_names, kept_styles, kept_idx, dropped_sec, filtered_raw_data_list
 
 
+def slice_recent_months(df: pd.DataFrame, window_months: int | None) -> pd.DataFrame:
+    """마지막 window_months개월 + lag 기저 1개월만 남긴다 (롤링 IS, 2026-07-28 채택).
+
+    기저 1개월은 calculate_factor_stats_batch 의 shift(1) lag 원천으로만 쓰이고
+    (자기 자신은 val_lagged NaN 으로 탈락) 윈도우 첫 달의 관측을 보존한다.
+    window 미지정(None/0)이거나 이력이 window 이하면 그대로 반환 (expanding).
+    """
+    if not window_months:
+        return df
+    dates = df["ddt"].drop_duplicates().sort_values()
+    if len(dates) <= window_months + 1:
+        return df
+    cutoff = dates.iloc[-(window_months + 1)]
+    return df[df["ddt"] >= cutoff]
+
+
 def calculate_factor_stats_batch(
     merged_data: pd.DataFrame,
     factor_abbr_list: list[str],

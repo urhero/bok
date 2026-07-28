@@ -99,6 +99,17 @@ class ModelPortfolioPipeline:
         # [2] 메타데이터 병합 + 5분위 분석 — README [1], [2]
         factor_metadata, merged_data, factor_abbr_list, orders = self._prepare_metadata(raw_data, market_return_df)
         self.factor_metadata = factor_metadata
+
+        # [2.3] 롤링 IS 윈도우 (2026-07-28 채택, w48): 규칙 학습·선정·가중을
+        # 최근 N개월로 제한해 레짐 적응. walk-forward 엔진의 is_window_months 와
+        # 동일 의미 (production parity). 미지정/이력 부족 시 no-op (expanding).
+        from service.pipeline.factor_analysis import slice_recent_months
+        window = self.pipeline_params.get("is_window_months")
+        if window:
+            before = merged_data["ddt"].nunique()
+            merged_data = slice_recent_months(merged_data, int(window))
+            logger.info("Rolling IS window: %d -> %d months (window=%d + lag base)",
+                        before, merged_data["ddt"].nunique(), int(window))
         slim_data = merged_data[[c for c in ANALYZE_COLS if c in merged_data.columns]]
         self.factor_stats = self._analyze_factors(slim_data, factor_abbr_list, orders, test_file)
 

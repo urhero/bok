@@ -324,7 +324,9 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `backtest_cost_multiplier` | 0.6 | 백테스트 전용 비용 배수 (20bp x 0.6 = 12bp; 편입/편출 netting 실측 0.574 기반) | `walk_forward_engine.py` |
 | `top_factor_count` | 50 | rank_score 상위 절단 수 (**`cluster_method=topn`일 때만** 적용; winner_median은 미사용) | `model_portfolio.py` |
 | `factor_ranking_method` | "tstat" | 팩터 랭킹 방식 (`shrunk_tstat` / `tstat` / `cagr`) | `model_portfolio.py`, `walk_forward_engine.py` (`compute_rank_score` 공유) |
-| `use_cluster_dedup` | True | Hierarchical Clustering 중복 제거 (Sprint 1-B, production 적용) | `model_portfolio.py`, `walk_forward_engine.py` |
+| `use_cluster_dedup` | False | Hierarchical Clustering 중복 제거. **MXWO: off** — 롤링 IS와 winner_median 궁합 문제 (2026-07-28 절단 실험: on -0.12 / off +0.41 Sharpe). MXCN1A(main)는 True | `model_portfolio.py`, `walk_forward_engine.py` |
+| `is_window_months` | 48 | 롤링 IS 윈도우 (개월, None=expanding). 규칙 학습·선정·가중을 최근 N개월로 제한 — 레짐 적응 (2026-07-28 w36~72 스윕, 내부 고원점 채택) | `model_portfolio.py`, `walk_forward_engine.py` |
+| `ranking_group` | "sector" | 5분위 랭킹 그룹 (`sector` / `region_sector`=(날짜,지역,섹터)). 지역 중립화는 A/B 전 윈도우 열위로 기각 (국가 모멘텀이 알파원) | `factor_analysis.py` |
 | `cluster_method` | "winner_median" | 클러스터 압축 규칙 (**`winner_median`(기본)**: 1등보호+중위값바닥 / `topn`: 상위3→Top-N) | `factor/selection.py` |
 | `n_clusters` | 18 | 클러스터 수 (`use_cluster_dedup=True`일 때) | `factor/selection.py` |
 | `per_cluster_keep` | 3 | 클러스터당 유지 팩터 수 | `factor/selection.py` |
