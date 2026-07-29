@@ -482,7 +482,70 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
     clusters_html = _factor_clusters_section(output_dir, snap)
     if clusters_html:
         parts.append(clusters_html)
+    cap_html = _style_cap_section(output_dir, snap)
+    if cap_html:
+        parts.append(cap_html)
     return parts
+
+
+def _style_cap_section(output_dir: Path, snap: str) -> str:
+    """스타일 캡 25% 적용 전/후 스타일 배분 비교 (mp 저장 style_cap_effect CSV 기반)."""
+    path = output_dir / "mp_weight_history" / f"style_cap_effect_{snap}.csv"
+    if not path.exists():
+        return ""
+    df = pd.read_csv(path)
+    if df.empty or (df["raw_weight"] - df["fitted_weight"]).abs().max() < 1e-12:
+        return ""  # 캡 미발동(전후 동일)이면 생략
+
+    style_cap = 0.25
+    try:
+        from config import PIPELINE_PARAMS
+        style_cap = float(PIPELINE_PARAMS.get("style_cap", 0.25))
+    except (ImportError, AttributeError):
+        pass
+
+    g = df.groupby("styleName")[["raw_weight", "fitted_weight"]].sum()
+    g = g.sort_values("raw_weight", ascending=False)
+    scale = max(g["raw_weight"].max(), g["fitted_weight"].max(), style_cap) * 1.15
+
+    rows = []
+    for style, r in g.iterrows():
+        pre, post = r["raw_weight"], r["fitted_weight"]
+        delta = post - pre
+        capped = pre > style_cap + 1e-9
+        tag = ('<span class="capchip cut">캡 발동</span>' if capped
+               else ('<span class="capchip up">재분배 수혜</span>' if delta > 1e-9 else ""))
+        rows.append(
+            f'<tr><td>{style} {tag}</td>'
+            f'<td class="num">{pre*100:.1f}%</td>'
+            f'<td class="capbars">'
+            f'<div class="pre" style="width:{pre/scale*100:.1f}%"></div>'
+            f'<div class="post" style="width:{post/scale*100:.1f}%"></div>'
+            f'<div class="capline" style="left:{style_cap/scale*100:.1f}%"></div></td>'
+            f'<td class="num">{post*100:.1f}%</td>'
+            f'<td class="num" style="color:{"#E06C75" if delta < -1e-9 else "#4FBF87" if delta > 1e-9 else "inherit"}">'
+            f'{delta*100:+.1f}%p</td></tr>'
+        )
+
+    css = (
+        '<style>.cap-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}'
+        '.cap-table th{text-align:left;opacity:.6;font-weight:500;padding:4px 8px}'
+        '.cap-table td{padding:5px 8px;border-top:1px solid var(--border,#333)}'
+        '.cap-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}'
+        '.capbars{position:relative;width:42%;height:20px}'
+        '.capbars .pre{position:absolute;top:2px;height:7px;background:#5B8DEF55;border-radius:3px}'
+        '.capbars .post{position:absolute;bottom:2px;height:7px;background:#5B8DEF;border-radius:3px}'
+        '.capbars .capline{position:absolute;top:0;bottom:0;width:2px;background:#E06C75;opacity:.8}'
+        '.capchip{padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;margin-left:4px}'
+        '.capchip.cut{background:#E06C7522;color:#E06C75}'
+        '.capchip.up{background:#4FBF8722;color:#4FBF87}</style>'
+    )
+    note = (f'<div class="note">위 바(연한색)=캡 적용 전 ERC 원비중, 아래 바(진한색)=캡 적용 후, '
+            f'빨간 선=캡 {style_cap*100:.0f}%. 캡 초과 스타일의 초과분이 나머지 스타일로 재분배된다.</div>')
+    header = ('<tr><th>스타일</th><th style="text-align:right">캡 전</th><th></th>'
+              '<th style="text-align:right">캡 후</th><th style="text-align:right">변화</th></tr>')
+    return (f'<h2>4. 스타일 캡 {style_cap*100:.0f}% 적용 전/후</h2>{css}{note}'
+            f'<table class="cap-table"><thead>{header}</thead><tbody>{"".join(rows)}</tbody></table>')
 
 
 def _factor_clusters_section(output_dir: Path, snap: str) -> str:

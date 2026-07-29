@@ -182,6 +182,10 @@ class ModelPortfolioPipeline:
                                      deployed, full_style_map)
             except Exception as e:
                 logger.warning("factor_clusters 저장 실패 (%s) - 대시보드 무리 섹션만 생략됨", e)
+            # 스타일 캡 전/후 비교 저장 (raw=캡 전 ERC 원비중, fitted=캡 후. 대시보드용)
+            _ddt = pd.Timestamp(end_date).strftime("%Y-%m-%d")
+            weights_tbl[["factor", "styleName", "raw_weight", "fitted_weight"]].to_csv(
+                HISTORY_DIR / f"style_cap_effect_{_ddt}.csv", index=False)
             save_factor_styles(HISTORY_DIR, end_date, target_weights, prev_weights,
                                deployed, full_style_map)
             save_style_totals(HISTORY_DIR, end_date, target_weights, prev_weights,
