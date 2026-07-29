@@ -526,33 +526,44 @@ def _correlation_regime_section(output_dir: Path) -> str:
 
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.06,
+                        row_heights=[0.62, 0.38],
+                        specs=[[{"secondary_y": True}], [{}]])
     fig.add_trace(go.Scatter(x=dates, y=mean_corr, name="평균 쌍상관 (12M)",
-                             line=dict(color="#5B8DEF", width=2)), secondary_y=False)
+                             line=dict(color="#5B8DEF", width=2)),
+                  row=1, col=1, secondary_y=False)
     fig.add_trace(go.Scatter(x=dates, y=absorption, name="흡수률 (상위 5 고유값, 12M)",
-                             line=dict(color="#E8944A", width=2)), secondary_y=True)
+                             line=dict(color="#E8944A", width=2)),
+                  row=1, col=1, secondary_y=True)
 
-    # CEW 연수익 음수 해 음영
+    # 하단: 월별 전략(CEW) 수익률 바 + 연수익 음수 해 음영 (두 행 공통)
     wf = output_dir / "walk_forward_results.csv"
     if wf.exists():
         cew = pd.read_csv(wf, index_col=0, parse_dates=True)["cew_return"].dropna()
+        fig.add_trace(go.Bar(
+            x=cew.index, y=cew * 100, name="CEW 월수익률(%)",
+            marker_color=["#4FBF87" if v >= 0 else "#E06C75" for v in cew],
+        ), row=2, col=1)
         yearly = cew.groupby(cew.index.year).apply(lambda x: (1 + x).prod() - 1)
         for yr, r in yearly.items():
             if r < 0:
                 fig.add_vrect(x0=f"{yr}-01-01", x1=f"{yr}-12-31",
-                              fillcolor="#E06C75", opacity=0.07, line_width=0)
+                              fillcolor="#E06C75", opacity=0.07, line_width=0,
+                              row="all", col=1)
 
-    fig.update_layout(template="plotly_dark", height=340,
+    fig.update_layout(template="plotly_dark", height=460,
                       margin=dict(l=40, r=40, t=30, b=30),
-                      legend=dict(orientation="h", y=1.12),
+                      legend=dict(orientation="h", y=1.1), showlegend=True,
+                      bargap=0.15,
                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-    fig.update_yaxes(title_text="평균 상관", secondary_y=False)
-    fig.update_yaxes(title_text="흡수률", secondary_y=True)
+    fig.update_yaxes(title_text="평균 상관", row=1, col=1, secondary_y=False)
+    fig.update_yaxes(title_text="흡수률", row=1, col=1, secondary_y=True)
+    fig.update_yaxes(title_text="월수익률 %", row=2, col=1)
 
     note = ('<div class="note">multiplier 참고 지표 (자동 스케일링 미사용 — 변동성 국면 섹션과 동일 지위). '
-            '평균 상관·흡수률 급등 = 팩터가 한 방향으로 쓸리는 매크로 장세로 L/S 분산 효과 약화. '
-            '붉은 음영 = CEW 연수익 음수인 해. 데이터: walk-forward 전기간 팩터 수익률 '
-            '(마지막 IS 규칙 기준, 상관 구조 참고용).</div>')
+            '상단: 평균 상관·흡수률 급등 = 팩터가 한 방향으로 쓸리는 매크로 장세로 L/S 분산 효과 약화. '
+            '하단: CEW 월수익률 (OOS 시작 2018-06 이후). 붉은 음영 = CEW 연수익 음수인 해. '
+            '데이터: walk-forward 전기간 팩터 수익률 (마지막 IS 규칙 기준, 상관 구조 참고용).</div>')
     return f'<h2>상관 국면 (multiplier 참고)</h2>{note}<div class="card">{_fig_div(fig)}</div>'
 
 
