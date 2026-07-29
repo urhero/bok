@@ -146,6 +146,32 @@ def _equal_weight_allocation(
     return best_stats, weights_tbl
 
 
+def _solve_erc_ccd(cov: np.ndarray, max_sweeps: int = 500, tol_w: float = 1e-12) -> np.ndarray:
+    """정식 ERC 해 (Spinu 볼록형의 CCD 반복, 2026-07-30 교체).
+
+    min (1/2) w'Σw - λ Σ ln w_i 의 1계 조건 w_i(Σw)_i = λ (모든 i 동일) 가 곧 ERC.
+    좌표별 닫힌해 w_i = (-b_i + sqrt(b_i^2 + 4 σ_ii λ)) / (2 σ_ii), b_i = Σ_{j≠i} σ_ij w_j.
+    sqrt 항이 |b_i| 보다 항상 크므로 **음의 상관(b_i<0)에서도 양수 비중이 보장**되고,
+    그런 팩터는 (Σw)_i 가 작아 오히려 큰 비중을 받는다 (분산 재료 우대 — 구 곱셈
+    반복법이 이들을 0으로 붕괴시키던 결함의 교정). PD cov 에서 해는 유일(스케일 제외).
+    """
+    n = cov.shape[0]
+    if n == 1:
+        return np.array([1.0])
+    diag = np.maximum(np.diag(cov), 1e-18)
+    lam = float(np.mean(diag)) / n  # 스케일 파라미터 (최종 정규화 후 결과와 무관)
+    w = 1.0 / np.sqrt(diag)
+    for _ in range(max_sweeps):
+        w_prev = w.copy()
+        for i in range(n):
+            b = cov[i] @ w - diag[i] * w[i]
+            w[i] = (-b + np.sqrt(b * b + 4.0 * diag[i] * lam)) / (2.0 * diag[i])
+        # 정규화는 수렴 후 1회 (반복 중 하면 고정점 조건 w_i(Σw)_i=λ 가 틀어짐)
+        if np.abs(w - w_prev).max() < tol_w * max(1.0, np.abs(w).max()):
+            break
+    return w / w.sum()
+
+
 def blend_deploy_weights(
     target: dict[str, float],
     prev: dict[str, float] | None,
@@ -229,6 +255,29 @@ def optimize_constrained_weights(
             base_weights=base, cap_scale=cap_scale,
         )
 
+    if mode == "min_var":
+        # 롱온리 최소분산: min w'Σw, w>=0, Σw=1 (2026-07-30 — 붕괴 ERC 가 우연히
+        # 근사하던 저변동·저상관 팩터 틸트의 의도된 설계 버전. cov 는 erc 와 동일 수축)
+        vol_src = rtn_df.iloc[1:]
+        if erw_vol_window and len(vol_src) > erw_vol_window:
+            vol_src = vol_src.iloc[-erw_vol_window:]
+        cov = vol_src.cov().to_numpy(dtype=np.float64)
+        cov = (1.0 - erc_shrinkage) * cov + erc_shrinkage * np.diag(np.diag(cov))
+        n = cov.shape[0]
+        from scipy.optimize import minimize
+        res = minimize(
+            lambda w: w @ cov @ w, np.full(n, 1.0 / n),
+            jac=lambda w: 2.0 * (cov @ w), method="SLSQP",
+            bounds=[(0.0, 1.0)] * n,
+            constraints=[{"type": "eq", "fun": lambda w: w.sum() - 1.0}],
+            options={"maxiter": 300, "ftol": 1e-12},
+        )
+        w = np.maximum(res.x, 0.0)
+        w = w / w.sum() if w.sum() > 0 else np.full(n, 1.0 / n)
+        return _equal_weight_allocation(
+            rtn_df, style_list, style_cap, tol, test_mode, base_weights=w,
+        )
+
     if mode == "erc":
         # Equal Risk Contribution: 팩터 간 상관을 반영해 리스크 기여를 균등화.
         # 1/sigma(ERW)의 상관 무시 한계 보완 — 총 비중 합 1 불변 (배수 아님).
@@ -250,18 +299,7 @@ def optimize_constrained_weights(
         else:
             target = np.diag(np.diag(cov))
         cov = (1.0 - erc_shrinkage) * cov + erc_shrinkage * target
-        n = cov.shape[0]
-        w = np.full(n, 1.0 / n)
-        # ponytail: 곱셈 반복법 (수렴 단순·양수 보장). 실패해도 마지막 w 사용.
-        for _ in range(200):
-            rc = w * (cov @ w)
-            rc = np.maximum(rc, 1e-18)
-            w_new = w * (rc.mean() / rc) ** 0.5
-            w_new /= w_new.sum()
-            if np.abs(w_new - w).max() < 1e-10:
-                w = w_new
-                break
-            w = w_new
+        w = _solve_erc_ccd(cov)
         return _equal_weight_allocation(
             rtn_df, style_list, style_cap, tol, test_mode, base_weights=w,
         )

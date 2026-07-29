@@ -20,6 +20,51 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from service.pipeline.optimization import optimize_constrained_weights
 
 
+class TestErcSolver:
+    """_solve_erc_ccd: 정식 ERC (RC 균등·양수 비중, 음의 상관 포함)."""
+
+    @staticmethod
+    def _rc(cov, w):
+        rc = w * (cov @ w)
+        return rc / rc.sum()
+
+    def test_rc_equalized_with_negative_corr(self) -> None:
+        """음의 상관 팩터가 있어도 리스크 기여가 균등해지고 비중은 전부 양수."""
+        from service.pipeline.optimization import _solve_erc_ccd
+        rng = np.random.default_rng(5)
+        base = rng.normal(0, 0.02, 200)
+        rets = np.column_stack([
+            base + rng.normal(0, 0.005, 200),
+            base + rng.normal(0, 0.005, 200),
+            -base + rng.normal(0, 0.005, 200),   # 음의 상관 (헤지 팩터)
+            rng.normal(0, 0.02, 200),
+        ])
+        cov = np.cov(rets.T)
+        w = _solve_erc_ccd(cov)
+        assert (w > 0).all() and abs(w.sum() - 1.0) < 1e-12
+        rc = self._rc(cov, w)
+        assert np.abs(rc - 0.25).max() < 1e-6, f"RC 불균등: {rc}"
+
+    def test_hedge_factor_gets_larger_weight(self) -> None:
+        """포트폴리오와 음의 상관인 팩터는 동일 변동성의 순응 팩터보다 큰 비중."""
+        from service.pipeline.optimization import _solve_erc_ccd
+        rng = np.random.default_rng(7)
+        base = rng.normal(0, 0.02, 300)
+        rets = np.column_stack([
+            base, base + rng.normal(0, 0.002, 300),
+            base + rng.normal(0, 0.002, 300),
+            -base + rng.normal(0, 0.002, 300),   # 헤지
+        ])
+        cov = np.cov(rets.T)
+        w = _solve_erc_ccd(cov)
+        assert w[3] > w[0], "헤지 팩터가 우대돼야 함 (구 구현은 0으로 붕괴)"
+
+    def test_identity_cov_equal_weights(self) -> None:
+        from service.pipeline.optimization import _solve_erc_ccd
+        w = _solve_erc_ccd(np.eye(5) * 0.04)
+        assert np.abs(w - 0.2).max() < 1e-9
+
+
 class TestBlendDeployWeights:
     """blend_deploy_weights (부분 조정 배포, 2026-07-29 채택)."""
 
