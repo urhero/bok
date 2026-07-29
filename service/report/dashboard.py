@@ -485,7 +485,75 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
     cap_html = _style_cap_section(output_dir, snap)
     if cap_html:
         parts.append(cap_html)
+    regime_html = _correlation_regime_section(output_dir)
+    if regime_html:
+        parts.append(regime_html)
     return parts
+
+
+def _correlation_regime_section(output_dir: Path) -> str:
+    """상관 국면 참고 섹션 (multiplier 참고용 — 자동 스케일링에 미사용).
+
+    factor_returns_matrix.csv (walk-forward 저장) 기반:
+      - 평균 쌍상관: rolling 12M 팩터 간 평균 상관 (급등 = 매크로 쏠림 장세)
+      - 흡수률: rolling 12M cov 상위 5 고유값의 분산 설명 비중 (Kritzman 계열)
+    CEW 연수익 음수인 해는 음영 처리해 국면 지표와 죽은 해의 겹침을 보여준다.
+    """
+    path = output_dir / "factor_returns_matrix.csv"
+    if not path.exists():
+        return ""
+    rets = pd.read_csv(path, index_col=0, parse_dates=True)
+    rets = rets.iloc[1:]  # 기준점 0 행 제외
+    if len(rets) < 24:
+        return ""
+
+    import numpy as np
+    win = 12
+    dates, mean_corr, absorption = [], [], []
+    for i in range(win, len(rets) + 1):
+        w = rets.iloc[i - win:i]
+        w = w.loc[:, w.notna().all() & (w.std() > 0)]
+        if w.shape[1] < 10:
+            continue
+        c = np.corrcoef(w.to_numpy(), rowvar=False)
+        n = c.shape[0]
+        mean_corr.append((c.sum() - n) / (n * (n - 1)))
+        ev = np.linalg.eigvalsh(np.cov(w.to_numpy(), rowvar=False))
+        absorption.append(float(ev[-5:].sum() / ev.sum()))
+        dates.append(w.index[-1])
+    if len(dates) < 12:
+        return ""
+
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Scatter(x=dates, y=mean_corr, name="평균 쌍상관 (12M)",
+                             line=dict(color="#5B8DEF", width=2)), secondary_y=False)
+    fig.add_trace(go.Scatter(x=dates, y=absorption, name="흡수률 (상위 5 고유값, 12M)",
+                             line=dict(color="#E8944A", width=2)), secondary_y=True)
+
+    # CEW 연수익 음수 해 음영
+    wf = output_dir / "walk_forward_results.csv"
+    if wf.exists():
+        cew = pd.read_csv(wf, index_col=0, parse_dates=True)["cew_return"].dropna()
+        yearly = cew.groupby(cew.index.year).apply(lambda x: (1 + x).prod() - 1)
+        for yr, r in yearly.items():
+            if r < 0:
+                fig.add_vrect(x0=f"{yr}-01-01", x1=f"{yr}-12-31",
+                              fillcolor="#E06C75", opacity=0.07, line_width=0)
+
+    fig.update_layout(template="plotly_dark", height=340,
+                      margin=dict(l=40, r=40, t=30, b=30),
+                      legend=dict(orientation="h", y=1.12),
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    fig.update_yaxes(title_text="평균 상관", secondary_y=False)
+    fig.update_yaxes(title_text="흡수률", secondary_y=True)
+
+    note = ('<div class="note">multiplier 참고 지표 (자동 스케일링 미사용 — 변동성 국면 섹션과 동일 지위). '
+            '평균 상관·흡수률 급등 = 팩터가 한 방향으로 쓸리는 매크로 장세로 L/S 분산 효과 약화. '
+            '붉은 음영 = CEW 연수익 음수인 해. 데이터: walk-forward 전기간 팩터 수익률 '
+            '(마지막 IS 규칙 기준, 상관 구조 참고용).</div>')
+    return f'<h2>상관 국면 (multiplier 참고)</h2>{note}<div class="card">{_fig_div(fig)}</div>'
 
 
 def _style_cap_section(output_dir: Path, snap: str) -> str:

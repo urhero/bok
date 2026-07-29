@@ -587,6 +587,15 @@ class WalkForwardEngine:
         elapsed = time.time() - t0
         logger.info("Walk-Forward completed: %d OOS months in %.1fs", len(results), elapsed)
 
+        # 전기간 팩터 수익률 행렬 저장 (마지막 Tier 1 규칙 기준 — 상관 국면 분석/viz용.
+        # 성과 산출물이 아니라 상관 구조 참고 데이터. 테스트 모드는 생략)
+        if not test_file and precomputed_ret_df is not None and not precomputed_ret_df.empty:
+            try:
+                from service.paths import OUTPUT_DIR
+                precomputed_ret_df.to_csv(OUTPUT_DIR / "factor_returns_matrix.csv")
+            except OSError as e:
+                logger.warning("factor_returns_matrix 저장 실패 (%s)", e)
+
         return WalkForwardResult(results)
 
     def _rank_and_select(self, ret_df_is, style_map_full, pp, incumbents):
