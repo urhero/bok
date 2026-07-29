@@ -477,7 +477,72 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
     if deltas is not None and not deltas.empty:
         cards.append(f'<div class="card">{_fig_div(ch.style_delta_fig(deltas))}</div>')
 
-    return [f'<h2>2. 현재 포트 / 배팅 (스냅샷 {snap})</h2>', _grid2(cards)]
+    parts = [f'<h2>2. 현재 포트 / 배팅 (스냅샷 {snap})</h2>', _grid2(cards)]
+
+    clusters_html = _factor_clusters_section(output_dir, snap)
+    if clusters_html:
+        parts.append(clusters_html)
+    return parts
+
+
+def _factor_clusters_section(output_dir: Path, snap: str) -> str:
+    """ERC 상관 무리 섹션: 어떤 팩터들이 한 배팅으로 묶였고 예산을 어떻게 나눴는지.
+
+    mp 가 저장한 mp_weight_history/factor_clusters_{snap}.csv 기반 (없으면 생략).
+    """
+    path = output_dir / "mp_weight_history" / f"factor_clusters_{snap}.csv"
+    if not path.exists():
+        return ""
+    df = pd.read_csv(path)
+    if df.empty:
+        return ""
+
+    style_colors = {}
+    palette = ["#5B8DEF", "#E8944A", "#4FBF87", "#C77DDA", "#E06C75", "#56B6C2",
+               "#D19A66", "#98C379", "#B48EAD", "#7A869A"]
+    for i, s in enumerate(df["styleName"].unique()):
+        style_colors[s] = palette[i % len(palette)]
+
+    groups = []
+    for cid, g in df.groupby("cluster_id"):
+        total_w = g["weight"].sum()
+        n = len(g)
+        title = (f'무리 {cid} · {n}개 팩터 · 합산 비중 {total_w*100:.1f}%'
+                 if n > 1 else f'독립 · 비중 {total_w*100:.1f}%')
+        avg_c = g["avg_corr_in_cluster"].replace("", pd.NA).dropna()
+        if n > 1 and len(avg_c):
+            title += f' · 무리 내 평균상관 {pd.to_numeric(avg_c).mean():.2f}'
+        rows = "".join(
+            f'<tr><td class="mono">{r.factor}</td>'
+            f'<td><span class="chip" style="background:{style_colors.get(r.styleName, "#888")}22;'
+            f'color:{style_colors.get(r.styleName, "#888")}">{r.styleName}</span></td>'
+            f'<td class="num">{r.weight*100:.2f}%</td>'
+            f'<td class="bar"><div style="width:{min(r.weight*100/0.07, 100):.0f}%;'
+            f'background:{style_colors.get(r.styleName, "#888")}"></div></td></tr>'
+            for r in g.itertuples()
+        )
+        groups.append(
+            f'<details {"open" if n > 1 else ""} class="cluster"><summary>{title}</summary>'
+            f'<table class="cl-table"><thead><tr><th>팩터</th><th>스타일</th>'
+            f'<th>ERC 비중</th><th></th></tr></thead><tbody>{rows}</tbody></table></details>'
+        )
+
+    n_multi = int((df.groupby("cluster_id").size() > 1).sum())
+    css = (
+        '<style>.cluster{margin:8px 0;border:1px solid var(--border,#333);border-radius:8px;'
+        'padding:6px 12px}.cluster summary{cursor:pointer;font-weight:600;padding:4px 0}'
+        '.cl-table{width:100%;border-collapse:collapse;font-size:13px}'
+        '.cl-table th{text-align:left;opacity:.6;font-weight:500;padding:2px 8px}'
+        '.cl-table td{padding:3px 8px}.cl-table .num{text-align:right;font-variant-numeric:tabular-nums}'
+        '.cl-table .mono{font-family:"JetBrains Mono",monospace;font-size:12px}'
+        '.cl-table .bar{width:30%}.cl-table .bar div{height:8px;border-radius:4px}'
+        '.chip{padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600}</style>'
+    )
+    note = (f'<div class="note">|상관| &gt; 0.5 인 팩터끼리 한 무리로 묶음 (표시용 계층 클러스터링). '
+            f'ERC 는 무리 전체가 한 배팅처럼 리스크 예산을 나눠 갖도록 개별 비중을 조정한다 — '
+            f'무리 {n_multi}개 + 독립 팩터. 합산 비중이 큰 무리 순.</div>')
+    return (f'<h2>3. ERC 상관 무리 (어떤 팩터가 한 배팅으로 묶였나)</h2>'
+            f'{css}{note}{"".join(groups)}')
 
 
 def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,

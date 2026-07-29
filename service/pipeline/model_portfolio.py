@@ -175,6 +175,13 @@ class ModelPortfolioPipeline:
                 float(self.pipeline_params.get("deploy_step", 1.0)),
             )
             save_factor_weights(HISTORY_DIR, end_date, deployed)               # 다음 회차 prev
+            # ERC 시각화용 상관 무리 저장 (실패해도 파이프라인 산출물 보존)
+            try:
+                from service.pipeline.weight_history import save_factor_clusters
+                save_factor_clusters(HISTORY_DIR, end_date, self.return_matrix,
+                                     deployed, full_style_map)
+            except Exception as e:
+                logger.warning("factor_clusters 저장 실패 (%s) - 대시보드 무리 섹션만 생략됨", e)
             save_factor_styles(HISTORY_DIR, end_date, target_weights, prev_weights,
                                deployed, full_style_map)
             save_style_totals(HISTORY_DIR, end_date, target_weights, prev_weights,
