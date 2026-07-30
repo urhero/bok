@@ -302,6 +302,7 @@ def _run_weight_optimization(
         erw_vol_window=pp.get("erw_vol_window"),
         erc_shrinkage=float(pp.get("erc_shrinkage", 0.5)),
         erc_shrink_target=pp.get("erc_shrink_target", "diag"),
+        erc_cov_type=pp.get("erc_cov_type", "full"),
     )
 
     weights_dict = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
@@ -609,6 +610,17 @@ class WalkForwardEngine:
             클러스터 dedup **이전** 순수 rank_score 상위 top_n 리스트
             (Funnel Value-Add 의 B 단계 = 1차 랭킹 필터 곡선용).
         """
+        # 팩터 MDD 극단 필터 (MDD/Calmar 실험, 2026-07-30): IS 창에서 팩터 자체
+        # 낙폭이 최악 분위인 팩터를 선정 후보에서 제외. 미지정(None/0) = no-op.
+        mdd_filter_pct = pp.get("factor_mdd_filter_pct")
+        if mdd_filter_pct:
+            eq = (1 + ret_df_is).cumprod()
+            factor_mdd = (eq / eq.cummax() - 1).min()  # 팩터별 (음수)
+            cutoff = factor_mdd.quantile(float(mdd_filter_pct))
+            keep_cols = factor_mdd.index[factor_mdd >= cutoff]
+            if len(keep_cols) >= MIN_REQUIRED_FACTORS:
+                ret_df_is = ret_df_is[keep_cols]
+
         months = len(ret_df_is) - 1
         cum = (1 + ret_df_is).cumprod().iloc[-1]
         cagr_series = cum ** (12 / months) - 1

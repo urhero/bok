@@ -203,6 +203,7 @@ def optimize_constrained_weights(
     erw_vol_window: int | None = None,
     erc_shrinkage: float = 0.5,
     erc_shrink_target: str = "diag",
+    erc_cov_type: str = "full",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """스타일 캡 하 포트폴리오 가중치를 결정한다.
 
@@ -286,7 +287,13 @@ def optimize_constrained_weights(
         vol_src = rtn_df.iloc[1:]
         if erw_vol_window and len(vol_src) > erw_vol_window:
             vol_src = vol_src.iloc[-erw_vol_window:]
-        cov = vol_src.cov().to_numpy(dtype=np.float64)
+        if erc_cov_type == "semi":
+            # 하방 반공분산 (tau=0): 같이 "깨지는" 동조만 측정 — 상방 동조는 무벌점.
+            # MDD/Calmar 지향 변형 (2026-07-30): Sigma_ij = E[min(r_i,0) min(r_j,0)]
+            d = np.minimum(vol_src.to_numpy(dtype=np.float64), 0.0)
+            cov = d.T @ d / max(len(d), 1)
+        else:
+            cov = vol_src.cov().to_numpy(dtype=np.float64)
         # erc_shrinkage: 수축 비율 (0=표본 cov 그대로).
         # erc_shrink_target: "diag"=무상관 타깃(1/sigma 방향) /
         #   "cc"=상수상관 타깃(Ledoit-Wolf constant-correlation 계열 — 평균 상관 보존)

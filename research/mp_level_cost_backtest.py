@@ -114,10 +114,14 @@ def apply_rules_keep_frames(factor_stats_full, factor_abbr_list, rule_bundle, pp
     return net_df, cost_df, frames
 
 
-def stock_weights_at(frames, w_dep, t, backtest_start_ts):
+def stock_weights_at(frames, w_dep, t, backtest_start_ts, stock_weight_cap: float | None = None,
+                     sector_short_cap: float | None = None):
     """월 t 의 MP 종목 비중과 종목 수익률 맵을 만든다 (production 구성 로직과 동일).
 
     각 팩터: L 종목 +w_f/n_L, S 종목 -w_f/n_S -> 종목 단위 합산 (netting).
+    stock_weight_cap: 종목당 |순비중| 상한 (예: 0.01). 초과분은 잘라내고 롱/숏
+    각 사이드의 원래 gross 를 보존하도록 사이드별 재정규화 (이벤트/스프링 집중 완화
+    실험 — 2026-07-30 MDD/Calmar 과제).
     """
     parts = []
     for f, wf in w_dep.items():
@@ -132,6 +136,7 @@ def stock_weights_at(frames, w_dep, t, backtest_start_ts):
             "gvkeyiid": rows["gvkeyiid"].to_numpy(),
             "w": (rows["label"] / cnt * wf).to_numpy(),
             "r": rows["M_RETURN"].to_numpy(),
+            "sec": rows["sec"].to_numpy(),
         })
         parts.append(part)
     if not parts:
@@ -140,6 +145,39 @@ def stock_weights_at(frames, w_dep, t, backtest_start_ts):
     g = allp.groupby("gvkeyiid", observed=True)
     w = g["w"].sum()
     r = g["r"].first()
+    if sector_short_cap:
+        # 숏 crowding 완화: 섹터별 숏 gross 가 전체 숏 gross 의 cap 비율을 넘으면
+        # 그 섹터 숏을 줄이고, 잘린 만큼을 다른 섹터 숏에 비례 재분배 (총 숏 gross 보존).
+        sec_map = g["sec"].first()
+        shorts = w[w < 0]
+        total_sg = shorts.abs().sum()
+        if total_sg > 1e-12:
+            sec_of = sec_map.reindex(shorts.index)
+            sec_gross = shorts.abs().groupby(sec_of).sum()
+            over = sec_gross[sec_gross > sector_short_cap * total_sg]
+            if not over.empty:
+                w2 = w.copy()
+                freed = 0.0
+                for sec, sg in over.items():
+                    scale = (sector_short_cap * total_sg) / sg
+                    idx = shorts.index[sec_of == sec]
+                    w2[idx] = w2[idx] * scale
+                    freed += sg - sector_short_cap * total_sg
+                under_idx = shorts.index[~sec_of.isin(over.index)]
+                under_g = w2[under_idx].abs().sum()
+                if under_g > 1e-12 and freed > 0:
+                    w2[under_idx] *= 1.0 + freed / under_g
+                w = w2
+    if stock_weight_cap:
+        for side in (1, -1):
+            mask = (w * side) > 0
+            gross = w[mask].abs().sum()
+            w[mask] = w[mask].clip(-stock_weight_cap, stock_weight_cap)
+            capped_gross = w[mask].abs().sum()
+            if capped_gross > 1e-12:
+                w[mask] *= gross / capped_gross  # 사이드 gross 보존
+                # 재정규화로 캡을 다시 넘는 종목은 한 번 더 클립 (근사 — 반복 수렴 생략)
+                w[mask] = w[mask].clip(-stock_weight_cap * 1.2, stock_weight_cap * 1.2)
     return w.sort_index(), r
 
 
@@ -275,7 +313,9 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
         cew = sum(net_full.loc[t, f] * w_dep.get(f, 0) for f in avail)
         cost_fl = sum(cost_full.loc[t, f] * w_dep.get(f, 0) for f in avail)
 
-        w_t, r_t = stock_weights_at(frames, w_dep, t, backtest_start_ts)
+        w_t, r_t = stock_weights_at(frames, w_dep, t, backtest_start_ts,
+                                    stock_weight_cap=pp.get("stock_weight_cap"),
+                                    sector_short_cap=pp.get("sector_short_cap"))
         gross = float((w_t * r_t).sum()) if len(w_t) else 0.0
 
         if prev_w is not None and len(prev_w) and len(w_t):
