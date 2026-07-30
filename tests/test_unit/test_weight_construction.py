@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import numpy as np
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -301,3 +302,37 @@ class TestAggregateFactorReturnsParallel:
 
         assert not parallel.empty, "병렬 경로가 실제로 결과를 내야 한다 (빈 프레임 동치 방지)"
         pd.testing.assert_frame_equal(serial, parallel, check_exact=True)
+
+
+# ── apply_sector_short_cap (2026-07-30 채택) ──────────────────────────────
+
+def _mk_agg(rows):
+    return pd.DataFrame(rows, columns=["ddt", "ticker", "isin", "gvkeyiid", "sec", "mp_ls_weight", "factor_weight"])
+
+
+def test_sector_short_cap_reduces_over_sector_and_preserves_gross():
+    from service.pipeline.weight_construction import apply_sector_short_cap
+    d = pd.Timestamp("2026-06-30")
+    agg = _mk_agg([
+        [d, "A", "iA", "gA", "Financials", -0.30, 0.1],
+        [d, "B", "iB", "gB", "Energy", -0.10, 0.1],
+        [d, "C", "iC", "gC", "Tech", 0.40, 0.1],
+    ])
+    out = apply_sector_short_cap(agg, cap=0.5)   # Financials 숏 비중 0.75 > 0.5
+    shorts = out[out["mp_ls_weight"] < 0]
+    total_sg = shorts["mp_ls_weight"].abs().sum()
+    fin = shorts[shorts["sec"] == "Financials"]["mp_ls_weight"].abs().sum()
+    assert abs(total_sg - 0.40) < 1e-9, "총 숏 gross 보존"
+    assert fin <= 0.5 * total_sg + 1e-9, "초과 섹터가 캡 이하로"
+    assert out[out["mp_ls_weight"] > 0]["mp_ls_weight"].sum() == 0.40, "롱 사이드 불변"
+
+
+def test_sector_short_cap_noop_when_under_cap_or_off():
+    from service.pipeline.weight_construction import apply_sector_short_cap
+    d = pd.Timestamp("2026-06-30")
+    agg = _mk_agg([
+        [d, "A", "iA", "gA", "Financials", -0.20, 0.1],
+        [d, "B", "iB", "gB", "Energy", -0.20, 0.1],
+    ])
+    assert apply_sector_short_cap(agg, cap=0.6).equals(agg)
+    assert apply_sector_short_cap(agg, cap=None).equals(agg)

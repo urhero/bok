@@ -303,6 +303,8 @@ def _run_weight_optimization(
         erc_shrinkage=float(pp.get("erc_shrinkage", 0.5)),
         erc_shrink_target=pp.get("erc_shrink_target", "diag"),
         erc_cov_type=pp.get("erc_cov_type", "full"),
+        erc_vol_model=pp.get("erc_vol_model", "sample"),
+        erc_ewma_lambda=float(pp.get("erc_ewma_lambda", 0.97)),
     )
 
     weights_dict = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
@@ -543,6 +545,10 @@ class WalkForwardEngine:
                             raw_new_weights, cached_meta = _run_weight_optimization(
                                 ret_df_selected, meta_top, pp,
                             )
+                            from service.pipeline.optimization import apply_ts_momentum_tilt
+                            raw_new_weights = apply_ts_momentum_tilt(
+                                raw_new_weights, ret_df_selected,
+                                pp.get("ts_mom_window"), float(pp.get("ts_mom_scale", 0.5)))
                         except (ValueError, RuntimeError) as e:
                             logger.warning("OOS %s: weight optimization failed: %s — 이전 가중치 유지", oos_date, e)
                             if cached_weights is None:

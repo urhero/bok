@@ -153,10 +153,18 @@ class ModelPortfolioPipeline:
             erw_vol_window=self.pipeline_params.get("erw_vol_window"),
         )
 
-        # [6.5] 배포 가중치: deploy_step<1 이면 직전 배포 비중에서 step 만큼만 이동
-        # (부분 조정 — 2026-07-29 실측 채택, walk-forward 엔진과 동일 의미).
+        # [6.4] 팩터 TS 모멘텀 틸트 (2026-07-30 채택, 엔진과 동일 지점)
         weights_tbl = sim_result[1]
         target_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
+        from service.pipeline.optimization import apply_ts_momentum_tilt
+        target_weights = apply_ts_momentum_tilt(
+            target_weights, ret_subset,
+            self.pipeline_params.get("ts_mom_window"),
+            float(self.pipeline_params.get("ts_mom_scale", 0.5)),
+        )
+
+        # [6.5] 배포 가중치: deploy_step<1 이면 직전 배포 비중에서 step 만큼만 이동
+        # (부분 조정 — walk-forward 엔진과 동일 의미. 10bp 전환 후 기본 1.0 = 전량 조정).
         # 구 step_smooth(step=1.0) 동작 보존(출력 byte 동일): 정렬 순서 + 합 1.0 재정규화.
         _order = sorted(target_weights)
         _scale = 1.0 / sum(target_weights[f] for f in _order)
@@ -386,7 +394,10 @@ class ModelPortfolioPipeline:
         # (월별 재생성 시 값은 동일하나 행순서/말단자릿수만 달라져 git diff 가 전체 파일로 잡히는 문제 방지)
         weight_raw = weight_raw.sort_values(["factor", "ticker", "gvkeyiid"]).reset_index(drop=True)
 
-        agg_w = aggregate_mp_weights(weight_raw, end_date_ts)
+        agg_w = aggregate_mp_weights(
+            weight_raw, end_date_ts,
+            sector_short_cap=self.pipeline_params.get("sector_short_cap"),
+        )
         weight_raw = calculate_style_weights(weight_raw)
         agg_w["style_ls_weight"] = agg_w["mp_ls_weight"]
 

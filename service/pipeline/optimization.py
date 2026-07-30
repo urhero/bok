@@ -173,6 +173,23 @@ def _solve_erc_ccd(cov: np.ndarray, max_sweeps: int = 500, tol_w: float = 1e-12)
     return w / w.sum()
 
 
+def apply_ts_momentum_tilt(
+    weights: dict[str, float],
+    ret_df: pd.DataFrame,
+    window: int | None,
+    scale: float = 0.5,
+) -> dict[str, float]:
+    """팩터 TS 모멘텀 틸트 (2026-07-30 채택): trailing window 개월 자기 누적수익이
+    음수인 팩터의 비중을 scale 배로 감쇠. window 미지정(None/0) = no-op.
+    반환값은 비정규화 — 호출부의 합=1 정규화 단계가 이어받는다.
+    mp / walk-forward 엔진 / 비용 실측 스크립트 3곳 공용 (동일 지점: 가중 산출 직후).
+    """
+    if not window or not weights:
+        return weights
+    trail = (1.0 + ret_df.iloc[1:].tail(int(window))).prod() - 1.0
+    return {f: w * (scale if trail.get(f, 0.0) < 0 else 1.0) for f, w in weights.items()}
+
+
 def blend_deploy_weights(
     target: dict[str, float],
     prev: dict[str, float] | None,
@@ -204,6 +221,8 @@ def optimize_constrained_weights(
     erc_shrinkage: float = 0.5,
     erc_shrink_target: str = "diag",
     erc_cov_type: str = "full",
+    erc_vol_model: str = "sample",
+    erc_ewma_lambda: float = 0.97,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """스타일 캡 하 포트폴리오 가중치를 결정한다.
 
@@ -294,6 +313,16 @@ def optimize_constrained_weights(
             cov = d.T @ d / max(len(d), 1)
         else:
             cov = vol_src.cov().to_numpy(dtype=np.float64)
+        if erc_vol_model == "ewma":
+            # "빠른 변동성 x 느린 상관" (2026-07-30 실험): 상관 구조는 IS 창 표본을
+            # 유지하고 변동성만 EWMA(RiskMetrics) 예측치로 교체 — vol clustering 반영.
+            # cov 창 자체를 줄이면 상관 노이즈로 붕괴했던 (12M 0.20) 것과 달리
+            # 변동성만 빠르게 하는 조합. lambda 월간 관례 0.97.
+            sd_old = np.sqrt(np.maximum(np.diag(cov), 1e-18))
+            corr_m = cov / np.outer(sd_old, sd_old)
+            ewma_var = (vol_src ** 2).ewm(alpha=1.0 - erc_ewma_lambda).mean().iloc[-1]
+            sd_new = np.sqrt(np.maximum(ewma_var.to_numpy(dtype=np.float64), 1e-18))
+            cov = corr_m * np.outer(sd_new, sd_new)
         # erc_shrinkage: 수축 비율 (0=표본 cov 그대로).
         # erc_shrink_target: "diag"=무상관 타깃(1/sigma 방향) /
         #   "cc"=상수상관 타깃(Ledoit-Wolf constant-correlation 계열 — 평균 상관 보존)

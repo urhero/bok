@@ -48,7 +48,7 @@ def build_factor_weight_frames(
         factor_idx = factor_idx_map[factor_abbr]
         # end_date를 먼저 필터하여 이후 연산 대상 행 수를 최소화
         df = filtered_data[factor_idx].loc[
-            filtered_data[factor_idx]["ddt"] == end_date_ts, ["ddt", "ticker", "isin", "gvkeyiid", "label"]
+            filtered_data[factor_idx]["ddt"] == end_date_ts, ["ddt", "ticker", "isin", "gvkeyiid", "sec", "label"]
         ].copy()
         if df.empty:
             logger.warning("Factor %s has no stock data at %s, skipping (book gross may dip below 1.0)",
@@ -68,7 +68,7 @@ def build_factor_weight_frames(
         if PARAM["benchmark"] == "MXCN1A":
             df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
 
-        weight_frames.append(df[["ddt", "ticker", "isin", "gvkeyiid", "mp_ls_weight", "ls_weight", "factor_weight", "factor", "style", "name", "count"]].reset_index(drop=True))
+        weight_frames.append(df[["ddt", "ticker", "isin", "gvkeyiid", "sec", "mp_ls_weight", "ls_weight", "factor_weight", "factor", "style", "name", "count"]].reset_index(drop=True))
 
     if not weight_frames:
         logger.warning("No matching factors found in filtered data - skipping CSV export")
@@ -80,23 +80,58 @@ def build_factor_weight_frames(
     return weight_raw
 
 
+def apply_sector_short_cap(agg_w: pd.DataFrame, cap: float | None) -> pd.DataFrame:
+    """숏 crowding 완화 (2026-07-30 채택): 섹터별 숏 gross 가 전체 숏 gross 의
+    cap 비율을 넘으면 그 섹터 숏을 줄이고, 잘린 만큼을 다른 섹터 숏에 비례
+    재분배한다 (총 숏 gross 보존 — 2020-11형 백신 로테이션 이벤트 리스크 대응).
+    mp_level_cost_backtest.stock_weights_at 의 sector_short_cap 과 동일 로직.
+    """
+    if not cap or agg_w.empty:
+        return agg_w
+    w = agg_w["mp_ls_weight"]
+    shorts = w < 0
+    total_sg = w[shorts].abs().sum()
+    if total_sg <= 1e-12:
+        return agg_w
+    sec_gross = w[shorts].abs().groupby(agg_w.loc[shorts, "sec"]).sum()
+    over = sec_gross[sec_gross > cap * total_sg]
+    if over.empty:
+        return agg_w
+    agg_w = agg_w.copy()
+    freed = 0.0
+    for sec, sg in over.items():
+        idx = agg_w.index[shorts & (agg_w["sec"] == sec)]
+        agg_w.loc[idx, "mp_ls_weight"] *= (cap * total_sg) / sg
+        freed += sg - cap * total_sg
+    under_idx = agg_w.index[shorts & ~agg_w["sec"].isin(over.index)]
+    under_g = agg_w.loc[under_idx, "mp_ls_weight"].abs().sum()
+    if under_g > 1e-12 and freed > 0:
+        agg_w.loc[under_idx, "mp_ls_weight"] *= 1.0 + freed / under_g
+    logger.info("sector_short_cap %.0f%%: %s 섹터 숏 축소, %.2f%%p 재분배",
+                cap * 100, list(over.index), freed * 100)
+    return agg_w
+
+
 def aggregate_mp_weights(
     weight_raw: pd.DataFrame,
     end_date_ts: pd.Timestamp,
+    sector_short_cap: float | None = None,
 ) -> pd.DataFrame:
     """MP(Model Portfolio, 전체 팩터 합산) 가중치를 생성한다.
 
     Args:
         weight_raw: build_factor_weight_frames() 결과
         end_date_ts: 기준 날짜 Timestamp
+        sector_short_cap: 섹터별 숏 gross 상한 (전체 숏 gross 대비 비율, None=off)
 
     Returns:
         MP 집계 가중치 DataFrame
     """
-    agg_w = weight_raw.groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)[["mp_ls_weight", "factor_weight"]].sum()
+    agg_w = weight_raw.groupby(["ddt", "ticker", "isin", "gvkeyiid", "sec"], as_index=False, observed=True)[["mp_ls_weight", "factor_weight"]].sum()
     agg_w["style"] = "MP"
     agg_w["name"] = f"{PARAM['benchmark']}_MP"
     agg_w = agg_w[agg_w["ddt"] == end_date_ts].reset_index(drop=True)
+    agg_w = apply_sector_short_cap(agg_w, sector_short_cap)
     agg_w["count"] = agg_w.groupby(["ddt", agg_w["mp_ls_weight"] > 0])["mp_ls_weight"].transform("size")
     agg_w["factor"] = "AGG"
     agg_w["ls_weight"] = agg_w["mp_ls_weight"]

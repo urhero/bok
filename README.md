@@ -85,7 +85,7 @@
 ## [4] 롱-숏 수익률 + 팩터 유니버스 선정
 
 ### (a) 롱-숏 수익률
-- 각 팩터별 롱/숏 포트폴리오 구성 → 거래비용(20bp) 차감 → 월간 L-S 수익률 행렬 생성
+- 각 팩터별 롱/숏 포트폴리오 구성 → 거래비용(10bp) 차감 → 월간 L-S 수익률 행렬 생성
 - 핵심 함수: `factor_returns.aggregate_factor_returns()`
 
 ### (b) 팩터 유니버스 최종 선정 (200+ -> 클러스터 dedup)
@@ -105,7 +105,8 @@
 `optimization.optimize_constrained_weights()`
 
 ### 가중치 결정 모드 (3가지, config 키 `optimization_mode`)
-- `optimization_mode="equal_risk_weight"` **(기본값, 2026-07-22 채택)**: IS 변동성 반비례(1/σ) 가중 + 스타일 캡 25% 재분배 — 각 팩터의 리스크 예산(w×σ)을 균등화. [채택 근거](docs/experiments/equal_risk_weight_20260722.md)
+- `optimization_mode="erc"` **(기본값, 2026-07-29 채택)**: 상관 인지 Equal Risk Contribution (cov 48M, 대각수축 0.7, Spinu CCD) — 팩터별 리스크 기여 w×(Σw) 균등화. [채택 근거](docs/experiments/mxwo_sharpe_ladder_20260729.md)
+- `optimization_mode="equal_risk_weight"`: IS 변동성 반비례(1/σ) 가중 (상관 무시 특수 케이스, 구 기본)
 - `optimization_mode="equal_weight"`: 1/N 동일가중 + 스타일 캡 재분배 (구 기본)
 - `optimization_mode="hardcoded"`: `data/hardcoded_weights.csv`에서 고정 비중 로드
 
@@ -320,11 +321,13 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `style_cap` | 0.25 | 스타일 캡 (프로덕션 규제 요건) | `optimization.py` |
 | `optimization_mode` "erc" | - | 상관 인지 Equal Risk Contribution 가중 (2026-07-29 채택, **07-30 Spinu CCD 솔버로 정정** — RC 균등·음의 상관 헤지 팩터 우대 보장; cov 48M). "min_var" 모드도 지원 | `optimization.py` |
 | `erc_shrinkage` | 0.7 | ERC cov 대각 수축 비율 | `optimization.py` |
-| `deploy_step` | 0.5 | 부분 조정 배포 — 목표 비중으로 step만큼만 이동 (트레이드 절반, 실측 비용 절감) | `optimization.py`, `model_portfolio.py`, `walk_forward_engine.py` |
+| `deploy_step` | 1.0 | 부분 조정 배포 (1.0=전량). 20bp 시절 0.5, 10bp 전환 후 역전으로 1.0 (실측 0.672 vs 0.604) | `optimization.py`, `model_portfolio.py`, `walk_forward_engine.py` |
+| `ts_mom_window` / `ts_mom_scale` | 6 / 0.5 | 팩터 TS 모멘텀 틸트 — trailing 6M 자기수익 음수 팩터 비중 x0.5 (2026-07-30 채택, 창 6/9/12 고원) | `optimization.py` (3곳 공용) |
+| `sector_short_cap` | 0.15 | 섹터별 숏 gross 상한 (전체 숏 gross 대비) — 2020-11형 숏 crowding 완화. 종목 레벨이라 factor-level 백테스트 미반영 (실측으로 평가) | `weight_construction.py` |
 | `weight_rebal_months` | 1 | Tier 2 가중 리밸 주기 (월간 채택) | `walk_forward_engine.py` |
 | `optimization_mode` | "equal_risk_weight" | 가중치 결정 모드 (`equal_risk_weight`(1/σ, 2026-07-22 채택) / `equal_weight` / `hardcoded`) | `optimization.py` |
 | `style_cap_basis` | "weight" | 스타일 캡 적용 기준 (`weight`=명목비중 / `risk`=w×σ 예산, risk는 A/B 기각 후 옵션 잔류) | `optimization.py` |
-| `transaction_cost_bps` | 20.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
+| `transaction_cost_bps` | 10.0 | 거래비용 (bp). MXWO 선진국 대형주 실집행 기준 (2026-07-30 사용자 지정; MXCN1A는 20) | `weight_construction.py`, `model_portfolio.py` |
 | `backtest_cost_multiplier` | 0.6 | **선정 입력용** 비용 배수 (비용 인지 선정 최적). factor-level 성과 회계는 고회전 구성에서 과소계상 — **정본 성과 판단은 `research/mp_level_cost_backtest.py` 실측 기준** (정식 ERC 실측 net Sharpe 0.368, 2026-07-30 정정) | `walk_forward_engine.py` |
 | `top_factor_count` | 50 | rank_score 상위 절단 수 (**`cluster_method=topn`일 때만** 적용; winner_median은 미사용) | `model_portfolio.py` |
 | `factor_ranking_method` | "tstat" | 팩터 랭킹 방식 (`shrunk_tstat` / `tstat` / `cagr`) | `model_portfolio.py`, `walk_forward_engine.py` (`compute_rank_score` 공유) |
