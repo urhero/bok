@@ -322,7 +322,7 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `optimization_mode` "erc" | - | 상관 인지 Equal Risk Contribution 가중 (2026-07-29 채택, **07-30 Spinu CCD 솔버로 정정** — RC 균등·음의 상관 헤지 팩터 우대 보장; cov 48M). "min_var" 모드도 지원 | `optimization.py` |
 | `erc_shrinkage` | 0.7 | ERC cov 대각 수축 비율 | `optimization.py` |
 | `deploy_step` | 1.0 | 부분 조정 배포 (1.0=전량). 20bp 시절 0.5, 10bp 전환 후 역전으로 1.0 (실측 0.672 vs 0.604) | `optimization.py`, `model_portfolio.py`, `walk_forward_engine.py` |
-| `ts_mom_window` / `ts_mom_scale` | 6 / 0.5 | 팩터 TS 모멘텀 틸트 — trailing 6M 자기수익 음수 팩터 비중 x0.5 (2026-07-30 채택, 창 6/9/12 고원) | `optimization.py` (3곳 공용) |
+| `ts_mom_window` / `ts_mom_scale` | 4 / 0.5 | 팩터 TS 모멘텀 틸트 — trailing 4M 자기수익 음수 팩터 비중 x0.5. 창 1~12 스윕: 3~5 지대 우세(0.72~0.77), 중앙값 4 채택 (피크 3M은 스파이크 할인, 2026-07-31) | `optimization.py` (3곳 공용) |
 | `sector_short_cap` | 0.15 | 섹터별 숏 gross 상한 (전체 숏 gross 대비) — 2020-11형 숏 crowding 완화. 종목 레벨이라 factor-level 백테스트 미반영 (실측으로 평가) | `weight_construction.py` |
 | `weight_rebal_months` | 1 | Tier 2 가중 리밸 주기 (월간 채택) | `walk_forward_engine.py` |
 | `optimization_mode` | "equal_risk_weight" | 가중치 결정 모드 (`equal_risk_weight`(1/σ, 2026-07-22 채택) / `equal_weight` / `hardcoded`) | `optimization.py` |

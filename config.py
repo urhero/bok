@@ -54,7 +54,7 @@ PIPELINE_PARAMS = {
     "optimization_mode": "erc",        # "erc"(상관 인지 ERC, 2026-07-29 채택) / "equal_risk_weight"(1/sigma) / "equal_weight"(1/N) / "hardcoded". 근거: docs/experiments/mxwo_sharpe_ladder_20260729.md
     "erc_shrinkage": 0.7,              # ERC cov 대각 수축 비율 (0.5~0.7 유효, 0.7 채택)
     "deploy_step": 1.0,                # 부분 조정 배포 (1.0=전량 조정). 20bp 시절 0.5 채택했으나 10bp 전환 후 역전 — 실측 step1.0 0.672 > 0.5 0.604 (2026-07-30)
-    "ts_mom_window": 6,                # 팩터 TS 모멘텀 틸트: trailing N개월 자기수익 음수 팩터 비중 감쇠 (2026-07-30 채택, 창 6/9/12 전부 유효 고원)
+    "ts_mom_window": 4,                # 팩터 TS 모멘텀 틸트: trailing N개월 자기수익 음수 팩터 비중 감쇠. 창 1~12 스윕에서 3~5 지대 우세 -> 중앙값 4 채택 (2026-07-31; 피크 3M은 스파이크 할인)
     "ts_mom_scale": 0.5,               # 감쇠 배율 (0.5/0.7 모두 유효, 0.5 채택)
     "sector_short_cap": 0.15,          # 섹터별 숏 gross 상한 (전체 숏 gross 대비, 2026-07-30 채택 — 2020-11형 숏 crowding 완화. 실측 스택 net 0.692/MDD -4.95/Calmar 0.352)
     "weight_rebal_months": 1,          # Tier 2 가중 리밸 주기 (백테스트 CLI 기본, 월간 채택 2026-07-29)
