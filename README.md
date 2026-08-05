@@ -1,8 +1,13 @@
-# 📘 엔드투엔드 팩터 파이프라인 요약
+# 📘 엔드투엔드 팩터 파이프라인 요약 — MXWO 유니버스
 [[pytest](https://github.com/urhero/bok/actions/workflows/test.yml/badge.svg)](https://github.com/urhero/bok/actions/workflows/test.yml)
 
 *(Code → Investment Process 매핑)*
 
+> **이 브랜치(`mxwo_sharpe1`)는 MXWO(선진국) 유니버스 기준입니다.** MXCN1A(중국)는
+> `main` 브랜치이며, 선정·가중 방법론이 유니버스별로 다르게 튜닝돼 있습니다
+> (문서 끝의 [MXCN1A(main)와의 차이](#mxcn1amain와의-차이) 참조). 유니버스 전환은
+> 코드가 아니라 `.env`(BENCHMARK/UNIVERSE/서버)가 결정합니다.
+>
 > 각 섹션의 `[N]` 번호는 `model_portfolio.py:run()` 코드의 단계 주석과 동일합니다.
 > 함수별 Input/Output 상세, 코드 수준 구현 세부사항은 [`research.md`](research.md) 참조.
 
@@ -12,16 +17,19 @@
 
 ```
 200+ 유효 팩터                      [1]~[3] 데이터 로딩 + 5분위 + 섹터 필터
+       │                                 (min_coverage 10%, 롤링 IS 48개월 기준 학습)
+       ▼
+   선정 팩터 (고정 Top 50)           [4] t-stat 랭킹 → 순수 Top-50 절단 (클러스터 dedup off)
        │
        ▼
-   선정 팩터 (~20~40개 가변)         [4] t-stat 랭킹 + 클러스터 dedup(winner_median 기본) 선정
+   weight>0 팩터                     [6] ERC 가중 + TS모멘텀 틸트 + 스타일 캡
        │
        ▼
-   weight>0 팩터                     [6] 스타일 캡 하 비중 결정
-       │
-       ▼
-   종목별 MP 비중 산출               [7] CSV 출력 → Bloomberg Optimizer
+   종목별 MP 비중 산출               [7] 섹터 숏캡 적용 + CSV 출력 → Bloomberg Optimizer
 ```
+
+> **롤링 IS 48개월** (`is_window_months=48`): 규칙 학습·랭킹·가중 모두 매 시점
+> "최근 4년" 데이터만 사용한다 (expanding 아님 — 레짐 적응 목적, 2026-07-28 채택).
 
 ---
 
@@ -39,8 +47,8 @@
 - `data/hardcoded_weights.csv` — 프로덕션 고정 가중치 (hardcoded 모드용)
 
 ### 다운로드
-- `python main.py download 2009-12-31 2026-03-31` — 전체 다운로드
-- `python main.py download 2009-12-31 2026-03-31 --incremental` — 증분 다운로드
+- `python main.py download 2015-06-30 2026-06-30` — 전체 다운로드 (MXWO 데이터는 2015-06~)
+- `python main.py download 2015-06-30 2026-07-31 --incremental` — 증분 다운로드 (end_date 월만 append)
 - 로드 시 자동 무결성 검증 수행
 
 > 연도별 분할 구조, 검증 항목 상세, fallback 경로는 [research.md §2.3, §4.3](research.md) 참조.
@@ -75,7 +83,7 @@
 
 ### (b) 투자 대상 분위(롱/숏) 결정
 - 섹터 제거 후 분위별 평균 수익률 재산출
-- Q1–Q5 평균 스프레드를 기준으로 임계값 설정
+- Q1–Q5 평균 스프레드를 기준으로 임계값 설정 (`spread_threshold_pct=0.05` — 스프레드의 5%. 0.025~0.05 고원 확인, 구 0.10 대비 분산 확대로 채택, 2026-07-29)
 - 각 분위를 **롱(+1) / 중립(0) / 숏(-1)**으로 재분류
 - 단순히 Q1=롱, Q5=숏이 아닌 **성과 기반으로 투자 대상 분위 선택**
 - 유효성 가드 (2026-07): 섹터 제거 후 재계산한 전체 Q1–Q5 스프레드가 양수가 아니면 팩터 탈락 (섹터별 체크만으로는 합산 역전을 못 잡음). 스프레드>0이면 Q1=롱/Q5=숏이 보장되므로 한쪽만 있는 팩터(시장 방향 노출)가 랭킹을 오염시키는 것도 함께 차단됨
@@ -88,13 +96,11 @@
 - 각 팩터별 롱/숏 포트폴리오 구성 → 거래비용(10bp) 차감 → 월간 L-S 수익률 행렬 생성
 - 핵심 함수: `factor_returns.aggregate_factor_returns()`
 
-### (b) 팩터 유니버스 최종 선정 (200+ -> 클러스터 dedup)
-- 랭킹 방식: **t-stat 기반** (기본), `shrunk_tstat` / `cagr` 선택 가능 (`factor_ranking_method`)
+### (b) 팩터 유니버스 최종 선정 (200+ -> 순수 Top-50)
+- 랭킹 방식: **t-stat 기반** (기본), `shrunk_tstat` / `cagr` 선택 가능 (`factor_ranking_method`). 랭킹의 입력은 롤링 IS 48개월 수익률
 - production `mp`와 walk-forward 백테스트가 `factor.selection.compute_rank_score()`를 공유 — 검증된 config과 배포 전략이 항상 일치
-- **선정 히스테리시스** (`selection_hysteresis=0.5`): 직전 회차 보유 팩터는 챌린저가 rank_score 격차 0.5 이상 이길 때만 교체 — 노이즈성 교체 차단으로 턴오버 -64%, OOS CAGR +0.6~0.7%p ([실험 근거](docs/experiments/smoothing_cost_experiment_20260612.md))
-- **클러스터 dedup** (`use_cluster_dedup=True`, 상관 높은 팩터 쏠림 방지): 상관관계 기반 계층적 클러스터링 18개로 묶음. `cluster_method`로 압축 규칙 선택:
-  - **`winner_median` (기본)**: 클러스터당 rank_score 상위 3개 후보 중, **클러스터 1등은 무조건 통과**(분산 보장) + 나머지는 **전역 중위값 이상**만 통과. 고정 Top-N 없음 → 가변(~20~40개). A/B 백테스트에서 topn 대비 Sharpe 0.73→0.79·Calmar 0.43→0.57·MDD -5.1→-4.0% 개선
-  - `topn`: 클러스터당 상위 3개 통과(최대 54개) → 그중 rank_score 상위 `top_factor_count`(50) 절단
+- **클러스터 dedup 없음** (`use_cluster_dedup=False`, MXWO 채택): rank_score **순수 Top-50 절단** (`top_factor_count=50`, 개수 고정). MXCN1A(main)와 정반대 결정 — 롤링 48개월의 짧은 창에서는 클러스터 구성이 불안정해 dedup이 좋은 팩터를 날림 (2026-07-28 A/B: dedup on -0.12 / off +0.41 Sharpe). **유사 팩터 간 중복 관리는 선정이 아니라 [6]의 ERC 가중이 담당** (겹치는 무리의 비중을 낮추는 방식)
+- **선정 히스테리시스** (`selection_hysteresis=0.25`): 직전 회차 보유 팩터는 챌린저가 rank_score 격차 0.25 이상 이길 때만 교체 — 월간 리밸의 노이즈성 교체 차단 (MXWO 스윕 채택, 2026-07-29; MXCN1A는 0.5)
 - 최종 비중 할당은 [6]에서 결정
 
 ---
@@ -104,7 +110,7 @@
 ### 핵심 함수
 `optimization.optimize_constrained_weights()`
 
-### 가중치 결정 모드 (3가지, config 키 `optimization_mode`)
+### 가중치 결정 모드 (4가지, config 키 `optimization_mode`)
 - `optimization_mode="erc"` **(기본값, 2026-07-29 채택)**: 상관 인지 Equal Risk Contribution (cov 48M, 대각수축 0.7, Spinu CCD) — 팩터별 리스크 기여 w×(Σw) 균등화. [채택 근거](docs/experiments/mxwo_sharpe_ladder_20260729.md)
 - `optimization_mode="equal_risk_weight"`: IS 변동성 반비례(1/σ) 가중 (상관 무시 특수 케이스, 구 기본)
 - `optimization_mode="equal_weight"`: 1/N 동일가중 + 스타일 캡 재분배 (구 기본)
@@ -112,9 +118,11 @@
 
 > 백테스트(`python main.py backtest`)는 config의 `optimization_mode`를 그대로 사용한다 (`hardcoded`만 `equal_weight`로 자동 변환).
 
-### 절차 (equal_risk_weight 모드)
-- 선정된 팩터에 IS 전체 기간 월간 수익률 변동성의 역수(1/σ)에 비례한 가중 부여
-- 스타일별 명목비중 합계가 **스타일 캡(25%)**을 넘지 않도록 비례 재분배 (`style_cap_basis="weight"` 기본; 리스크 예산 기준 캡은 A/B 열위로 기각, 옵션 잔류)
+### 절차 (erc 모드, MXWO 채택 스택)
+1. **ERC base 가중**: 선정 Top-50의 롤링 48개월 수익률 cov(대각 수축 `erc_shrinkage=0.7`)에서 팩터별 리스크 기여 w×(Σw)를 균등화하는 비중 산출 (Spinu CCD — 음상관 팩터도 양수 비중 보장). 선정에서 dedup을 안 하는 대신, 상관 높은 팩터 무리의 비중을 여기서 낮춘다
+2. 스타일별 명목비중 합계가 **스타일 캡(25%)**을 넘지 않도록 비례 재분배 (`style_cap_basis="weight"` 기본)
+3. **TS 모멘텀 틸트** (`ts_mom_window=4`): trailing 4개월 자기 누적수익이 음수인 팩터의 비중을 `ts_mom_scale=0.5`배 감쇠 후 재정규화. ⚠ 이 브랜치는 틸트가 캡 재분배 **이후**라 재정규화 과정에서 스타일 합이 캡을 소폭 넘을 수 있음 (main/MXCN1A는 캡 규제 요건 때문에 틸트를 캡 이전으로 교정함 — MXWO 채택 시 검토 항목)
+4. `deploy_step=1.0`: 전량 조정 배포 (10bp 비용에선 부분 조정(0.5)이 열위로 역전, 2026-07-30 실측)
 
 ---
 
@@ -124,6 +132,7 @@
 - 각 팩터 비중을 종목 수준으로 전개
 - 롱/숏 종목군 내 동일가중 → 팩터 비중만큼 스케일링
 - 종목별 오버웨이트 / 언더웨이트 비중 산출
+- **섹터 숏 캡** (`sector_short_cap=0.15`): 한 섹터의 숏 gross가 전체 숏 gross의 15%를 넘지 않도록 상한 — 2020-11형 숏 crowding 완화 (MDD -6.72→-6.36%, 2026-07-30 실측 채택). 종목 레벨 제약이라 factor-level 백테스트에는 미반영, MP-level 실측으로 평가
 
 ### (b) Model Portfolio(MP) 구성
 - 여러 팩터에서 계산된 종목 비중을 합산
@@ -148,9 +157,10 @@
 
 ## [8] Walk-Forward 백테스트 (OOS 과적합 진단)
 
-기존 파이프라인([1]~[7])을 감싸 Expanding Window로 실행. IS 데이터만으로 팩터 선정·가중치를 결정하고 OOS 1개월 수익률을 기록한다.
+기존 파이프라인([1]~[7])을 감싸 **롤링 48개월 윈도우**로 실행 (`is_window_months=48`; MXCN1A는 expanding). IS 데이터만으로 팩터 선정·가중치를 결정하고 OOS 1개월 수익률을 기록한다.
 
-- **계층적 리밸런싱**: Tier 1(6개월, 규칙 학습) / Tier 2(3개월, 팩터 선정) / Tier 3(매월, OOS 조회)
+- **계층적 리밸런싱**: Tier 1(6개월, 규칙 학습) / Tier 2(**1개월**, 팩터 선정+가중 — 월간 채택 2026-07-29) / Tier 3(매월, OOS 조회)
+- ⚠ **고회전 구성의 비용 회계**: factor-level 백테스트의 `backtest_cost_multiplier=0.6`은 저회전 전용 근사 — 월간 리밸에서는 실비용이 과소계상된다 (실측 netting 최대 1.8배). **정본 성과 판단은 `research/mp_level_cost_backtest.py` 실측 기준** (현 채택 스택 실측: net Sharpe 0.720 / MDD -4.80% / Calmar 0.376, 2026-07-31)
 - **과적합 진단 5지표**: Funnel Value-Add, OOS Percentile Tracking, Strict Jaccard, IS-OOS Rank Correlation, Deflation Ratio
 - **벤치마크 비교**: `--benchmark` 옵션으로 MP vs. 동일가중(1/N) 비교
 
@@ -158,7 +168,7 @@
 
 ### 용어: MP vs Constrained EW
 - **MP (Model Portfolio)** — 프로덕션 산출물 (Bloomberg Optimizer 입력 CSV). 역할 이름.
-- **Constrained EW** — MP를 만드는 **구성 방식**의 관례적 라벨 (선정 팩터 가중 + `style_cap=25%` 재분배; winner_median 기본이라 고정 Top-N 아님). 2026-07-22부터 팩터 가중이 EW(1/N)에서 **equal_risk_weight(1/σ)**로 바뀌었으나, 백테스트 리포트/CSV 컬럼의 "CEW" 라벨은 호환을 위해 유지.
+- **Constrained EW** — MP를 만드는 **구성 방식**의 관례적 라벨 (선정 팩터 가중 + `style_cap=25%` 재분배). MXWO에선 Top-50 고정 + **ERC(수축 0.7) + TS모멘텀 틸트** 가중 (EW 1/N → ERW 1/σ → ERC로 진화)이나, 백테스트 리포트/CSV 컬럼의 "CEW" 라벨은 호환을 위해 유지.
 - 백테스트 진단 리포트는 구성 방식을 명시하기 위해 "Constrained EW" 라벨을 사용. 프로덕션 CLI/파일명/CSV 컬럼은 "MP" 유지.
 - 과거 MP는 Monte Carlo 최적화로 구성됐으나 커밋 `8dfb64e`에서 제거됨.
 
@@ -209,7 +219,7 @@ service/
 │   └── benchmark_comparison.py # Constrained EW vs. 동일가중(1/N) 벤치마크 비교
 │
 ├── backtest/
-│   ├── walk_forward_engine.py  # Walk-Forward (Expanding Window) 오케스트레이터
+│   ├── walk_forward_engine.py  # Walk-Forward 오케스트레이터 (롤링/expanding IS)
 │   ├── data_slicer.py          # 날짜 기반 IS/OOS 데이터 분할
 │   ├── result_stitcher.py      # OOS 결과 접합 + 성과 계산 (WalkForwardResult)
 │   └── overfit_diagnostics.py  # 과적합 진단 (Funnel Value-Add, Percentile, Strict Jaccard + 보조)
@@ -239,8 +249,8 @@ pipeline.return_matrix  # 월간 수익률 행렬
 
 ### Walk-Forward 백테스트 사용법
 ```bash
-# 기본 실행 (Expanding Window, IS 36개월, OOS 매월)
-python main.py backtest 2009-12-31 2026-03-31
+# 기본 실행 (MXWO: 롤링 IS 48개월 + 월간 가중 리밸, OOS 매월)
+python main.py backtest 2015-06-30 2026-06-30
 
 # 파라미터 조정
 python main.py backtest 2009-12-31 2026-03-31 \
@@ -260,8 +270,9 @@ python main.py mp 2009-12-31 2026-03-31 --benchmark
 # 프로그래밍 방식
 from service.backtest.walk_forward_engine import WalkForwardEngine
 
-engine = WalkForwardEngine(min_is_months=60, factor_rebal_months=6, weight_rebal_months=3)
-result = engine.run("2009-12-31", "2026-03-31")
+engine = WalkForwardEngine(min_is_months=36, factor_rebal_months=6, weight_rebal_months=1,
+                           is_window_months=48)   # MXWO 채택: 월간 가중 리밸 + 롤링 48M
+result = engine.run("2015-06-30", "2026-06-30")
 
 # OOS 성과 확인
 result.calc_performance()           # CAGR, MDD, Sharpe, Calmar
@@ -307,7 +318,7 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 
 > **스타일 비중 추이/회전율**은 `output/walk_forward_weight_history.csv`가 있어야 표시된다.
 > 이 파일은 `python main.py backtest ...` 실행 시 생성되므로, 백테스트를 한 번 돌려야 한다.
-> **섹터별 순비중**은 `data/MXCN1A_factor_<연도>.parquet`을 read-only 로 읽어 `gvkeyiid`로 join한다
+> **섹터별 순비중**은 `data/{benchmark}_factor_<연도>.parquet`을 read-only 로 읽어 `gvkeyiid`로 join한다
 > (파이프라인/출력 스키마 무수정).
 
 ---
@@ -355,3 +366,26 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 - **`pre-commit hook`**: `detect-secrets`로 비밀번호/토큰 커밋 자동 차단
 - **SQL allowlist**: `factor_query.py`에서 허용된 테이블명만 통과
 - **path traversal 검증**: `test_file` CLI 인자가 프로젝트 디렉토리 내부인지 검사
+
+---
+
+## MXCN1A(main)와의 차이
+
+브랜치 = 유니버스 구조이며, 방법론은 유니버스별로 따로 튜닝됐다 (2026-08 교차 이식 실험:
+어느 쪽 스택도 상대 유니버스에 통째로 이식하면 대폭 열위 — 컴포넌트 단위로만 이전 가능).
+
+| 항목 | **MXWO (이 브랜치)** | MXCN1A (main) |
+|---|---|---|
+| 데이터/서버 | kb_global, 2015-06~ | GLOBAL, 2009-12~ |
+| 거래비용 | 10bp | 20bp |
+| IS 윈도우 | 롤링 48개월 | expanding |
+| 팩터 선정 | 순수 Top-50 고정 (dedup off) | winner_median 클러스터 (~28 가변) |
+| 히스테리시스 | 0.25 | 0.5 |
+| 가중 리밸 | 월간 | 분기 |
+| 가중 | ERC 수축 0.7 + TSM 4M | ERC 수축 0.5 + TSM 3M |
+| TSM 틸트 위치 | 캡 이후 (캡 소폭 초과 가능) | 캡 이전 (캡 준수 보장) |
+| min_coverage | 10% | 없음 |
+| 섹터 숏캡 | 15% | 없음 (no-op 확인) |
+| spread 임계 | 0.05 | 0.05 (동일) |
+| 출력 경로 | `output/MXWO/` | `output/` |
+| 정본 실측 (mp_level) | net Sharpe 0.720 / MDD -4.80% | net Sharpe 0.703 / MDD -4.87% |
