@@ -122,9 +122,10 @@ main.py (CLI)
      │         │                                         │
      │    [6] optimize_constrained_weights()               │
      │         │                                         │
-     │         ├─ mode="equal_risk_weight"(기본): 1/sigma  │
-     │         │    + 스타일 캡 재분배                       │
-     │         └─ mode="equal_weight"/"hardcoded" (구)      │
+     │         ├─ mode="erc"(기본): 상관 인지 ERC          │
+     │         │    + TS모멘텀 틸트 + 스타일 캡 재분배        │
+     │         └─ mode="equal_risk_weight"/"equal_weight"  │
+     │              /"hardcoded" (구)                      │
      │         │                                         │
      │    [7] _construct_and_export()                     │
      │         │                                         ▼
@@ -265,31 +266,39 @@ per-factor:
 
 #### [6] optimize_constrained_weights: 비중 결정
 
-**가중치 결정 모드 (equal_risk_weight/equal_weight/hardcoded)**:
+**가중치 결정 모드 (erc/equal_risk_weight/equal_weight/hardcoded)**:
 
 | 모드 | 용도 | 동작 |
 |------|------|------|
-| `equal_risk_weight` (기본, 2026-07-22 채택) | 프로덕션/백테스트 | IS 변동성 반비례(1/sigma) 가중 + 스타일 캡 재분배 |
-| `equal_weight` | 연구 (구 기본) | 1/N 동일가중 + 스타일 캡 재분배 |
+| `erc` (기본, 2026-08-05 채택) | 프로덕션/백테스트 | 상관 인지 ERC (Spinu CCD) + TS모멘텀 틸트 + 스타일 캡 재분배 |
+| `equal_risk_weight` (구 기본, 2026-07-22~08-05) | 연구 | IS 변동성 반비례(1/sigma) 가중 — 상관 무시 단순형 |
+| `equal_weight` | 연구 (구구 기본) | 1/N 동일가중 + 스타일 캡 재분배 |
 | `hardcoded` | 구 프로덕션 | `data/hardcoded_weights.csv`에서 고정 가중치 로드 |
 
-**equal_risk_weight / equal_weight 모드 알고리즘**:
+**공통 알고리즘 (base 가중 → 틸트 → 캡 재분배)**:
 
 ```
-1. 초기 가중 부여
-   - equal_risk_weight: w_i ∝ 1 / std(IS 월간 수익률, 첫 행 기준점 제외)
-     (vol 하한 1e-6 가드; 각 팩터의 리스크 예산 w*sigma 가 균등해짐)
-   - equal_weight: 1/N 동일가중
-2. 스타일 캡 적용 (기본 명목비중 기준; style_cap_basis="risk"면 w*sigma 예산 기준):
+1. base 가중 부여
+   - erc: IS cov(첫 행 기준점 제외)를 대각 수축(erc_shrinkage=0.5) 후
+     _solve_erc_ccd 로 리스크 기여 균등해 산출 (음상관 팩터도 양수 비중 보장,
+     RC 균등 검증 2026-08-05: 1.00x)
+   - equal_risk_weight: w_i ∝ 1 / std (vol 하한 1e-6 가드)
+   - equal_weight: 1/N
+2. TS 모멘텀 틸트 (ts_mom_window=3, None/0=off): trailing 3개월 자기 누적수익
+   음수 팩터의 base 비중을 ts_mom_scale(0.5)배 감쇠.
+   캡 재분배 '이전' 적용 — 캡(규제 요건) 준수 보장 (mxwo_sharpe1 원구현의
+   캡 후 틸트는 캡을 뚫어 이식 시 순서 교정, 2026-08-05)
+3. 스타일 캡 적용 (기본 명목비중 기준; style_cap_basis="risk"면 w*sigma 예산 기준):
    a. 스타일별 비중 합계 계산
    b. 25% 초과 스타일: 비례 축소 (cap / share)
    c. 정규화 (합=1)
    d. 수렴까지 반복 (최대 10회)
-3. CAGR/MDD 계산 (기록용)
+4. CAGR/MDD 계산 (기록용)
 ```
 
-- 채택 근거: factor-level A/B 전 하위구간 Sharpe/Calmar/MDD 개선 + MP-level 실비용
-  기준 전 지표 우위·턴오버 감소 — [equal_risk_weight_20260722.md](docs/experiments/equal_risk_weight_20260722.md)
+- 채택 근거: 컴포넌트 ablation 20케이스 + 게이트 3종(MP-level 실측 net Sharpe
+  0.584→0.724, RC 검증, 수축 고원) — [mxcn1a_component_ablation_20260805.md](docs/experiments/mxcn1a_component_ablation_20260805.md)
+  (equal_risk_weight 채택 이력: [equal_risk_weight_20260722.md](docs/experiments/equal_risk_weight_20260722.md))
 - `style_cap_basis="risk"`(리스크 예산 기준 캡)는 A/B 열위로 기각, 옵션만 잔류
 - 주의: 캡 재분배 루프는 float32 라 편중 초기가중에서 ~1e-4 캡 초과 잔차 가능 (경고 로그)
 
@@ -386,7 +395,7 @@ main.py
 |-----------|----------|
 | `factor_analysis.py` 분위 로직 | 모든 downstream (라벨링, 수익률, 가중치, 최종 CSV) |
 | `weight_construction.py` 수익률 계산 | `aggregate_factor_returns` → 팩터 순위 → 최적화 → 가중치 |
-| `optimization.py` 가중치 계산 | 최종 가중치 (equal_risk_weight 기본 / equal_weight / hardcoded) |
+| `optimization.py` 가중치 계산 | 최종 가중치 (erc 기본 / equal_risk_weight / equal_weight / hardcoded) |
 | `optimization.py` hardcoded 가중치 | **프로덕션 MP 직접 영향** — 가장 위험 |
 | `config.py` PARAM | 전 모듈 (DB 연결, 벤치마크명, 파일 경로) |
 | `config.py` PIPELINE_PARAMS | 파이프라인 비즈니스 파라미터 (style_cap, 거래비용, 팩터 수, 임계값 등). 이전 코드 내 산재하던 매직넘버를 중앙 집중화 |
@@ -589,7 +598,7 @@ repeat (최대 10회):
 - **Factor-Level Backtest**: 종목(stock-level) MP까지 내려가지 않고, 팩터 수익률(net-of-cost) × 팩터 가중치로 포트폴리오 수익률을 산출
 - **거래비용 (중요)**: `calculate_vectorized_return()`이 팩터 내부 매매(연속 보유 종목 비중 변화 + 편입 매수/편출 매도, 2026-07 수정)를 전액 차감한다. 팩터 간 비중변경(inter-factor) 매매는 '팩터수익 × 비중' 구조상 미계상(과소 방향), 반대로 실거래는 MP 합산 후 1회 매매라 교차 팩터 netting 을 무시하는 팩터별 전액 계상은 과대 방향 — MP-level 실측 netting ratio 0.574 근거로 `backtest_cost_multiplier` 기본 **0.6** (20bp×0.6=12bp; 구 2.0 은 편입/편출 누락 보정치, 1.0 은 netting 무시 과대). 적용 지점: `walk_forward_engine._resolve_backtest_cost_bps()` → `run()`의 `pp`. **mp(운영)는 multiplier 영향 없음**(20bp 전액; 단 턴오버 수정은 운영 factor return/랭킹에도 적용됨)
 - **MP-level 실비용 (결정판)**: `research/mp_level_cost_backtest.py`가 종목단 MP 비중을 합산해 실제 매매 턴오버(연 ~2.8x one-way)에 종목비용(transaction_cost_bps)을 부과한 수치를 제공 — **netting ratio 0.574** (실비용 = 팩터별 전액 계상의 ~57%; scale-invariant, bp 수준 무관). 상세: [docs/experiments/mp_level_cost_20260703.md](docs/experiments/mp_level_cost_20260703.md)
-- **가중 모드**: 백테스트는 config `optimization_mode`(기본 equal_risk_weight)를 그대로 사용. hardcoded 지정 시에만 equal_weight 로 자동 변환
+- **가중 모드**: 백테스트는 config `optimization_mode`(기본 erc)를 그대로 사용. hardcoded 지정 시에만 equal_weight 로 자동 변환
 
 ### 6.2 계층적 리밸런싱 (Tiered Rebalancing)
 
@@ -736,7 +745,9 @@ python main.py mp <start> <end> --benchmark
 백테스트 결과 및 과적합 진단 상세는 [`docs/backtest_results_2009_2026.md`](docs/backtest_results_2009_2026.md) 참조.
 
 **현재 기본 설정 (config.py):**
-- `optimization_mode = "equal_risk_weight"` (1/sigma, 2026-07-22 채택 — equal_risk_weight_20260722.md)
+- `optimization_mode = "erc"` (상관 인지 ERC + erc_shrinkage 0.5, 2026-08-05 채택 — mxcn1a_component_ablation_20260805.md)
+- `ts_mom_window = 3`, `ts_mom_scale = 0.5` (팩터 TS 모멘텀 틸트, 2026-08-05 채택)
+- `spread_threshold_pct = 0.05` (2026-08-05: 0.10→0.05, MDD -10.1→-6.1% factor-level)
 - `factor_ranking_method = "tstat"` (기본; Sprint 1-A `"shrunk_tstat"` 실험 옵션 추가됨)
 - `use_cluster_dedup = True` (Sprint 1-B, production 적용됨 — n_clusters=18, per_cluster_keep=3)
 - `selection_hysteresis = 0.5` (선정 히스테리시스, production 적용됨)

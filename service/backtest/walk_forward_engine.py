@@ -277,11 +277,16 @@ def _run_weight_optimization(
     style_list = [style_map[f] for f in factor_list]
     ret_subset = ret_df_is[factor_list]
 
+    # TS 모멘텀 틸트는 optimize_constrained_weights 내부에서 캡 재분배 이전에 적용
+    # (2026-08-05 채택 — mp 파이프라인과 동일 경로 공유)
     _best_stats, weights_tbl = optimize_constrained_weights(
         ret_subset, style_list,
         mode=pp["optimization_mode"],
         style_cap=pp["style_cap"],
         style_cap_basis=pp.get("style_cap_basis", "weight"),
+        erc_shrinkage=float(pp.get("erc_shrinkage", 0.5)),
+        ts_mom_window=pp.get("ts_mom_window"),
+        ts_mom_scale=float(pp.get("ts_mom_scale", 0.5)),
     )
 
     weights_dict = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))

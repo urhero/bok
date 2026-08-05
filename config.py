@@ -44,12 +44,15 @@ PIPELINE_PARAMS = {
     # mp(운영) 파이프라인에는 적용되지 않음 (백테스트 전용).
     "backtest_cost_multiplier": 0.6,
     "top_factor_count": 50,            # 상위 팩터 선정 수
-    "spread_threshold_pct": 0.10,      # L/N/S 라벨링 임계값 (스프레드의 10%)
+    "spread_threshold_pct": 0.05,      # L/N/S 라벨링 임계값. 0.05 채택 (2026-08-05: MDD -10.1->-6.1%, Calmar 0.305; 구 0.10)
     "min_sector_stocks": 10,           # 섹터-날짜 최소 종목 수 (프로덕션)
     "max_zero_return_months": 10,      # 0 수익률 허용 최대 월 수
     "backtest_start": "2009-12-31",    # 백테스트 시작일
     "backtest_end": "2026-03-31",      # 백테스트 종료일
-    "optimization_mode": "equal_risk_weight", # "equal_risk_weight"(1/sigma, 2026-07-22 채택) / "equal_weight"(1/N) / "hardcoded"(고정 가중치). 근거: docs/experiments/equal_risk_weight_20260722.md
+    "optimization_mode": "erc",        # "erc"(상관 인지 ERC, 2026-08-05 채택) / "equal_risk_weight"(1/sigma, 구 기본) / "equal_weight"(1/N) / "hardcoded". 근거: docs/experiments/mxcn1a_component_ablation_20260805.md
+    "erc_shrinkage": 0.5,              # ERC cov 대각 수축 비율. 0.2~0.5 고원, 실측 검증값 0.5 채택 (2026-08-05)
+    "ts_mom_window": 3,                # 팩터 TS 모멘텀 틸트: trailing N개월 자기수익 음수 팩터 비중 감쇠. 창 3~6 고원, 3 채택 (2026-08-05). None/0 = off
+    "ts_mom_scale": 0.5,               # 감쇠 배율 (0.7은 열위, 0.5 채택)
     "factor_ranking_method": "tstat",  # "shrunk_tstat" / "tstat"(현 기본) / "cagr" — mp+backtest 공통 선정 기준
     "use_cluster_dedup": True,         # Sprint 1-B: Top-N Hierarchical Clustering 중복 제거 (production 적용)
     "n_clusters": 18,                  # 클러스터 수 (use_cluster_dedup=True일 때)

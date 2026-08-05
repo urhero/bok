@@ -359,5 +359,135 @@ class TestEqualRiskWeightMode:
         assert np.isclose(w.sum(), 1.0, atol=1e-6)
 
 
+class TestErcSolver:
+    """_solve_erc_ccd: 정식 ERC (RC 균등·양수 비중, 음의 상관 포함). mxwo_sharpe1 이식."""
+
+    @staticmethod
+    def _rc(cov, w):
+        rc = w * (cov @ w)
+        return rc / rc.sum()
+
+    def test_rc_equalized_with_negative_corr(self) -> None:
+        """음의 상관 팩터가 있어도 리스크 기여가 균등해지고 비중은 전부 양수."""
+        from service.pipeline.optimization import _solve_erc_ccd
+        rng = np.random.default_rng(5)
+        base = rng.normal(0, 0.02, 200)
+        rets = np.column_stack([
+            base + rng.normal(0, 0.005, 200),
+            base + rng.normal(0, 0.005, 200),
+            -base + rng.normal(0, 0.005, 200),   # 음의 상관 (헤지 팩터)
+            rng.normal(0, 0.02, 200),
+        ])
+        cov = np.cov(rets.T)
+        w = _solve_erc_ccd(cov)
+        assert (w > 0).all() and abs(w.sum() - 1.0) < 1e-12
+        rc = self._rc(cov, w)
+        assert np.abs(rc - 0.25).max() < 1e-6, f"RC 불균등: {rc}"
+
+    def test_hedge_factor_gets_larger_weight(self) -> None:
+        """포트폴리오와 음의 상관인 팩터는 동일 변동성의 순응 팩터보다 큰 비중."""
+        from service.pipeline.optimization import _solve_erc_ccd
+        rng = np.random.default_rng(7)
+        base = rng.normal(0, 0.02, 300)
+        rets = np.column_stack([
+            base, base + rng.normal(0, 0.002, 300),
+            base + rng.normal(0, 0.002, 300),
+            -base + rng.normal(0, 0.002, 300),   # 헤지
+        ])
+        cov = np.cov(rets.T)
+        w = _solve_erc_ccd(cov)
+        assert w[3] > w[0], "헤지 팩터가 우대돼야 함 (구 곱셈 반복은 0으로 붕괴)"
+
+    def test_identity_cov_equal_weights(self) -> None:
+        from service.pipeline.optimization import _solve_erc_ccd
+        w = _solve_erc_ccd(np.eye(5) * 0.04)
+        assert np.abs(w - 0.2).max() < 1e-9
+
+
+class TestErcMode:
+    """optimize_constrained_weights mode='erc' 통합 경로."""
+
+    def test_erc_mode_returns_valid_weights(self) -> None:
+        rng = np.random.default_rng(11)
+        n = 61
+        rtn_df = pd.DataFrame(rng.normal(0.003, 0.02, (n, 4)), columns=list("ABCD"))
+        rtn_df.iloc[0] = 0.0  # 기준점 0 관례
+        _, weights_tbl = optimize_constrained_weights(
+            rtn_df=rtn_df, style_list=["S1", "S1", "S2", "S3"],
+            mode="erc", test_mode=True, erc_shrinkage=0.5,
+        )
+        w = weights_tbl.set_index("factor")["fitted_weight"]
+        assert np.isfinite(w).all() and (w > 0).all()
+        assert np.isclose(w.sum(), 1.0, atol=1e-6)
+
+    def test_full_shrinkage_equals_erw_direction(self) -> None:
+        """수축 1.0 이면 cov 가 대각뿐 -> 저변동 팩터가 더 큰 비중 (1/sigma 방향)."""
+        rng = np.random.default_rng(13)
+        n = 61
+        rtn_df = pd.DataFrame({
+            "lowvol": rng.normal(0.003, 0.01, n),
+            "highvol": rng.normal(0.003, 0.04, n),
+        })
+        rtn_df.iloc[0] = 0.0
+        _, weights_tbl = optimize_constrained_weights(
+            rtn_df=rtn_df, style_list=["S1", "S2"],
+            mode="erc", test_mode=True, erc_shrinkage=1.0,
+        )
+        w = weights_tbl.set_index("factor")["fitted_weight"]
+        assert w["lowvol"] > w["highvol"]
+
+
+class TestTsMomentumTilt:
+    """apply_ts_momentum_tilt: trailing 음수 팩터 감쇠, off 시 no-op."""
+
+    def _frame(self) -> pd.DataFrame:
+        # 기준점 0 행 + 3개월: up 은 양의 누적, down 은 음의 누적
+        return pd.DataFrame({
+            "up": [0.0, 0.01, 0.02, 0.01],
+            "down": [0.0, -0.02, -0.01, -0.02],
+        })
+
+    def test_negative_trailing_factor_scaled(self) -> None:
+        from service.pipeline.optimization import apply_ts_momentum_tilt
+        out = apply_ts_momentum_tilt({"up": 0.5, "down": 0.5}, self._frame(), 3, 0.5)
+        assert out["up"] == 0.5
+        assert abs(out["down"] - 0.25) < 1e-12
+
+    def test_none_window_noop(self) -> None:
+        from service.pipeline.optimization import apply_ts_momentum_tilt
+        w = {"up": 0.5, "down": 0.5}
+        assert apply_ts_momentum_tilt(w, self._frame(), None) == w
+        assert apply_ts_momentum_tilt(w, self._frame(), 0) == w
+
+    def test_unnormalized_output(self) -> None:
+        """반환값은 비정규화 — 합=1 재정규화는 호출부 책임."""
+        from service.pipeline.optimization import apply_ts_momentum_tilt
+        out = apply_ts_momentum_tilt({"up": 0.5, "down": 0.5}, self._frame(), 3, 0.5)
+        assert abs(sum(out.values()) - 0.75) < 1e-12
+
+    def test_style_cap_respected_with_tilt(self) -> None:
+        """틸트가 캡 재분배 '이전'에 적용되므로 스타일 합이 캡을 넘지 않는다.
+
+        (mxwo_sharpe1 원구현은 캡 후 틸트 -> 재정규화로 캡 초과 — 회귀 방지)
+        """
+        rng = np.random.default_rng(17)
+        n = 61
+        # S1 팩터들은 상승 추세(틸트 안 맞음), S2/S3 는 하락 추세(감쇠 대상)
+        rtn_df = pd.DataFrame({
+            "a1": rng.normal(0.01, 0.02, n), "a2": rng.normal(0.01, 0.02, n),
+            "b1": rng.normal(-0.01, 0.02, n), "b2": rng.normal(-0.01, 0.02, n),
+            "c1": rng.normal(-0.01, 0.02, n), "c2": rng.normal(0.005, 0.02, n),
+        })
+        rtn_df.iloc[0] = 0.0
+        _, weights_tbl = optimize_constrained_weights(
+            rtn_df=rtn_df, style_list=["S1", "S1", "S2", "S2", "S3", "S3"],
+            mode="erc", test_mode=False, style_cap=0.4,
+            ts_mom_window=3, ts_mom_scale=0.5,
+        )
+        by_style = weights_tbl.groupby("styleName")["fitted_weight"].sum()
+        assert (by_style <= 0.4 + 1e-3).all(), f"style cap 초과: {by_style.to_dict()}"
+        assert np.isclose(weights_tbl["fitted_weight"].sum(), 1.0, atol=1e-6)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -104,15 +104,17 @@
 ### 핵심 함수
 `optimization.optimize_constrained_weights()`
 
-### 가중치 결정 모드 (3가지, config 키 `optimization_mode`)
-- `optimization_mode="equal_risk_weight"` **(기본값, 2026-07-22 채택)**: IS 변동성 반비례(1/σ) 가중 + 스타일 캡 25% 재분배 — 각 팩터의 리스크 예산(w×σ)을 균등화. [채택 근거](docs/experiments/equal_risk_weight_20260722.md)
-- `optimization_mode="equal_weight"`: 1/N 동일가중 + 스타일 캡 재분배 (구 기본)
+### 가중치 결정 모드 (4가지, config 키 `optimization_mode`)
+- `optimization_mode="erc"` **(기본값, 2026-08-05 채택)**: 상관 인지 Equal Risk Contribution — IS cov(대각 수축 `erc_shrinkage=0.5`)에서 팩터별 리스크 기여를 균등화 (Spinu CCD 솔버) + 스타일 캡 25% 재분배. [채택 근거](docs/experiments/mxcn1a_component_ablation_20260805.md)
+- `optimization_mode="equal_risk_weight"`: IS 변동성 반비례(1/σ) 가중 (구 기본, 2026-07-22~08-05 — 상관 무시 단순형)
+- `optimization_mode="equal_weight"`: 1/N 동일가중 + 스타일 캡 재분배
 - `optimization_mode="hardcoded"`: `data/hardcoded_weights.csv`에서 고정 비중 로드
 
 > 백테스트(`python main.py backtest`)는 config의 `optimization_mode`를 그대로 사용한다 (`hardcoded`만 `equal_weight`로 자동 변환).
 
-### 절차 (equal_risk_weight 모드)
-- 선정된 팩터에 IS 전체 기간 월간 수익률 변동성의 역수(1/σ)에 비례한 가중 부여
+### 절차 (erc 모드)
+- 선정 팩터의 IS 월간 수익률 cov를 대각 50% 수축 후 ERC 해 산출 (음상관 팩터도 양수 비중 보장)
+- **TS 모멘텀 틸트** (`ts_mom_window=3`): trailing 3개월 자기 누적수익이 음수인 팩터의 base 비중을 `ts_mom_scale=0.5`배 감쇠 — 캡 재분배 **이전** 적용이라 캡 준수 보장
 - 스타일별 명목비중 합계가 **스타일 캡(25%)**을 넘지 않도록 비례 재분배 (`style_cap_basis="weight"` 기본; 리스크 예산 기준 캡은 A/B 열위로 기각, 옵션 잔류)
 
 ---
@@ -157,7 +159,7 @@
 
 ### 용어: MP vs Constrained EW
 - **MP (Model Portfolio)** — 프로덕션 산출물 (Bloomberg Optimizer 입력 CSV). 역할 이름.
-- **Constrained EW** — MP를 만드는 **구성 방식**의 관례적 라벨 (선정 팩터 가중 + `style_cap=25%` 재분배; winner_median 기본이라 고정 Top-N 아님). 2026-07-22부터 팩터 가중이 EW(1/N)에서 **equal_risk_weight(1/σ)**로 바뀌었으나, 백테스트 리포트/CSV 컬럼의 "CEW" 라벨은 호환을 위해 유지.
+- **Constrained EW** — MP를 만드는 **구성 방식**의 관례적 라벨 (선정 팩터 가중 + `style_cap=25%` 재분배; winner_median 기본이라 고정 Top-N 아님). 팩터 가중은 EW(1/N) → equal_risk_weight(1/σ, 2026-07-22) → **erc(상관 인지 ERC + TS모멘텀 틸트, 2026-08-05)**로 진화했으나, 백테스트 리포트/CSV 컬럼의 "CEW" 라벨은 호환을 위해 유지.
 - 백테스트 진단 리포트는 구성 방식을 명시하기 위해 "Constrained EW" 라벨을 사용. 프로덕션 CLI/파일명/CSV 컬럼은 "MP" 유지.
 - 과거 MP는 Monte Carlo 최적화로 구성됐으나 커밋 `8dfb64e`에서 제거됨.
 
@@ -318,7 +320,10 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | 파라미터 | 값 | 설명 | 사용 모듈 |
 |---------|-----|------|-----------|
 | `style_cap` | 0.25 | 스타일 캡 (프로덕션 규제 요건) | `optimization.py` |
-| `optimization_mode` | "equal_risk_weight" | 가중치 결정 모드 (`equal_risk_weight`(1/σ, 2026-07-22 채택) / `equal_weight` / `hardcoded`) | `optimization.py` |
+| `optimization_mode` | "erc" | 가중치 결정 모드 (`erc`(상관 인지 ERC, 2026-08-05 채택) / `equal_risk_weight`(1/σ) / `equal_weight` / `hardcoded`) | `optimization.py` |
+| `erc_shrinkage` | 0.5 | ERC cov 대각 수축 비율 (0.2~0.5 고원, 실측 검증값 채택) | `optimization.py` |
+| `ts_mom_window` | 3 | 팩터 TS 모멘텀 틸트 창 (trailing N개월 자기수익 음수 팩터 감쇠; None/0=off) | `optimization.py` |
+| `ts_mom_scale` | 0.5 | TS 모멘텀 감쇠 배율 | `optimization.py` |
 | `style_cap_basis` | "weight" | 스타일 캡 적용 기준 (`weight`=명목비중 / `risk`=w×σ 예산, risk는 A/B 기각 후 옵션 잔류) | `optimization.py` |
 | `transaction_cost_bps` | 20.0 | 거래비용 (basis points) | `weight_construction.py`, `model_portfolio.py` |
 | `backtest_cost_multiplier` | 0.6 | 백테스트 전용 비용 배수 (20bp x 0.6 = 12bp; 편입/편출 netting 실측 0.574 기반) | `walk_forward_engine.py` |
@@ -329,7 +334,7 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `n_clusters` | 18 | 클러스터 수 (`use_cluster_dedup=True`일 때) | `factor/selection.py` |
 | `per_cluster_keep` | 3 | 클러스터당 유지 팩터 수 | `factor/selection.py` |
 | `newey_west_lag` | 3 | Newey-West 보정 lag (meta_data 진단 컬럼) | `factor/selection.py` |
-| `spread_threshold_pct` | 0.10 | L/N/S 라벨링 임계값 | `factor_analysis.py` |
+| `spread_threshold_pct` | 0.05 | L/N/S 라벨링 임계값 (2026-08-05: 0.10→0.05, MDD 개선) | `factor_analysis.py` |
 | `min_sector_stocks` | 10 | 섹터-날짜 최소 종목 수 | `factor_analysis.py` |
 | `max_zero_return_months` | 10 | 0 수익률 허용 최대 월 수 | `model_portfolio.py` |
 | `backtest_start` | "2009-12-31" | 백테스트 시작일 | `weight_construction.py`, `model_portfolio.py` |

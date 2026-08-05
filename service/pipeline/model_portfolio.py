@@ -134,11 +134,16 @@ class ModelPortfolioPipeline:
         style_list = [style_map[f] for f in factor_list]
         ret_subset = self.return_matrix[factor_list]
 
+        # TS 모멘텀 틸트는 optimize_constrained_weights 내부에서 캡 재분배 이전에
+        # 적용된다 (2026-08-05 채택 — 캡 규제 요건 준수를 위해 base 단계 적용).
         sim_result = optimize_constrained_weights(
             ret_subset, style_list, test_mode=bool(test_file),
             mode=self.pipeline_params["optimization_mode"],
             style_cap=self.pipeline_params["style_cap"],
             style_cap_basis=self.pipeline_params.get("style_cap_basis", "weight"),
+            erc_shrinkage=float(self.pipeline_params.get("erc_shrinkage", 0.5)),
+            ts_mom_window=self.pipeline_params.get("ts_mom_window"),
+            ts_mom_scale=float(self.pipeline_params.get("ts_mom_scale", 0.5)),
         )
 
         # [6.5] 배포 가중치 = 목표 가중치 (스무딩 제거: production 은 항상 목표 그대로 배포)
