@@ -1,0 +1,29 @@
+factor,styleName,weight,cluster_id,avg_corr_in_cluster
+Rev3MFY1C,Analyst Expectations,0.035772092007408156,1,0.867
+EPSNumRevFY1C,Analyst Expectations,0.033338296568554235,1,0.782
+RevMagFY1C,Analyst Expectations,0.032944891018836825,1,0.852
+Rev3MFY2C,Analyst Expectations,0.015515282475584776,1,0.811
+AdjIntCov,Capital Efficiency,0.0505412696299291,2,0.883
+IntCovRatio,Capital Efficiency,0.04909078689969615,2,0.883
+OCFEV,Valuation,0.047958928243052555,3,0.647
+AdjAccruals,Earnings Quality,0.02985460630875312,3,0.647
+DIVIDENDGROWTH,Historical Growth,0.07114618890753241,4,
+ETO,Earnings Quality,0.025449148860262866,5,0.764
+SalesToInvCap,Earnings Quality,0.02441278429344026,5,0.745
+AssetTurn,Earnings Quality,0.018696365547151355,5,0.693
+6MChgTgtPrcGapEMA,Analyst Expectations,0.06646226228886938,6,
+ShareChg,Capital Efficiency,0.06439825033436831,7,
+DivperShareGrowth,Historical Growth,0.05479645259572882,8,
+Beta60M,Volatility,0.052509031260691966,9,
+3YAvgAnnSalesGrw,Historical Growth,0.046829494750350344,10,
+LTDE,Capital Efficiency,0.04644673608011754,11,
+ROEStddev20Q,Earnings Quality,0.021342286462426707,12,0.784
+ROAStddev20Q,Earnings Quality,0.01906453784347864,12,0.784
+RecTurn,Capital Efficiency,0.03963430900773791,13,
+InvToAstChg1Y,Earnings Quality,0.031070799948326126,14,
+CapExToSales,Earnings Quality,0.02741632003252387,15,
+SalesToEPSChg,Earnings Quality,0.02543181322216573,16,
+STO_6M,Price Momentum,0.02400045799463177,17,
+50DVolSig,Price Momentum,0.01850390960315775,18,
+DepToCapex,Earnings Quality,0.013774556795399098,19,
+UnexpectedRecChg,Earnings Quality,0.01359814101982426,20,

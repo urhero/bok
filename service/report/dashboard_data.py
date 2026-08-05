@@ -357,9 +357,14 @@ def active_factors(weights: pd.DataFrame) -> set:
 
 
 def aggregate_style_weights(weights: pd.DataFrame) -> pd.Series:
-    """스타일별 배분: 팩터 단위로 dedup 후 factor_weight 를 style 로 합산 (합 ~= 1)."""
-    uniq = weights[["factor", "style", "factor_weight"]].drop_duplicates(subset=["factor"])
-    uniq = uniq[uniq["factor_weight"] > 0]
+    """스타일별 배분: 팩터 단위로 dedup 후 factor_weight 를 style 로 합산 (합 ~= 1).
+
+    주의: weight>0 필터를 dedup **이전**에 적용해야 한다. 종목 단위 행에서 중립
+    종목은 factor_weight=0 이라, dedup 을 먼저 하면 첫 행이 중립인 팩터가 통째로
+    누락된다 (2026-07-22 수정 — 구 코드는 선정 팩터 일부를 빠뜨렸음).
+    """
+    nz = weights[weights["factor_weight"] > 0]
+    uniq = nz[["factor", "style", "factor_weight"]].drop_duplicates(subset=["factor"])
     return uniq.groupby("style")["factor_weight"].sum().sort_values(ascending=False)
 
 
@@ -377,12 +382,55 @@ def style_allocation(weights: pd.DataFrame, style_deltas: pd.DataFrame | None = 
 
 
 def factor_tilt(weights: pd.DataFrame, top_n: int | None = None) -> pd.DataFrame:
-    """팩터별 비중(factor_weight) 내림차순 (factor, style, factor_weight)."""
-    uniq = weights[["factor", "style", "factor_weight"]].drop_duplicates(subset=["factor"])
-    uniq = uniq[uniq["factor_weight"] > 0].sort_values("factor_weight", ascending=False)
+    """팩터별 비중(factor_weight) 내림차순 (factor, style, factor_weight).
+
+    weight>0 필터를 dedup 이전에 적용 (aggregate_style_weights 와 동일 사유,
+    2026-07-22 수정 — 구 코드는 첫 행이 중립 종목인 팩터를 누락).
+    """
+    nz = weights[weights["factor_weight"] > 0]
+    uniq = nz[["factor", "style", "factor_weight"]].drop_duplicates(subset=["factor"])
+    uniq = uniq.sort_values("factor_weight", ascending=False)
     if top_n:
         uniq = uniq.head(top_n)
     return uniq.reset_index(drop=True)
+
+
+def longs_shorts_style_decomposition(weights: pd.DataFrame, n: int = 15,
+                                     top_factors: int = 5) -> pd.DataFrame:
+    """상위 롱/숏 종목의 (ticker, style) 순기여 분해 + 호버용 팩터 상세.
+
+    top_longs_shorts 와 동일한 종목 집합(순비중 상위 롱 n + 숏 n)에 대해,
+    스타일별 mp_ls_weight 합(contrib)과 그 스타일 안에서 |기여| 상위
+    top_factors 개 팩터 문자열(detail, "외 N개 합계" 포함)을 만든다.
+
+    Returns:
+        (ticker, style, contrib, net, detail) DataFrame.
+        contrib 를 ticker 로 합치면 net(종목 순비중)과 일치한다.
+    """
+    net = weights.groupby("ticker")["mp_ls_weight"].sum()
+    net = net[net != 0]
+    sel = pd.concat([net.sort_values(ascending=False).head(n), net.sort_values().head(n)])
+    sel = sel[~sel.index.duplicated()]
+
+    sub = weights[weights["ticker"].isin(sel.index)]
+    per_f = (sub.groupby(["ticker", "style", "factor"], observed=True)["mp_ls_weight"]
+             .sum().reset_index())
+    per_f = per_f[per_f["mp_ls_weight"] != 0]
+
+    # (ticker, style) 그룹은 최대 2n x 스타일수 (~240개) — viz 레이어 소규모 루프 허용
+    rows = []
+    for (t, st), g in per_f.groupby(["ticker", "style"], observed=True):
+        g = g.reindex(g["mp_ls_weight"].abs().sort_values(ascending=False).index)
+        top = g.head(top_factors)
+        parts = [f"{r.factor} {r.mp_ls_weight:+.2%}" for r in top.itertuples()]
+        rest = len(g) - len(top)
+        if rest > 0:
+            parts.append(f"외 {rest}개 {g['mp_ls_weight'].iloc[top_factors:].sum():+.2%}")
+        rows.append({
+            "ticker": t, "style": st, "contrib": float(g["mp_ls_weight"].sum()),
+            "net": float(net[t]), "detail": "<br>".join(parts),
+        })
+    return pd.DataFrame(rows)
 
 
 def top_longs_shorts(weights: pd.DataFrame, n: int = 15) -> pd.DataFrame:

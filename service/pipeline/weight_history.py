@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -128,6 +129,58 @@ def save_factor_weights(
     )
     df.to_csv(out_path, index=False)
     logger.info("weight_history: 저장 %s (%d factors)", out_path.name, len(weights))
+    return out_path
+
+
+def save_factor_clusters(
+    history_dir: Path, end_date: str | pd.Timestamp,
+    return_matrix: pd.DataFrame,
+    weights: dict[str, float],
+    style_map: dict[str, str],
+    corr_threshold: float = 0.5,
+) -> Path | None:
+    """ERC 시각화용: 선정 팩터의 상관 무리(cluster)를 저장한다 (2026-07-29).
+
+    IS 팩터 수익률 상관으로 |corr| > corr_threshold 인 팩터들을 한 무리로 묶어
+    factor_clusters_{date}.csv 저장 (factor/style/weight/cluster_id/무리 내 평균상관).
+    대시보드가 "어떤 팩터가 한 배팅으로 묶였고 ERC 예산을 어떻게 나눴는지" 표시용.
+    """
+    factors = [f for f in weights if f in return_matrix.columns]
+    if len(factors) < 2:
+        return None
+    rets = return_matrix[factors].iloc[1:]  # 첫 행(기준점 0) 제외
+    corr = rets.corr().fillna(0.0)
+
+    from scipy.cluster.hierarchy import fcluster, linkage
+    from scipy.spatial.distance import squareform
+    dist = 1.0 - corr.abs().values
+    np.fill_diagonal(dist, 0.0)
+    link = linkage(squareform(dist, checks=False), method="average")
+    labels = fcluster(link, t=1.0 - corr_threshold, criterion="distance")
+
+    rows = []
+    for f, cid in zip(factors, labels):
+        members = [g for g, c in zip(factors, labels) if c == cid and g != f]
+        avg_corr = float(corr.loc[f, members].mean()) if members else float("nan")
+        rows.append({
+            "factor": f, "styleName": style_map.get(f, "(unmapped)"),
+            "weight": weights[f], "cluster_id": int(cid),
+            "avg_corr_in_cluster": round(avg_corr, 3) if members else "",
+        })
+    df = pd.DataFrame(rows)
+    # 무리 합산 비중 큰 순으로 cluster_id 재번호 (표시 안정성)
+    order = df.groupby("cluster_id")["weight"].sum().sort_values(ascending=False)
+    remap = {old: i + 1 for i, old in enumerate(order.index)}
+    df["cluster_id"] = df["cluster_id"].map(remap)
+    df = df.sort_values(["cluster_id", "weight"], ascending=[True, False]).reset_index(drop=True)
+
+    history_dir = Path(history_dir)
+    history_dir.mkdir(parents=True, exist_ok=True)
+    ddt_str = pd.Timestamp(end_date).strftime("%Y-%m-%d")
+    out_path = history_dir / f"factor_clusters_{ddt_str}.csv"
+    df.to_csv(out_path, index=False)
+    logger.info("weight_history: factor_clusters 저장 %s (%d clusters)",
+                out_path.name, df["cluster_id"].nunique())
     return out_path
 
 

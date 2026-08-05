@@ -465,18 +465,226 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
             if not sec_series.empty:
                 cards.append(f'<div class="card">{_fig_div(ch.sector_net_fig(sec_series))}</div>')
 
-    cards.append(f'<div class="card">{_fig_div(ch.longs_shorts_fig(ls_df))}</div>')
+    ls_decomp = dd.longs_shorts_style_decomposition(weights, n=15)
+    cards.append(f'<div class="card">{_fig_div(ch.longs_shorts_fig(ls_df, ls_decomp))}</div>')
     cards.append(f'<div class="card">{_fig_div(ch.factor_tilt_fig(tilt))}</div>')
 
     meta_path = output_dir / "meta_data.csv"
     if meta_path.exists():
         meta = dd.load_meta(meta_path)
-        cards.append(f'<div class="card">{_fig_div(ch.leaderboard_fig(meta, selected))}</div>')
+        cards.append(f'<div class="card">{_fig_div(ch.leaderboard_fig(meta, selected, tilt))}</div>')
 
     if deltas is not None and not deltas.empty:
         cards.append(f'<div class="card">{_fig_div(ch.style_delta_fig(deltas))}</div>')
 
-    return [f'<h2>2. 현재 포트 / 배팅 (스냅샷 {snap})</h2>', _grid2(cards)]
+    parts = [f'<h2>2. 현재 포트 / 배팅 (스냅샷 {snap})</h2>', _grid2(cards)]
+
+    clusters_html = _factor_clusters_section(output_dir, snap)
+    if clusters_html:
+        parts.append(clusters_html)
+    cap_html = _style_cap_section(output_dir, snap)
+    if cap_html:
+        parts.append(cap_html)
+    regime_html = _correlation_regime_section(output_dir)
+    if regime_html:
+        parts.append(regime_html)
+    return parts
+
+
+def _correlation_regime_section(output_dir: Path) -> str:
+    """상관 국면 참고 섹션 (multiplier 참고용 — 자동 스케일링에 미사용).
+
+    factor_returns_matrix.csv (walk-forward 저장) 기반:
+      - 평균 쌍상관: rolling 12M 팩터 간 평균 상관 (급등 = 매크로 쏠림 장세)
+      - 흡수률: rolling 12M cov 상위 5 고유값의 분산 설명 비중 (Kritzman 계열)
+    CEW 연수익 음수인 해는 음영 처리해 국면 지표와 죽은 해의 겹침을 보여준다.
+    """
+    path = output_dir / "factor_returns_matrix.csv"
+    if not path.exists():
+        return ""
+    rets = pd.read_csv(path, index_col=0, parse_dates=True)
+    rets = rets.iloc[1:]  # 기준점 0 행 제외
+    if len(rets) < 24:
+        return ""
+
+    import numpy as np
+    win = 12
+    dates, mean_corr, absorption = [], [], []
+    for i in range(win, len(rets) + 1):
+        w = rets.iloc[i - win:i]
+        w = w.loc[:, w.notna().all() & (w.std() > 0)]
+        if w.shape[1] < 10:
+            continue
+        c = np.corrcoef(w.to_numpy(), rowvar=False)
+        n = c.shape[0]
+        mean_corr.append((c.sum() - n) / (n * (n - 1)))
+        ev = np.linalg.eigvalsh(np.cov(w.to_numpy(), rowvar=False))
+        absorption.append(float(ev[-5:].sum() / ev.sum()))
+        dates.append(w.index[-1])
+    if len(dates) < 12:
+        return ""
+
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.06,
+                        row_heights=[0.62, 0.38],
+                        specs=[[{"secondary_y": True}], [{}]])
+    fig.add_trace(go.Scatter(x=dates, y=mean_corr, name="평균 쌍상관 (12M)",
+                             line=dict(color="#5B8DEF", width=2)),
+                  row=1, col=1, secondary_y=False)
+    fig.add_trace(go.Scatter(x=dates, y=absorption, name="흡수률 (상위 5 고유값, 12M)",
+                             line=dict(color="#E8944A", width=2)),
+                  row=1, col=1, secondary_y=True)
+
+    # 하단: 월별 전략(CEW) 수익률 바 + 연수익 음수 해 음영 (두 행 공통)
+    wf = output_dir / "walk_forward_results.csv"
+    if wf.exists():
+        cew = pd.read_csv(wf, index_col=0, parse_dates=True)["cew_return"].dropna()
+        fig.add_trace(go.Bar(
+            x=cew.index, y=cew * 100, name="CEW 월수익률(%)",
+            marker_color=["#4FBF87" if v >= 0 else "#E06C75" for v in cew],
+        ), row=2, col=1)
+        yearly = cew.groupby(cew.index.year).apply(lambda x: (1 + x).prod() - 1)
+        for yr, r in yearly.items():
+            if r < 0:
+                fig.add_vrect(x0=f"{yr}-01-01", x1=f"{yr}-12-31",
+                              fillcolor="#E06C75", opacity=0.07, line_width=0,
+                              row="all", col=1)
+
+    fig.update_layout(template="plotly_dark", height=460,
+                      margin=dict(l=40, r=40, t=30, b=30),
+                      legend=dict(orientation="h", y=1.1), showlegend=True,
+                      bargap=0.15,
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    fig.update_yaxes(title_text="평균 상관", row=1, col=1, secondary_y=False)
+    fig.update_yaxes(title_text="흡수률", row=1, col=1, secondary_y=True)
+    fig.update_yaxes(title_text="월수익률 %", row=2, col=1)
+
+    note = ('<div class="note">multiplier 참고 지표 (자동 스케일링 미사용 — 변동성 국면 섹션과 동일 지위). '
+            '상단: 평균 상관·흡수률 급등 = 팩터가 한 방향으로 쓸리는 매크로 장세로 L/S 분산 효과 약화. '
+            '하단: CEW 월수익률 (OOS 시작 2018-06 이후). 붉은 음영 = CEW 연수익 음수인 해. '
+            '데이터: walk-forward 전기간 팩터 수익률 (마지막 IS 규칙 기준, 상관 구조 참고용).</div>')
+    return f'<h2>상관 국면 (multiplier 참고)</h2>{note}<div class="card">{_fig_div(fig)}</div>'
+
+
+def _style_cap_section(output_dir: Path, snap: str) -> str:
+    """스타일 캡 25% 적용 전/후 스타일 배분 비교 (mp 저장 style_cap_effect CSV 기반)."""
+    path = output_dir / "mp_weight_history" / f"style_cap_effect_{snap}.csv"
+    if not path.exists():
+        return ""
+    df = pd.read_csv(path)
+    if df.empty or (df["raw_weight"] - df["fitted_weight"]).abs().max() < 1e-12:
+        return ""  # 캡 미발동(전후 동일)이면 생략
+
+    style_cap = 0.25
+    try:
+        from config import PIPELINE_PARAMS
+        style_cap = float(PIPELINE_PARAMS.get("style_cap", 0.25))
+    except (ImportError, AttributeError):
+        pass
+
+    g = df.groupby("styleName")[["raw_weight", "fitted_weight"]].sum()
+    g = g.sort_values("raw_weight", ascending=False)
+    scale = max(g["raw_weight"].max(), g["fitted_weight"].max(), style_cap) * 1.15
+
+    rows = []
+    for style, r in g.iterrows():
+        pre, post = r["raw_weight"], r["fitted_weight"]
+        delta = post - pre
+        capped = pre > style_cap + 1e-9
+        tag = ('<span class="capchip cut">캡 발동</span>' if capped
+               else ('<span class="capchip up">재분배 수혜</span>' if delta > 1e-9 else ""))
+        rows.append(
+            f'<tr><td>{style} {tag}</td>'
+            f'<td class="num">{pre*100:.1f}%</td>'
+            f'<td class="capbars">'
+            f'<div class="pre" style="width:{pre/scale*100:.1f}%"></div>'
+            f'<div class="post" style="width:{post/scale*100:.1f}%"></div>'
+            f'<div class="capline" style="left:{style_cap/scale*100:.1f}%"></div></td>'
+            f'<td class="num">{post*100:.1f}%</td>'
+            f'<td class="num" style="color:{"#E06C75" if delta < -1e-9 else "#4FBF87" if delta > 1e-9 else "inherit"}">'
+            f'{delta*100:+.1f}%p</td></tr>'
+        )
+
+    css = (
+        '<style>.cap-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}'
+        '.cap-table th{text-align:left;opacity:.6;font-weight:500;padding:4px 8px}'
+        '.cap-table td{padding:5px 8px;border-top:1px solid var(--border,#333)}'
+        '.cap-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}'
+        '.capbars{position:relative;width:42%;height:20px}'
+        '.capbars .pre{position:absolute;top:2px;height:7px;background:#5B8DEF55;border-radius:3px}'
+        '.capbars .post{position:absolute;bottom:2px;height:7px;background:#5B8DEF;border-radius:3px}'
+        '.capbars .capline{position:absolute;top:0;bottom:0;width:2px;background:#E06C75;opacity:.8}'
+        '.capchip{padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;margin-left:4px}'
+        '.capchip.cut{background:#E06C7522;color:#E06C75}'
+        '.capchip.up{background:#4FBF8722;color:#4FBF87}</style>'
+    )
+    note = (f'<div class="note">위 바(연한색)=캡 적용 전 ERC 원비중, 아래 바(진한색)=캡 적용 후, '
+            f'빨간 선=캡 {style_cap*100:.0f}%. 캡 초과 스타일의 초과분이 나머지 스타일로 재분배된다.</div>')
+    header = ('<tr><th>스타일</th><th style="text-align:right">캡 전</th><th></th>'
+              '<th style="text-align:right">캡 후</th><th style="text-align:right">변화</th></tr>')
+    return (f'<h2>4. 스타일 캡 {style_cap*100:.0f}% 적용 전/후</h2>{css}{note}'
+            f'<table class="cap-table"><thead>{header}</thead><tbody>{"".join(rows)}</tbody></table>')
+
+
+def _factor_clusters_section(output_dir: Path, snap: str) -> str:
+    """ERC 상관 무리 섹션: 어떤 팩터들이 한 배팅으로 묶였고 예산을 어떻게 나눴는지.
+
+    mp 가 저장한 mp_weight_history/factor_clusters_{snap}.csv 기반 (없으면 생략).
+    """
+    path = output_dir / "mp_weight_history" / f"factor_clusters_{snap}.csv"
+    if not path.exists():
+        return ""
+    df = pd.read_csv(path)
+    if df.empty:
+        return ""
+
+    style_colors = {}
+    palette = ["#5B8DEF", "#E8944A", "#4FBF87", "#C77DDA", "#E06C75", "#56B6C2",
+               "#D19A66", "#98C379", "#B48EAD", "#7A869A"]
+    for i, s in enumerate(df["styleName"].unique()):
+        style_colors[s] = palette[i % len(palette)]
+
+    groups = []
+    for cid, g in df.groupby("cluster_id"):
+        total_w = g["weight"].sum()
+        n = len(g)
+        title = (f'무리 {cid} · {n}개 팩터 · 합산 비중 {total_w*100:.1f}%'
+                 if n > 1 else f'독립 · 비중 {total_w*100:.1f}%')
+        avg_c = g["avg_corr_in_cluster"].replace("", pd.NA).dropna()
+        if n > 1 and len(avg_c):
+            title += f' · 무리 내 평균상관 {pd.to_numeric(avg_c).mean():.2f}'
+        rows = "".join(
+            f'<tr><td class="mono">{r.factor}</td>'
+            f'<td><span class="chip" style="background:{style_colors.get(r.styleName, "#888")}22;'
+            f'color:{style_colors.get(r.styleName, "#888")}">{r.styleName}</span></td>'
+            f'<td class="num">{r.weight*100:.2f}%</td>'
+            f'<td class="bar"><div style="width:{min(r.weight*100/0.07, 100):.0f}%;'
+            f'background:{style_colors.get(r.styleName, "#888")}"></div></td></tr>'
+            for r in g.itertuples()
+        )
+        groups.append(
+            f'<details {"open" if n > 1 else ""} class="cluster"><summary>{title}</summary>'
+            f'<table class="cl-table"><thead><tr><th>팩터</th><th>스타일</th>'
+            f'<th>ERC 비중</th><th></th></tr></thead><tbody>{rows}</tbody></table></details>'
+        )
+
+    n_multi = int((df.groupby("cluster_id").size() > 1).sum())
+    css = (
+        '<style>.cluster{margin:8px 0;border:1px solid var(--border,#333);border-radius:8px;'
+        'padding:6px 12px}.cluster summary{cursor:pointer;font-weight:600;padding:4px 0}'
+        '.cl-table{width:100%;border-collapse:collapse;font-size:13px}'
+        '.cl-table th{text-align:left;opacity:.6;font-weight:500;padding:2px 8px}'
+        '.cl-table td{padding:3px 8px}.cl-table .num{text-align:right;font-variant-numeric:tabular-nums}'
+        '.cl-table .mono{font-family:"JetBrains Mono",monospace;font-size:12px}'
+        '.cl-table .bar{width:30%}.cl-table .bar div{height:8px;border-radius:4px}'
+        '.chip{padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600}</style>'
+    )
+    note = (f'<div class="note">|상관| &gt; 0.5 인 팩터끼리 한 무리로 묶음 (표시용 계층 클러스터링). '
+            f'ERC 는 무리 전체가 한 배팅처럼 리스크 예산을 나눠 갖도록 개별 비중을 조정한다 — '
+            f'무리 {n_multi}개 + 독립 팩터. 합산 비중이 큰 무리 순.</div>')
+    return (f'<h2>3. ERC 상관 무리 (어떤 팩터가 한 배팅으로 묶였나)</h2>'
+            f'{css}{note}{"".join(groups)}')
 
 
 def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,

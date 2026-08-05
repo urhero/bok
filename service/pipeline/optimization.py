@@ -92,6 +92,7 @@ def _equal_weight_allocation(
         w /= w.sum()
 
     # 스타일 캡 재분배 (수렴까지 반복)
+    w_pre_cap = w.copy()  # 캡 적용 전 비중 보존 (weights_tbl.raw_weight — 캡 효과 시각화용)
     uniq_styles = np.unique(styles_arr)
     if not test_mode:
         # feasibility 가드: n_styles x cap < 100% 면 제약 자체가 불가능
@@ -123,9 +124,9 @@ def _equal_weight_allocation(
 
     weights_tbl = pd.DataFrame({
         "factor": factors,
-        "raw_weight": w,
+        "raw_weight": w_pre_cap,   # 캡 적용 전 (2026-08-05부터 실제 pre-cap; 이전엔 fitted 와 동일했음)
         "styleName": styles_arr,
-        "fitted_weight": w,
+        "fitted_weight": w,        # 캡 적용 후 (배포/백테스트가 쓰는 값 — 기존 동작 불변)
     })
 
     # CAGR/MDD 계산 (기록용)

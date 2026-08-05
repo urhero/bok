@@ -162,6 +162,17 @@ class ModelPortfolioPipeline:
             # prev_weights 는 델타 리포트(factor_styles/style_totals)용으로 로드
             prev_weights, _ = load_prev_factor_weights(HISTORY_DIR, end_date)
             save_factor_weights(HISTORY_DIR, end_date, deployed)               # 다음 회차 prev
+            # ERC 시각화용 상관 무리 저장 (실패해도 파이프라인 산출물 보존)
+            try:
+                from service.pipeline.weight_history import save_factor_clusters
+                save_factor_clusters(HISTORY_DIR, end_date, self.return_matrix,
+                                     deployed, full_style_map)
+            except Exception as e:
+                logger.warning("factor_clusters 저장 실패 (%s) - 대시보드 무리 섹션만 생략됨", e)
+            # 스타일 캡 전/후 비교 저장 (raw=캡 전 원비중(틸트 반영), fitted=캡 후. 대시보드용)
+            _ddt = pd.Timestamp(end_date).strftime("%Y-%m-%d")
+            weights_tbl[["factor", "styleName", "raw_weight", "fitted_weight"]].to_csv(
+                HISTORY_DIR / f"style_cap_effect_{_ddt}.csv", index=False)
             save_factor_styles(HISTORY_DIR, end_date, target_weights, prev_weights,
                                deployed, full_style_map)
             save_style_totals(HISTORY_DIR, end_date, target_weights, prev_weights,

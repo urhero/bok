@@ -359,6 +359,32 @@ class TestEqualRiskWeightMode:
         assert np.isclose(w.sum(), 1.0, atol=1e-6)
 
 
+class TestRawWeightPreCap:
+    """weights_tbl.raw_weight = 캡 적용 전 비중 보존 (2026-08-05, 캡 효과 시각화용)."""
+
+    def test_raw_is_pre_cap_fitted_is_capped(self) -> None:
+        rng = np.random.default_rng(2)
+        # 스타일 S1 에 저변동 팩터 3개 몰아 캡(25%) 초과 유도, S2~S5 로 재분배 확인
+        cols, styles = [], []
+        for i in range(3):
+            cols.append(("A%d" % i, rng.normal(0, 0.002, 60), "S1"))
+        for i, s in enumerate(["S2", "S3", "S4", "S5"]):
+            cols.append(("B%d" % i, rng.normal(0, 0.03, 60), s))
+        df = pd.DataFrame({n: np.concatenate([[0.0], v]) for n, v, _ in cols},
+                          index=pd.date_range("2020-01-31", periods=61, freq="ME"))
+        style_list = [s for _, _, s in cols]
+        _, tbl = optimize_constrained_weights(
+            df, style_list, mode="equal_risk_weight", test_mode=False, style_cap=0.25)
+        by_style_raw = tbl.groupby("styleName")["raw_weight"].sum()
+        by_style_fit = tbl.groupby("styleName")["fitted_weight"].sum()
+        assert by_style_raw["S1"] > 0.25 + 1e-6, "저변동 몰빵으로 캡 전 S1 > 25% 여야 함"
+        # float32 재분배의 기존 허용 오차(~1e-4, production 로그의 0.2501 수준)
+        assert by_style_fit["S1"] <= 0.25 + 1e-3, "캡 후 S1 ~<= 25%"
+        assert by_style_fit["S1"] < by_style_raw["S1"], "캡이 실제로 깎았어야 함"
+        assert abs(tbl["raw_weight"].sum() - 1.0) < 1e-5
+        assert abs(tbl["fitted_weight"].sum() - 1.0) < 1e-5
+
+
 class TestErcSolver:
     """_solve_erc_ccd: 정식 ERC (RC 균등·양수 비중, 음의 상관 포함). mxwo_sharpe1 이식."""
 

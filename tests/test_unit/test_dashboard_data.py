@@ -548,3 +548,61 @@ def test_diagnostics_table_folds_oos_and_hides_funnel_variants(tmp_path):
     assert "NORMAL" in html                        # 패턴 행 유지
     assert "&gt;" in html and "C > B" not in html  # 패턴 해석 escape
     assert "0.8%" not in html                      # funnel 변형 CSV 행은 숨김(곡선값으로 대체)
+
+
+# ── factor_tilt / aggregate_style_weights: 중립 첫 행 누락 회귀 (2026-07-22) ──
+
+def test_factor_tilt_includes_factor_with_neutral_first_row():
+    """첫 행이 중립 종목(factor_weight=0)인 팩터도 tilt 에서 누락되면 안 된다."""
+    w = pd.DataFrame({
+        "factor": ["A", "A", "B"],
+        "style": ["S1", "S1", "S2"],
+        "factor_weight": [0.0, 0.6, 0.4],  # A 의 첫 행이 중립
+    })
+    tilt = dd.factor_tilt(w)
+    assert set(tilt["factor"]) == {"A", "B"}
+    assert tilt.set_index("factor").loc["A", "factor_weight"] == 0.6
+
+
+def test_aggregate_style_weights_includes_neutral_first_row_factor():
+    w = pd.DataFrame({
+        "factor": ["A", "A", "B"],
+        "style": ["S1", "S1", "S2"],
+        "factor_weight": [0.0, 0.6, 0.4],
+    })
+    agg = dd.aggregate_style_weights(w)
+    assert agg["S1"] == 0.6
+    assert agg["S2"] == 0.4
+
+
+# ── longs_shorts_style_decomposition (2026-07-22 신규) ──────────────────────
+
+def _decomp_weights() -> pd.DataFrame:
+    """2종목 x 3팩터, 혼합 부호 기여 픽스처."""
+    return pd.DataFrame({
+        "ticker": ["AAA", "AAA", "AAA", "BBB", "BBB"],
+        "factor": ["F1", "F2", "F3", "F1", "F3"],
+        "style": ["S1", "S1", "S2", "S1", "S2"],
+        "mp_ls_weight": [0.004, -0.001, 0.002, -0.003, -0.002],
+        "factor_weight": [0.1, 0.1, 0.2, 0.1, 0.2],
+    })
+
+
+def test_decomposition_contrib_sums_to_net():
+    """(ticker, style) contrib 를 ticker 로 합치면 순비중과 일치."""
+    d = dd.longs_shorts_style_decomposition(_decomp_weights(), n=5)
+    by_ticker = d.groupby("ticker")["contrib"].sum()
+    assert abs(by_ticker["AAA"] - 0.005) < 1e-12
+    assert abs(by_ticker["BBB"] - (-0.005)) < 1e-12
+    # net 컬럼도 동일
+    nets = d.drop_duplicates("ticker").set_index("ticker")["net"]
+    assert abs(nets["AAA"] - 0.005) < 1e-12
+
+
+def test_decomposition_detail_lists_factors_and_rest():
+    """detail 에 팩터명이 들어가고, top_factors 초과분은 '외 N개'로 합산."""
+    d = dd.longs_shorts_style_decomposition(_decomp_weights(), n=5, top_factors=1)
+    aaa_s1 = d[(d["ticker"] == "AAA") & (d["style"] == "S1")].iloc[0]
+    assert "F1" in aaa_s1["detail"]          # |기여| 최대 팩터
+    assert "외 1개" in aaa_s1["detail"]      # F2 는 잔여 합산
+    assert abs(aaa_s1["contrib"] - 0.003) < 1e-12

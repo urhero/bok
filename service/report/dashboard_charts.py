@@ -165,15 +165,47 @@ def style_allocation_fig(style_weights: pd.Series, style_cap: float = 0.25) -> g
     return fig
 
 
-def longs_shorts_fig(ls_df: pd.DataFrame) -> go.Figure:
+def longs_shorts_fig(ls_df: pd.DataFrame, decomp_df: pd.DataFrame | None = None) -> go.Figure:
     d = ls_df.sort_values("weight")
-    colors = [_LONG_COLOR if s == "long" else _SHORT_COLOR for s in d["side"]]
-    fig = go.Figure(go.Bar(
-        x=d["weight"], y=d["ticker"], orientation="h", marker_color=colors,
-        hovertemplate="%{y}<br>%{x:.3%}<extra></extra>",
+    if decomp_df is None or decomp_df.empty:
+        # 분해 데이터 없으면 기존 단일 막대 (하위호환)
+        colors = [_LONG_COLOR if s == "long" else _SHORT_COLOR for s in d["side"]]
+        fig = go.Figure(go.Bar(
+            x=d["weight"], y=d["ticker"], orientation="h", marker_color=colors,
+            hovertemplate="%{y}<br>%{x:.3%}<extra></extra>",
+        ))
+        fig.update_layout(title="종목별 순비중 상위 롱/숏", height=max(360, 22 * len(d) + 80),
+                          xaxis_tickformat=".2%", yaxis=dict(automargin=True), **_BASE_LAYOUT)
+        return fig
+
+    # 스타일 스택 분해: 양/음 기여가 0 양쪽으로 갈려 '줄다리기'가 보인다 (barmode=relative).
+    ticker_order = d["ticker"].tolist()  # 순비중 오름차순 (기존 정렬 유지)
+    fig = go.Figure()
+    style_order = (decomp_df.groupby("style")["contrib"]
+                   .apply(lambda s: s.abs().sum()).sort_values(ascending=False).index)
+    for st in style_order:
+        s = decomp_df[decomp_df["style"] == st]
+        fig.add_trace(go.Bar(
+            x=s["contrib"], y=s["ticker"], orientation="h", name=st,
+            marker=dict(color=_style_color(st), line=dict(width=0)),
+            customdata=s["detail"],
+            hovertemplate="%{y} · " + st + " %{x:+.2%}<br>%{customdata}<extra></extra>",
+        ))
+    # 순비중(합산) 마커 — 스택 위에서 종목별 최종 순노출 위치 표시
+    nets = decomp_df.drop_duplicates("ticker").set_index("ticker")["net"].reindex(ticker_order)
+    fig.add_trace(go.Scatter(
+        x=nets.values, y=nets.index, mode="markers", name="순비중",
+        marker=dict(symbol="diamond", size=7, color="#eaecef",
+                    line=dict(width=1, color="#181a20")),
+        hovertemplate="%{y} 순비중 %{x:+.2%}<extra></extra>",
     ))
-    fig.update_layout(title="종목별 순비중 상위 롱/숏", height=max(360, 22 * len(d) + 80),
-                      xaxis_tickformat=".2%", yaxis=dict(automargin=True), **_BASE_LAYOUT)
+    fig.update_layout(
+        title="종목별 순비중 상위 롱/숏 (스타일 분해, ◆=순비중)",
+        barmode="relative", height=max(400, 22 * len(ticker_order) + 110),
+        xaxis_tickformat=".2%",
+        yaxis=dict(automargin=True, categoryorder="array", categoryarray=ticker_order),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.18, x=0),
+        **_BASE_LAYOUT)
     return fig
 
 
@@ -192,24 +224,49 @@ def factor_tilt_fig(tilt_df: pd.DataFrame, top_n: int = 25) -> go.Figure:
     return fig
 
 
-def leaderboard_fig(meta: pd.DataFrame, selected: set) -> go.Figure:
+def leaderboard_fig(meta: pd.DataFrame, selected: set,
+                    tilt_df: pd.DataFrame | None = None) -> go.Figure:
+    """팩터 리더보드: 미선정=회색 소점, 선정=스타일 색(현재 포트 섹션과 동일) +
+    비중 비례 크기(면적 비례 -> sqrt 스케일, 지름 4~11px)."""
     m = meta.copy()
     m["selected"] = m["factorAbbreviation"].isin(selected)
+    w_map = ({} if tilt_df is None or tilt_df.empty
+             else dict(zip(tilt_df["factor"], tilt_df["factor_weight"])))
+
     fig = go.Figure()
-    for flag, color, label, size in [
-        (False, _MUTED, "미선정", 6),
-        (True, "#fcd535", "선정", 9),
-    ]:
-        sub = m[m["selected"] == flag]
+
+    sub = m[~m["selected"]]
+    fig.add_trace(go.Scatter(
+        x=sub["tstat"], y=sub["cagr"], mode="markers", name="미선정",
+        marker=dict(color=_MUTED, size=4, line=dict(width=0)),
+        text=sub["factorAbbreviation"], customdata=sub["styleName"],
+        hovertemplate="%{text} (%{customdata})<br>tstat %{x:.2f}<br>CAGR %{y:.2%}<extra></extra>",
+    ))
+
+    sel = m[m["selected"]].copy()
+    sel["weight"] = sel["factorAbbreviation"].map(w_map).fillna(0.0)
+    w_max = float(sel["weight"].max()) if len(sel) else 0.0
+    # 면적이 비중에 비례하도록 지름은 sqrt 스케일 (비중 정보 없으면 일률 6px)
+    smin, smax = 4.0, 11.0
+    if w_max > 0:
+        sel["size"] = smin + (sel["weight"] / w_max) ** 0.5 * (smax - smin)
+    else:
+        sel["size"] = 6.0
+    # 스타일 범례는 스타일 합산 비중 내림차순 (스타일 배분 차트와 같은 순서감)
+    style_order = (sel.groupby("styleName")["weight"].sum()
+                   .sort_values(ascending=False).index)
+    for st in style_order:
+        s = sel[sel["styleName"] == st]
         fig.add_trace(go.Scatter(
-            x=sub["tstat"], y=sub["cagr"], mode="markers", name=label,
-            marker=dict(color=color, size=size, line=dict(width=0)),
-            text=sub["factorAbbreviation"], customdata=sub["styleName"],
-            hovertemplate="%{text} (%{customdata})<br>tstat %{x:.2f}<br>CAGR %{y:.2%}<extra></extra>",
+            x=s["tstat"], y=s["cagr"], mode="markers", name=st,
+            marker=dict(color=_style_color(st), size=s["size"], line=dict(width=0)),
+            text=s["factorAbbreviation"], customdata=s["weight"],
+            hovertemplate="%{text} (" + st + ")<br>비중 %{customdata:.2%}<br>tstat %{x:.2f}<br>CAGR %{y:.2%}<extra></extra>",
         ))
-    fig.update_layout(title="팩터 리더보드 (tstat vs CAGR)", height=420,
+
+    fig.update_layout(title="팩터 리더보드 (tstat vs CAGR, 크기=비중)", height=440,
                       xaxis_title="tstat", yaxis_title="CAGR", yaxis_tickformat=".0%",
-                      legend=dict(orientation="h", yanchor="bottom", y=-0.25, x=0),
+                      legend=dict(orientation="h", yanchor="bottom", y=-0.3, x=0),
                       **_BASE_LAYOUT)
     return fig
 
