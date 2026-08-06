@@ -15,6 +15,7 @@ scipy = "*"
 joblib = "*"
 rich = "*"
 python-dotenv = "*"
+openpyxl = "*"
 
 [dev-packages]
 pytest = "*"
