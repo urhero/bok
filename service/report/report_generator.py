@@ -301,10 +301,24 @@ def _chart_ls_series(ax, series, color, svg_h):
 
 
 # ── 북 렌더러 ────────────────────────────────────────────────────────────────
+def _locked(pdf_path):
+    """출력 파일이 다른 프로그램(뷰어/Excel)에 열려 있으면 True."""
+    try:
+        with open(pdf_path, "ab"):
+            return False
+    except PermissionError:
+        logger.warning("%s 가 잠겨 있어(열려 있음) 이 북은 생략 — 닫고 재실행 필요", pdf_path.name)
+        return True
+    except FileNotFoundError:
+        return False
+
+
 def _render_stacked_book(pdf_path, records, header_title, footer_l, footer_r,
                          cover_fn, chart_fn, cagr_prefix,
                          header_legend_draw=None):
     """별첨02/04 공통: 1열 x 6카드/페이지."""
+    if _locked(pdf_path):
+        return
     L = 56.0
     card_w = PAGE_W - 112.0                     # 682
     svg_h = max(56, min(150, int(983 / PER_PAGE) - 34))
@@ -331,6 +345,8 @@ def _render_stacked_book(pdf_path, records, header_title, footer_l, footer_r,
 
 def _render_grid_book03(pdf_path, records, cover_fn):
     """별첨03: 2열 x 3행 그리드."""
+    if _locked(pdf_path):
+        return
     L = 56.0
     rows = PER_PAGE // 2
     svg_h = max(96, min(148, int(963 / rows) - 56))
