@@ -25,7 +25,7 @@ from matplotlib.patches import Ellipse, Rectangle
 
 from config import PARAM, PIPELINE_PARAMS
 from service.factor.factor_returns import aggregate_factor_returns
-from service.paths import OUTPUT_DIR
+from service.paths import HISTORY_DIR, OUTPUT_DIR
 from service.pipeline.factor_analysis import filter_and_label_factors
 from service.report.style_colors import STYLE_COLORS, _DEFAULT_COLOR
 
@@ -107,7 +107,7 @@ def _fmt_tick(t):
 
 # ── 커버 페이지 ──────────────────────────────────────────────────────────────
 def _cover_page(pp, appendix_no, title_lines, desc, style_counts, today,
-                howto_draw):
+                howto_draw, n_inport=0):
     fig = plt.figure(figsize=(8.27, 11.69))
     L, R, T = 64.0, PAGE_W - 64.0, 72.0
     _text(fig, L, T, f"APPENDIX {appendix_no} · {_BM} UNIVERSE", 12, MUTE)
@@ -137,6 +137,12 @@ def _cover_page(pp, appendix_no, title_lines, desc, style_counts, today,
         _swatch(fig, cx, cy + 2, 9, 9, c, circle=True)
         _text(fig, cx + 17, cy, name, 11.5, INK)
         _text(fig, cx + col_w - 6, cy, str(n), 12, MUTE, ha="right")
+    # 실사용(편입) 팩터 표기 범례
+    if n_inport:
+        cy = y_body + ((len(items) + 1) // 2) * 22 + 12
+        _rank_badge(fig, col2 + 4, cy, 1, True)
+        _text(fig, col2 + 34, cy, f"In current model portfolio ({n_inport} factors)",
+              11.5, SUB)
     _text(fig, L, PAGE_H - 56, _BM, 11, MUTE, va="bottom")
     _text(fig, R, PAGE_H - 56, today, 11, MUTE, ha="right", va="bottom")
     pp.savefig(fig)
@@ -156,11 +162,21 @@ def _page_frame(fig, header_title, page_no, page_total, footer_l, footer_r,
     _text(fig, R, PAGE_H - 30, footer_r, 9, FAINT, ha="right", va="bottom")
 
 
+def _rank_badge(fig, xpx, ypx, rank, in_port):
+    """랭크 번호. 실사용(포트폴리오 편입) 팩터는 잉크색 배지로 반전 표시."""
+    if in_port:
+        _swatch(fig, xpx - 4, ypx - 1, 27, 13, INK)
+        _text(fig, xpx + 9.5, ypx + 0.5, f"{rank:03d}", 9, "#ffffff",
+              weight="bold", ha="center")
+    else:
+        _text(fig, xpx, ypx, f"{rank:03d}", 9, FAINT)
+
+
 def _card_header(fig, xpx, ypx, rank, color, name, style=None, cagr_label=None,
-                 wpx=682.0):
-    _text(fig, xpx, ypx, f"{rank:03d}", 9, FAINT)
-    _swatch(fig, xpx + 22, ypx + 1, 8, 8, color, circle=True)
-    _text(fig, xpx + 36, ypx - 1.5, name, 11.5, INK, weight="bold")
+                 wpx=682.0, in_port=False):
+    _rank_badge(fig, xpx, ypx, rank, in_port)
+    _swatch(fig, xpx + 27, ypx + 1, 8, 8, color, circle=True)
+    _text(fig, xpx + 41, ypx - 1.5, name, 11.5, INK, weight="bold")
     if cagr_label is not None:
         _text(fig, xpx + wpx, ypx, cagr_label, 10, SUB, ha="right")
     if style is not None:
@@ -305,7 +321,7 @@ def _render_stacked_book(pdf_path, records, header_title, footer_l, footer_r,
                 y0 = top + ci * slot_h
                 _card_header(fig, L, y0, rec["rank"], rec["color"], rec["name"],
                              rec["style"], f"{cagr_prefix} {_pct(rec['cagr'])}",
-                             wpx=card_w)
+                             wpx=card_w, in_port=rec["in_port"])
                 ax = _svg_axes(fig, L, y0 + 18, card_w, svg_h, 682.0, svg_h)
                 chart_fn(ax, rec, svg_h)
             pp.savefig(fig)
@@ -345,9 +361,9 @@ def _render_grid_book03(pdf_path, records, cover_fn):
                 x0 = L + c * (col_w + 28.0)
                 y0 = top + r * (card_h + row_gap)
                 name = rec["name"] if len(rec["name"]) <= 62 else rec["name"][:59] + "..."
-                _text(fig, x0, y0, f"{rec['rank']:03d}", 9, FAINT)
-                _swatch(fig, x0 + 20, y0 + 1, 8, 8, rec["color"], circle=True)
-                _text(fig, x0 + 33, y0 - 1, name, 10.5, INK, weight="bold")
+                _rank_badge(fig, x0, y0, rec["rank"], rec["in_port"])
+                _swatch(fig, x0 + 26, y0 + 1, 8, 8, rec["color"], circle=True)
+                _text(fig, x0 + 39, y0 - 1, name, 10.5, INK, weight="bold")
                 _text(fig, x0 + 20, y0 + 15, rec["style"], 9, MUTE)
                 _text(fig, x0 + col_w, y0 + 15, f"L–S CAGR {_pct(rec['cagr'])}",
                       9, SUB, ha="right")
@@ -376,9 +392,25 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
                .sort_values(by="cagr", ascending=False).reset_index()
                .rename(columns={"index": "factorAbbreviation"}))
 
+    # ── 실사용(편입) 팩터 집합: 최신 mp 실행이 저장한 factor_weights_*.csv ──
+    port_weights: dict[str, float] = {}
+    weight_files = sorted(HISTORY_DIR.glob("factor_weights_*.csv"))
+    if weight_files:
+        wdf = pd.read_csv(weight_files[-1])
+        port_weights = {r["factor"]: float(r["weight"]) for _, r in wdf.iterrows()
+                        if float(r["weight"]) > 1e-12}
+        logger.info("Portfolio marks from %s (%d factors)",
+                    weight_files[-1].name, len(port_weights))
+    else:
+        logger.warning("factor_weights_*.csv not found in %s - 편입 표시 생략", HISTORY_DIR)
+
     # ── 별첨01 xlsx ──
     xlsx_path = OUTPUT_DIR / f"별첨01_{_BM}_Factor_Return_Info.xlsx"
     info_df = meta_df[["factorAbbreviation", "factorName", "styleName", "cagr"]].copy()
+    info_df["in_portfolio"] = info_df["factorAbbreviation"].map(
+        lambda a: "Y" if a in port_weights else "")
+    info_df["port_weight"] = info_df["factorAbbreviation"].map(
+        lambda a: port_weights.get(a, ""))
     with pd.ExcelWriter(xlsx_path, engine="openpyxl") as xw:
         info_df.to_excel(xw, sheet_name="Factor_Info", index=False)
         ordered = [c for c in info_df["factorAbbreviation"] if c in factor_rets.columns]
@@ -423,6 +455,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
             "quint_vals": quint_vals,
             "quint_labels": quint_labels,
             "series": cum_rets[abbr],
+            "in_port": abbr in port_weights,
         })
 
     style_counts = {}
@@ -430,6 +463,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
         n = sum(1 for r in records if r["style"] == s)
         if n:
             style_counts[s] = n
+    n_inport = sum(1 for r in records if r["in_port"])
     today = pd.Timestamp.now().strftime("%B %Y")
     n_months = len(cum_rets)
     start_label = cum_rets.index[0].strftime("%B %Y")
@@ -450,7 +484,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
                     ["Average monthly returns of each factor's quintile",
                      f"portfolios, by GICS sector. {len(records)} factors,",
                      "ordered by long–short CAGR."],
-                    style_counts, today, howto)
+                    style_counts, today, howto, n_inport=n_inport)
 
     def hdr_legend02(fig, right_px):
         x = right_px - 60
@@ -481,7 +515,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
                     ["Average monthly return of each factor's quintile",
                      "portfolios and the long / short quintiles selected",
                      f"from them. {len(records)} factors, ordered by L–S CAGR."],
-                    style_counts, today, howto)
+                    style_counts, today, howto, n_inport=n_inport)
 
     _render_grid_book03(OUTPUT_DIR / f"별첨03_{_BM}_Quintile_Return_Book.pdf",
                         records, cover03)
@@ -497,7 +531,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
                     ["Cumulative return of each factor's long–short",
                      f"portfolio, net of {cost_bps} bp transaction cost.",
                      f"{len(records)} factors over {n_months} months, ordered by CAGR."],
-                    style_counts, today, howto)
+                    style_counts, today, howto, n_inport=n_inport)
 
     _render_stacked_book(
         OUTPUT_DIR / f"별첨04_{_BM}_LongShort_Port_Return_Book.pdf", records,
