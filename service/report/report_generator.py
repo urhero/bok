@@ -382,7 +382,10 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
 
     (kept_abbr, _kept_name, _kept_style, kept_idx, dropped_sec, cleaned_raw,
      ) = filter_and_label_factors(factor_abbrs, factor_names, style_names, factor_stats)
-    factor_rets = aggregate_factor_returns(cleaned_raw, kept_abbr)
+    # 별첨은 전체 이력 표시 (backtest_start 기본값 2017-12 절단 우회; 2026-08-06)
+    factor_rets = aggregate_factor_returns(
+        cleaned_raw, kept_abbr, backtest_start="1900-01-01",
+        cost_bps=float(PIPELINE_PARAMS.get("transaction_cost_bps", 20.0)))
     factor_rets.loc[factor_rets.index[0]] = 0.0
     factor_rets = factor_rets.sort_index()
     valid = factor_rets.columns[(factor_rets == 0).sum() <= 10]
@@ -483,7 +486,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
         _cover_page(pp, "02", ["Sector × Quintile", "Return Book"],
                     ["Average monthly returns of each factor's quintile",
                      f"portfolios, by GICS sector. {len(records)} factors,",
-                     "ordered by long–short CAGR."],
+                     "ordered by in-sample L–S CAGR."],
                     style_counts, today, howto, n_inport=n_inport)
 
     def hdr_legend02(fig, right_px):
@@ -514,7 +517,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
         _cover_page(pp, "03", ["Quintile", "Return Book"],
                     ["Average monthly return of each factor's quintile",
                      "portfolios and the long / short quintiles selected",
-                     f"from them. {len(records)} factors, ordered by L–S CAGR."],
+                     f"from them. {len(records)} factors, ordered by in-sample L–S CAGR."],
                     style_counts, today, howto, n_inport=n_inport)
 
     _render_grid_book03(OUTPUT_DIR / f"별첨03_{_BM}_Quintile_Return_Book.pdf",
@@ -530,7 +533,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
         _cover_page(pp, "04", ["Long–Short Portfolio", "Return Book"],
                     ["Cumulative return of each factor's long–short",
                      f"portfolio, net of {cost_bps} bp transaction cost.",
-                     f"{len(records)} factors over {n_months} months, ordered by CAGR."],
+                     f"{len(records)} factors over {n_months} months, ordered by in-sample CAGR."],
                     style_counts, today, howto, n_inport=n_inport)
 
     _render_stacked_book(
