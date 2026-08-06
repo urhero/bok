@@ -103,8 +103,10 @@ class ModelPortfolioPipeline:
         # [2.3] 롤링 IS 윈도우 (2026-07-28 채택, w48): 규칙 학습·선정·가중을
         # 최근 N개월로 제한해 레짐 적응. walk-forward 엔진의 is_window_months 와
         # 동일 의미 (production parity). 미지정/이력 부족 시 no-op (expanding).
+        # 리포트 모드는 슬라이스 제외 — 별첨 북은 전체 이력을 표시한다 (2026-08-06
+        # 사용자 지정: 정렬은 IS 기준(meta_data.csv) 유지, 차트만 전체).
         from service.pipeline.factor_analysis import slice_recent_months
-        window = self.pipeline_params.get("is_window_months")
+        window = None if report else self.pipeline_params.get("is_window_months")
         if window:
             before = merged_data["ddt"].nunique()
             merged_data = slice_recent_months(merged_data, int(window))
