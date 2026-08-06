@@ -147,23 +147,28 @@ class ModelPortfolioPipeline:
         style_list = [style_map[f] for f in factor_list]
         ret_subset = self.return_matrix[factor_list]
 
+        # TS 모멘텀 틸트는 optimize_constrained_weights 내부에서 캡 재분배 이전 적용
+        # (2026-08-06 순서 교정 — 캡 25% 준수 보장, main/MXCN1A 와 동일).
+        # erc_* 파라미터도 엔진과 동일하게 전달 (구버전 mp 는 누락 -> 수축 0.5/0.7
+        # 불일치가 있었음 — 함께 교정).
+        pp_ = self.pipeline_params
         sim_result = optimize_constrained_weights(
             ret_subset, style_list, test_mode=bool(test_file),
-            mode=self.pipeline_params["optimization_mode"],
-            style_cap=self.pipeline_params["style_cap"],
-            style_cap_basis=self.pipeline_params.get("style_cap_basis", "weight"),
-            erw_vol_window=self.pipeline_params.get("erw_vol_window"),
+            mode=pp_["optimization_mode"],
+            style_cap=pp_["style_cap"],
+            style_cap_basis=pp_.get("style_cap_basis", "weight"),
+            erw_vol_window=pp_.get("erw_vol_window"),
+            erc_shrinkage=float(pp_.get("erc_shrinkage", 0.5)),
+            erc_shrink_target=pp_.get("erc_shrink_target", "diag"),
+            erc_cov_type=pp_.get("erc_cov_type", "full"),
+            erc_vol_model=pp_.get("erc_vol_model", "sample"),
+            erc_ewma_lambda=float(pp_.get("erc_ewma_lambda", 0.97)),
+            ts_mom_window=pp_.get("ts_mom_window"),
+            ts_mom_scale=float(pp_.get("ts_mom_scale", 0.5)),
         )
 
-        # [6.4] 팩터 TS 모멘텀 틸트 (2026-07-30 채택, 엔진과 동일 지점)
         weights_tbl = sim_result[1]
         target_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
-        from service.pipeline.optimization import apply_ts_momentum_tilt
-        target_weights = apply_ts_momentum_tilt(
-            target_weights, ret_subset,
-            self.pipeline_params.get("ts_mom_window"),
-            float(self.pipeline_params.get("ts_mom_scale", 0.5)),
-        )
 
         # [6.5] 배포 가중치: deploy_step<1 이면 직전 배포 비중에서 step 만큼만 이동
         # (부분 조정 — walk-forward 엔진과 동일 의미. 10bp 전환 후 기본 1.0 = 전량 조정).

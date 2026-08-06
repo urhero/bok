@@ -289,14 +289,27 @@ def _drawdown_episodes_section(curves) -> str:
     return "".join(blocks)
 
 
-def _is_start_month() -> str | None:
-    """학습(IS) 시작월 = config backtest_start (YYYY-MM). 확장창이라 IS 는 항상 여기서 시작.
-    config 미가용 시 None (헤더에서 생략)."""
+def _benchmark() -> str:
+    """유니버스명 (config PARAM). 미가용 시 'BOK'."""
+    try:
+        from config import PARAM
+        return PARAM["benchmark"]
+    except Exception:
+        return "BOK"
+
+
+def _is_label() -> tuple[str, str]:
+    """학습(IS) 표기 (제목용, 본문용). 롤링 창이면 '롤링 N개월', 아니면
+    'YYYY-MM부터 확장창' (config backtest_start). config 미가용 시 빈 문자열."""
     try:
         from config import PIPELINE_PARAMS
-        return pd.Timestamp(PIPELINE_PARAMS["backtest_start"]).strftime("%Y-%m")
+        w = PIPELINE_PARAMS.get("is_window_months")
+        if w:
+            return f"학습 롤링 {int(w)}개월", f"학습(IS) 롤링 {int(w)}개월 창"
+        start = pd.Timestamp(PIPELINE_PARAMS["backtest_start"]).strftime("%Y-%m")
+        return f"학습 {start}~ 확장창", f"학습(IS) {start}부터 확장창"
     except Exception:
-        return None
+        return "", ""
 
 
 def _backtest_stats_card(curves) -> str:
@@ -373,10 +386,9 @@ def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
 
     start = curves.index.min().strftime("%Y-%m")
     end = curves.index.max().strftime("%Y-%m")
-    is_start = _is_start_month()
-    title_range = f"학습 {is_start} · OOS {start}~{end}" if is_start else f"OOS {start}~{end}"
-    is_note = (f"학습(IS) {is_start}부터 확장창 · 성과는 OOS {start}~ 집계 · "
-               if is_start else "")
+    is_title, is_body = _is_label()
+    title_range = f"{is_title} · OOS {start}~{end}" if is_title else f"OOS {start}~{end}"
+    is_note = (f"{is_body} · 성과는 OOS {start}~ 집계 · " if is_body else "")
     parts = [
         f'<h2>1. 백테스트 ({title_range}, OOS {kpis["n_months"]}개월)</h2>',
         f'<div class="kpi-grid">{_kpi_cards(kpis)}</div>',
@@ -707,7 +719,7 @@ def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
 
     header = (
         '<header>'
-        '<span class="title">BOK 포트폴리오 대시보드</span>'
+        f'<span class="title">{_benchmark()} 유니버스 전략 포트폴리오 대시보드</span>'
         f'<span class="date">{snap}</span>'
         '<span class="gen">read-only viz - 기존 output CSV 기반</span>'
         '</header>'
@@ -716,7 +728,7 @@ def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
     html = (
         '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f'<title>BOK 포트폴리오 대시보드 {snap}</title>'
+        f'<title>{_benchmark()} 유니버스 전략 포트폴리오 대시보드 {snap}</title>'
         '<link rel="preconnect" href="https://fonts.googleapis.com">'
         '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
         '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700'

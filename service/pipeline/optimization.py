@@ -75,6 +75,8 @@ def _equal_weight_allocation(
     test_mode: bool,
     base_weights: np.ndarray | None = None,
     cap_scale: np.ndarray | None = None,
+    ts_mom_window: int | None = None,
+    ts_mom_scale: float = 0.5,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """초기 가중(기본 1/N, base_weights 지정 시 그 값) + 스타일 캡 재분배.
 
@@ -89,6 +91,15 @@ def _equal_weight_allocation(
         w = np.ones(n_factors, dtype=np.float32) / n_factors
     else:
         w = base_weights.astype(np.float32).copy()
+        w /= w.sum()
+
+    # TS 모멘텀 틸트는 스타일 캡 재분배 '이전'(base 단계)에 적용 — 캡 준수 보장.
+    # (구 구현은 캡 이후 틸트+재정규화라 스타일 합이 캡을 초과했음. 2026-08-06
+    # 순서 교정 — main/MXCN1A 와 동일. 예: 2026-06-30 EQ 26.07% -> 25% 준수)
+    if ts_mom_window:
+        tilted = apply_ts_momentum_tilt(
+            dict(zip(factors, w)), rtn_df, ts_mom_window, ts_mom_scale)
+        w = np.array([tilted[f] for f in factors], dtype=np.float32)
         w /= w.sum()
 
     # 스타일 캡 재분배 (수렴까지 반복)
@@ -223,6 +234,8 @@ def optimize_constrained_weights(
     erc_cov_type: str = "full",
     erc_vol_model: str = "sample",
     erc_ewma_lambda: float = 0.97,
+    ts_mom_window: int | None = None,
+    ts_mom_scale: float = 0.5,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """스타일 캡 하 포트폴리오 가중치를 결정한다.
 
@@ -254,7 +267,8 @@ def optimize_constrained_weights(
         return _get_hardcoded_weights()
 
     if mode == "equal_weight":
-        return _equal_weight_allocation(rtn_df, style_list, style_cap, tol, test_mode)
+        return _equal_weight_allocation(rtn_df, style_list, style_cap, tol, test_mode,
+            ts_mom_window=ts_mom_window, ts_mom_scale=ts_mom_scale)
 
     if mode == "equal_risk_weight":
         # 팩터 IS 월간 수익률 변동성 반비례 가중. 첫 행(기준점 0) 제외는
@@ -274,6 +288,7 @@ def optimize_constrained_weights(
         return _equal_weight_allocation(
             rtn_df, style_list, style_cap, tol, test_mode,
             base_weights=base, cap_scale=cap_scale,
+            ts_mom_window=ts_mom_window, ts_mom_scale=ts_mom_scale,
         )
 
     if mode == "min_var":
@@ -297,6 +312,7 @@ def optimize_constrained_weights(
         w = w / w.sum() if w.sum() > 0 else np.full(n, 1.0 / n)
         return _equal_weight_allocation(
             rtn_df, style_list, style_cap, tol, test_mode, base_weights=w,
+            ts_mom_window=ts_mom_window, ts_mom_scale=ts_mom_scale,
         )
 
     if mode == "erc":
@@ -339,6 +355,7 @@ def optimize_constrained_weights(
         w = _solve_erc_ccd(cov)
         return _equal_weight_allocation(
             rtn_df, style_list, style_cap, tol, test_mode, base_weights=w,
+            ts_mom_window=ts_mom_window, ts_mom_scale=ts_mom_scale,
         )
 
     raise ValueError(

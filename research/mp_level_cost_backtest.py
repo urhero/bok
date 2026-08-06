@@ -289,12 +289,9 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
                                          cached_rule_bundle.get("kept_styles", [])))
                     selected, meta_top, _rank_topn = engine._rank_and_select(ret_is, style_map, pp, cached_selected)
                     try:
+                        # TS 틸트는 _run_weight_optimization 내부(캡 이전)에서 적용
+                        # (2026-08-06 순서 교정 — 엔진과 동일 경로 공유)
                         raw_w, _ = _run_weight_optimization(ret_is[selected], meta_top, pp)
-                        # 팩터 TS 모멘텀 틸트 (엔진과 동일 지점, 2026-07-30)
-                        from service.pipeline.optimization import apply_ts_momentum_tilt
-                        raw_w = apply_ts_momentum_tilt(
-                            raw_w, ret_is[selected],
-                            pp.get("ts_mom_window"), float(pp.get("ts_mom_scale", 0.5)))
                     except (ValueError, RuntimeError):
                         raw_w = None
                     if raw_w is not None:

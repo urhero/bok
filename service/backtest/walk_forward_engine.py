@@ -305,6 +305,8 @@ def _run_weight_optimization(
         erc_cov_type=pp.get("erc_cov_type", "full"),
         erc_vol_model=pp.get("erc_vol_model", "sample"),
         erc_ewma_lambda=float(pp.get("erc_ewma_lambda", 0.97)),
+        ts_mom_window=pp.get("ts_mom_window"),
+        ts_mom_scale=float(pp.get("ts_mom_scale", 0.5)),
     )
 
     weights_dict = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
@@ -542,13 +544,11 @@ class WalkForwardEngine:
                         ret_df_selected = ret_df_is[selected]
 
                         try:
+                            # TS 틸트는 _run_weight_optimization 내부(캡 이전)에서 적용
+                            # (2026-08-06 순서 교정 — 캡 준수 보장)
                             raw_new_weights, cached_meta = _run_weight_optimization(
                                 ret_df_selected, meta_top, pp,
                             )
-                            from service.pipeline.optimization import apply_ts_momentum_tilt
-                            raw_new_weights = apply_ts_momentum_tilt(
-                                raw_new_weights, ret_df_selected,
-                                pp.get("ts_mom_window"), float(pp.get("ts_mom_scale", 0.5)))
                         except (ValueError, RuntimeError) as e:
                             logger.warning("OOS %s: weight optimization failed: %s — 이전 가중치 유지", oos_date, e)
                             if cached_weights is None:
