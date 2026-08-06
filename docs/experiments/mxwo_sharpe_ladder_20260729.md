@@ -125,3 +125,17 @@ ts_mom_scale 스윕 (TSM4 스택): 0.3/0.5/0.6 = 0.721/0.720/0.714 — 완전 �
 - 신규 파라미터는 전부 기본값이 기존 동작 보존: n_quantiles=5, erc_shrinkage=0.5,
   erc_shrink_target="diag", erw_vol_window=None, inject_country_momentum=False,
   optimization_mode에 "erc" 추가.
+
+## 5차 보완: 롤링 IS 창 하한 확인 — w24 (2026-08-06)
+
+기존 스윕(w36~72)에서 안 다룬 더 짧은 창. 캡 교정 후 스택(캡 전 틸트) 기준 factor-level:
+
+| 구간 | w24 | **w48 (채택)** |
+|---|---|---|
+| full Sharpe / CAGR / MDD | 0.511 / +1.28% / -5.28% | **0.726 / +1.89% / -5.21%** |
+| 2023~ Sharpe / Calmar | 0.991 / 1.72 | **1.220 / 2.12** |
+| 최근 24M Sharpe | 1.700 | **1.827** |
+
+w24 는 전 구간 열위 — 24개월 표본으로는 tstat 랭킹과 ERC cov 추정 모두 노이즈가
+지배 (w36 열위와 같은 방향, 하한 쪽 절벽 확인). **w48 유지.**
+결과: output/MXWO/experiments/w24/walk_forward_results_w24.csv
