@@ -196,6 +196,9 @@ cython_debug/
 data/*
 !data/MXCN1A_factor_*.parquet
 !data/MXCN1A_mreturn.parquet
+!data/MXWO_factor_*.parquet
+!data/MXWO_mreturn.parquet
+!data/MXWO_country_map.parquet
 !data/factor_info.csv
 !data/hardcoded_weights.csv
 data_backup/
@@ -215,7 +218,7 @@ output/experiments/
 .gstack/
 
 # viz 대시보드 HTML 은 생성물 (python main.py viz 로 재생성) - 추적 안 함
-output/dashboard_*.html
+# output/dashboard_*.html  # 2026-08-06 트래킹 전환 (사용자 지정)
 
 # benchmark 비교는 mp --benchmark 진단 산출물 (재생성 가능) - 추적 안 함
 output/benchmark_comparison.csv
