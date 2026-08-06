@@ -13,12 +13,16 @@ import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Rectangle
 
+from config import PARAM
 from service.factor.factor_returns import aggregate_factor_returns
 from service.paths import OUTPUT_DIR
 from service.pipeline.factor_analysis import filter_and_label_factors
 from service.report.style_colors import STYLE_COLORS, _DEFAULT_COLOR
 
 logger = logging.getLogger(__name__)
+
+# 별첨 파일명은 유니버스(benchmark)를 포함한다 (2026-08-06 사용자 지정 네이밍)
+_BM = PARAM["benchmark"]
 
 RENAME_SECTORS = {
     "Communication Services": "CS",
@@ -170,11 +174,21 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
     abbr_cagr = meta_df["factorAbbreviation"].values.tolist()
     name_cagr = meta_df["factorName"].values.tolist()
 
+    # --- 0) 별첨01: 팩터별 L-S 수익률 + 소속 카테고리 xlsx ---
+    xlsx_path = OUTPUT_DIR / f"별첨01_{_BM}_Factor_Return_Info.xlsx"
+    info_df = meta_df[["factorAbbreviation", "factorName", "styleName", "cagr"]].copy()
+    with pd.ExcelWriter(xlsx_path, engine="openpyxl") as xw:
+        info_df.to_excel(xw, sheet_name="Factor_Info", index=False)
+        # 월간 L-S 수익률 행렬 (첫 행 기준점 0 포함, CAGR 정렬 순서로 컬럼 배치)
+        ordered = [c for c in info_df["factorAbbreviation"] if c in factor_rets.columns]
+        factor_rets[ordered].to_excel(xw, sheet_name="LS_Monthly_Returns")
+    logger.info(f"Factor return info xlsx saved to {xlsx_path}")
+
     plt.ioff()
     rows, cols = 3, 4
 
-    # --- 1) Sector Returns PDF ---
-    pdf_path = OUTPUT_DIR / "sector_returns_pages_sorted_by_cagr.pdf"
+    # --- 1) 별첨02: 섹터별 5분위 수익률 북 ---
+    pdf_path = OUTPUT_DIR / f"별첨02_{_BM}_Sector_Quintile_Return_Book.pdf"
     with PdfPages(pdf_path) as pp:
         _add_legend_page(pp, rows, cols)
         _generate_plots(
@@ -191,8 +205,8 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
         )
     logger.info(f"Sector returns PDF saved to {pdf_path}")
 
-    # --- 2) Quantile Spread PDF ---
-    pdf_path = OUTPUT_DIR / "quantile_returns_pages_sorted_by_cagr.pdf"
+    # --- 2) 별첨03: 5분위 수익률 북 (롱=파랑/숏=빨강) ---
+    pdf_path = OUTPUT_DIR / f"별첨03_{_BM}_Quintile_Return_Book.pdf"
     with PdfPages(pdf_path) as pp:
         _add_legend_page(pp, rows, cols)
         _generate_plots(
@@ -208,8 +222,8 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
         )
     logger.info(f"Quantile spread PDF saved to {pdf_path}")
 
-    # --- 3) Factor Returns PDF ---
-    pdf_path = OUTPUT_DIR / "factor_returns_pages_sorted_by_cagr.pdf"
+    # --- 3) 별첨04: L-S 포트폴리오 시계열 수익률 북 ---
+    pdf_path = OUTPUT_DIR / f"별첨04_{_BM}_LongShort_Port_Return_Book.pdf"
     with PdfPages(pdf_path) as pp:
         _add_legend_page(pp, rows, cols)
         cum_rets = (1 + factor_rets).cumprod() - 1
