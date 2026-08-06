@@ -414,11 +414,15 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
         lambda a: "Y" if a in port_weights else "")
     info_df["port_weight"] = info_df["factorAbbreviation"].map(
         lambda a: port_weights.get(a, ""))
-    with pd.ExcelWriter(xlsx_path, engine="openpyxl") as xw:
-        info_df.to_excel(xw, sheet_name="Factor_Info", index=False)
-        ordered = [c for c in info_df["factorAbbreviation"] if c in factor_rets.columns]
-        factor_rets[ordered].to_excel(xw, sheet_name="LS_Monthly_Returns")
-    logger.info("Factor return info xlsx saved to %s", xlsx_path)
+    try:
+        with pd.ExcelWriter(xlsx_path, engine="openpyxl") as xw:
+            info_df.to_excel(xw, sheet_name="Factor_Info", index=False)
+            ordered = [c for c in info_df["factorAbbreviation"] if c in factor_rets.columns]
+            factor_rets[ordered].to_excel(xw, sheet_name="LS_Monthly_Returns")
+        logger.info("Factor return info xlsx saved to %s", xlsx_path)
+    except PermissionError:
+        # Excel 등에서 파일을 열어둔 경우 — xlsx 만 건너뛰고 PDF 북은 계속 생성
+        logger.warning("%s 가 잠겨 있어(열려 있음) xlsx 저장 생략 — 닫고 재실행 필요", xlsx_path.name)
 
     # ── 팩터 레코드 구성 (CAGR 내림차순, 3개 북 공용) ──
     cum_rets = ((1 + factor_rets).cumprod() - 1) * 100.0
