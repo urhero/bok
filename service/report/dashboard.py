@@ -56,8 +56,9 @@ h2 { font-size: 18px; font-weight: 600; color: var(--on-dark); margin: 32px 0 14
 .card.full { margin-bottom: 14px; }
 .note { font-size: 13px; color: var(--muted); padding: 8px 0; }
 .note-toggle { margin: 2px 0 6px; }
-.note-toggle summary { cursor: pointer; font-size: 12px; color: var(--muted);
-  list-style: none; opacity: .8; }
+.note-toggle summary { cursor: pointer; font-size: 14px; color: var(--muted);
+  list-style: none; opacity: .8; padding: 2px 6px; display: inline-block; }
+.note-toggle summary:hover { opacity: 1; color: var(--muted-strong); }
 .note-toggle summary::before { content: '▸ '; }
 .note-toggle[open] summary::before { content: '▾ '; }
 .note-toggle .note { padding: 4px 0 0 14px; }
@@ -410,10 +411,11 @@ def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
     parts = [
         f'<h2>1. 백테스트 ({title_range}, OOS {kpis["n_months"]}개월)</h2>',
         f'<div class="kpi-grid">{_kpi_cards(kpis)}</div>',
-        # 집계 기준 문구는 기본 숨김 — 클릭 시에만 표시 (2026-08-07 사용자 지정)
-        f'<details class="note-toggle"><summary>집계 기준</summary>'
-        f'<div class="note">{is_note}상세 통계/벤치마크 = 선정 EW(1/N)</div></details>',
-        _backtest_stats_card(curves),
+        # 집계 기준 + 상세 통계 카드 전체를 기본 숨김 — summary 는 화살표만
+        # (2026-08-07 사용자 지정)
+        f'<details class="note-toggle"><summary></summary>'
+        f'<div class="note">{is_note}상세 통계/벤치마크 = 선정 EW(1/N)</div>'
+        f'{_backtest_stats_card(curves)}</details>',
         f'<div class="card full">{_fig_div(ch.equity_curve_fig(curves), include_js=True)}</div>',
     ]
     # 월별 수익률 히트맵 (QC 스타일 연x월 그리드)
