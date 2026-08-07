@@ -55,6 +55,12 @@ h2 { font-size: 18px; font-weight: 600; color: var(--on-dark); margin: 32px 0 14
   padding: 8px 10px; overflow: hidden; }
 .card.full { margin-bottom: 14px; }
 .note { font-size: 13px; color: var(--muted); padding: 8px 0; }
+.note-toggle { margin: 2px 0 6px; }
+.note-toggle summary { cursor: pointer; font-size: 12px; color: var(--muted);
+  list-style: none; opacity: .8; }
+.note-toggle summary::before { content: '▸ '; }
+.note-toggle[open] summary::before { content: '▾ '; }
+.note-toggle .note { padding: 4px 0 0 14px; }
 .plotly-graph-div { width: 100% !important; }
 .diag-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .diag-table th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
@@ -108,7 +114,6 @@ def _kpi_cards(kpis: dict) -> str:
         ("MDD", fnum(kpis["mdd"], ".2%")),
         ("Sharpe", fnum(kpis["sharpe"], ".2f")),
         ("Calmar", fnum(kpis["calmar"], ".2f")),
-        ("승률 (vs Top50)", fnum(kpis["win_rate"], ".1%")),
         ("Funnel", kpis.get("funnel_pattern") or "-"),
     ]
     return "".join(
@@ -392,7 +397,9 @@ def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
     parts = [
         f'<h2>1. 백테스트 ({title_range}, OOS {kpis["n_months"]}개월)</h2>',
         f'<div class="kpi-grid">{_kpi_cards(kpis)}</div>',
-        f'<div class="note">{is_note}상세 통계/벤치마크 = 선정 EW(1/N)</div>',
+        # 집계 기준 문구는 기본 숨김 — 클릭 시에만 표시 (2026-08-07 사용자 지정)
+        f'<details class="note-toggle"><summary>집계 기준</summary>'
+        f'<div class="note">{is_note}상세 통계/벤치마크 = 선정 EW(1/N)</div></details>',
         _backtest_stats_card(curves),
         f'<div class="card full">{_fig_div(ch.equity_curve_fig(curves), include_js=True)}</div>',
     ]
@@ -619,15 +626,19 @@ def _style_cap_section(output_dir: Path, snap: str) -> str:
         )
 
     css = (
-        '<style>.cap-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}'
-        '.cap-table th{text-align:left;opacity:.6;font-weight:500;padding:4px 8px}'
-        '.cap-table td{padding:5px 8px;border-top:1px solid var(--border,#333)}'
+        # 1번 섹션 진단 표(.diag-table)와 동일한 헤더/구분선 스타일
+        '<style>.cap-table{width:100%;border-collapse:collapse;font-size:13px}'
+        '.cap-table th{text-align:left;color:var(--muted);font-weight:600;font-size:12px;'
+        'border-bottom:1px solid var(--hair);padding:8px 10px}'
+        '.cap-table td{padding:7px 10px;border-bottom:1px solid var(--hair)}'
+        '.cap-table tbody tr:last-child td{border-bottom:none}'
+        '.cap-table tbody tr:hover td{background:var(--elev)}'
         '.cap-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}'
         '.capbars{position:relative;width:42%;height:20px}'
         '.capbars .pre{position:absolute;top:2px;height:7px;background:#5B8DEF55;border-radius:3px}'
         '.capbars .post{position:absolute;bottom:2px;height:7px;background:#5B8DEF;border-radius:3px}'
         '.capbars .capline{position:absolute;top:0;bottom:0;width:2px;background:#E06C75;opacity:.8}'
-        '.capchip{padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;margin-left:4px}'
+        '.capchip{padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;margin-left:4px;white-space:nowrap}'
         '.capchip.cut{background:#E06C7522;color:#E06C75}'
         '.capchip.up{background:#4FBF8722;color:#4FBF87}</style>'
     )
@@ -636,7 +647,8 @@ def _style_cap_section(output_dir: Path, snap: str) -> str:
     header = ('<tr><th>스타일</th><th style="text-align:right">캡 전</th><th></th>'
               '<th style="text-align:right">캡 후</th><th style="text-align:right">변화</th></tr>')
     return (f'<h2>4. 스타일 캡 {style_cap*100:.0f}% 적용 전/후</h2>{css}{note}'
-            f'<table class="cap-table"><thead>{header}</thead><tbody>{"".join(rows)}</tbody></table>')
+            f'<div class="card full"><table class="cap-table"><thead>{header}</thead>'
+            f'<tbody>{"".join(rows)}</tbody></table></div>')
 
 
 def _factor_clusters_section(output_dir: Path, snap: str) -> str:
@@ -677,19 +689,33 @@ def _factor_clusters_section(output_dir: Path, snap: str) -> str:
         )
         groups.append(
             f'<details {"open" if n > 1 else ""} class="cluster"><summary>{title}</summary>'
-            f'<table class="cl-table"><thead><tr><th>팩터</th><th>스타일</th>'
-            f'<th>ERC 비중</th><th></th></tr></thead><tbody>{rows}</tbody></table></details>'
+            f'<table class="cl-table">'
+            f'<colgroup><col class="c-factor"><col class="c-style">'
+            f'<col class="c-w"><col class="c-bar"></colgroup>'
+            f'<thead><tr><th>팩터</th><th>스타일</th>'
+            f'<th style="text-align:right">ERC 비중</th><th></th></tr></thead>'
+            f'<tbody>{rows}</tbody></table></details>'
         )
 
     n_multi = int((df.groupby("cluster_id").size() > 1).sum())
     css = (
-        '<style>.cluster{margin:8px 0;border:1px solid var(--border,#333);border-radius:8px;'
-        'padding:6px 12px}.cluster summary{cursor:pointer;font-weight:600;padding:4px 0}'
-        '.cl-table{width:100%;border-collapse:collapse;font-size:13px}'
-        '.cl-table th{text-align:left;opacity:.6;font-weight:500;padding:2px 8px}'
-        '.cl-table td{padding:3px 8px}.cl-table .num{text-align:right;font-variant-numeric:tabular-nums}'
-        '.cl-table .mono{font-family:"JetBrains Mono",monospace;font-size:12px}'
-        '.cl-table .bar{width:30%}.cl-table .bar div{height:8px;border-radius:4px}'
+        # 무리 박스 = 다른 카드와 동일 스타일 (--card/--hair/12px 라운드),
+        # cl-table 은 table-layout:fixed + 고정 컬럼폭 -> 무리 간 컬럼 위치 정렬
+        '<style>.cluster{margin:8px 0 14px;background:var(--card);'
+        'border:1px solid var(--hair);border-radius:12px;padding:8px 14px}'
+        '.cluster summary{cursor:pointer;font-weight:600;padding:6px 0;color:var(--on-dark)}'
+        '.cl-table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}'
+        '.cl-table col.c-factor{width:38%}.cl-table col.c-style{width:20%}'
+        '.cl-table col.c-w{width:12%}.cl-table col.c-bar{width:30%}'
+        '.cl-table th{text-align:left;color:var(--muted);font-weight:600;font-size:12px;'
+        'border-bottom:1px solid var(--hair);padding:6px 8px}'
+        '.cl-table td{padding:5px 8px;border-bottom:1px solid var(--hair)}'
+        '.cl-table tbody tr:last-child td{border-bottom:none}'
+        '.cl-table tbody tr:hover td{background:var(--elev)}'
+        '.cl-table .num{text-align:right;font-variant-numeric:tabular-nums}'
+        '.cl-table .mono{font-family:var(--mono);font-size:12px;overflow:hidden;'
+        'text-overflow:ellipsis;white-space:nowrap}'
+        '.cl-table .bar div{height:8px;border-radius:4px}'
         '.chip{padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600}</style>'
     )
     note = (f'<div class="note">|상관| &gt; 0.5 인 팩터끼리 한 무리로 묶음 (표시용 계층 클러스터링). '
