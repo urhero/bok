@@ -117,10 +117,12 @@ def equity_curve_fig(curves: pd.DataFrame) -> go.Figure:
         fig.add_trace(go.Scatter(
             x=curves.index, y=curves[col], name=label,
             line=dict(color=color, width=width),
+            # Top50 EW / 선정 EW 는 기본 숨김 - 범례 클릭 시에만 표시 (2026-08-07)
+            visible=("legendonly" if key in ("ew_top50", "ew") else True),
             hovertemplate="%{x|%Y-%m}<br>" + label + " %{y:.4f}<extra></extra>",
         ))
     fig.update_layout(
-        title="누적 수익 곡선 (4개 전략 비교)", height=400,
+        title="누적 수익 곡선", height=400,
         legend=dict(orientation="h", yanchor="bottom", y=-0.22, x=0),
         yaxis_title="누적 (시작=1)", **_BASE_LAYOUT,
     )

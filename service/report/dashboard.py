@@ -61,6 +61,13 @@ h2 { font-size: 18px; font-weight: 600; color: var(--on-dark); margin: 32px 0 14
 .note-toggle summary::before { content: '▸ '; }
 .note-toggle[open] summary::before { content: '▾ '; }
 .note-toggle .note { padding: 4px 0 0 14px; }
+.sec-toggle { margin: 32px 0 14px; }
+.sec-toggle summary { cursor: pointer; list-style: none; font-size: 18px;
+  font-weight: 600; color: var(--on-dark); border-bottom: 1px solid var(--hair);
+  padding-bottom: 8px; }
+.sec-toggle summary::before { content: '▸ '; color: var(--muted); }
+.sec-toggle[open] summary::before { content: '▾ '; color: var(--muted); }
+.sec-toggle[open] summary { margin-bottom: 14px; }
 .plotly-graph-div { width: 100% !important; }
 .diag-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .diag-table th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
@@ -92,6 +99,12 @@ def _fig_div(fig, include_js: bool = False) -> str:
         include_plotlyjs=("inline" if include_js else False),
         config=_PLOTLY_CFG,
     )
+
+
+def _collapsible(title: str, inner: str) -> str:
+    """참고성 섹션용 접힘 래퍼 — 제목(h2 스타일 summary)만 보이고 클릭 시 내용 표시."""
+    return (f'<details class="sec-toggle"><summary>{title}</summary>'
+            f'{inner}</details>')
 
 
 def _grid2(cards: list[str]) -> str:
@@ -429,15 +442,14 @@ def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
         parts.append(f'<div class="card full">{_fig_div(ch.style_weight_evolution_fig(style_hist))}</div>')
         parts.append(f'<div class="card full">{_fig_div(ch.turnover_fig(turnover, churn_split))}</div>')
 
+    # 참고성 섹션은 기본 접힘 - 클릭 시에만 표시 (2026-08-07 사용자 지정)
     vol_regime_section = _vol_regime_section(curves)
     if vol_regime_section:
-        parts.append('<h2>변동성 국면 (multiplier 참고)</h2>')
-        parts.append(vol_regime_section)
+        parts.append(_collapsible('변동성 국면 (multiplier 참고)', vol_regime_section))
 
     diag_tbl = _diagnostics_table(output_dir, curves)
     if diag_tbl:
-        parts.append('<h2>과적합 진단 상세</h2>')
-        parts.append(diag_tbl)
+        parts.append(_collapsible('과적합 진단 상세', diag_tbl))
 
     dd_section = _drawdown_episodes_section(curves)
     if dd_section:
@@ -583,7 +595,8 @@ def _correlation_regime_section(output_dir: Path) -> str:
             '상단: 평균 상관·흡수률 급등 = 팩터가 한 방향으로 쓸리는 매크로 장세로 L/S 분산 효과 약화. '
             '하단: CEW 월수익률 (OOS 시작 2018-06 이후). 붉은 음영 = CEW 연수익 음수인 해. '
             '데이터: walk-forward 전기간 팩터 수익률 (마지막 IS 규칙 기준, 상관 구조 참고용).</div>')
-    return f'<h2>상관 국면 (multiplier 참고)</h2>{note}<div class="card">{_fig_div(fig)}</div>'
+    return _collapsible('상관 국면 (multiplier 참고)',
+                        f'{note}<div class="card">{_fig_div(fig)}</div>')
 
 
 def _style_cap_section(output_dir: Path, snap: str) -> str:
