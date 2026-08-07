@@ -32,6 +32,9 @@ for n in (35, 40, 45, 55, 60, 65):
     CASES.append((f"top{n}", {}, {"top_factors": n}))
 for s in (0.4, 0.5, 0.6, 0.8, 0.85, 0.9):
     CASES.append((f"shrink{s:g}", {"erc_shrinkage": s}, {}))
+# 수축 전 구간 확장 (2026-08-07 사용자 요청: 0~1 전부)
+for s in (0.0, 0.1, 0.2, 0.3, 0.95, 1.0):
+    CASES.append((f"shrink{s:g}", {"erc_shrinkage": s}, {}))
 for sp in (0.02, 0.03, 0.04, 0.065, 0.08, 0.10):
     CASES.append((f"spread{sp:g}", {"spread_threshold_pct": sp}, {}))
 for h in (0.10, 0.15, 0.20, 0.35, 0.45, 0.60):

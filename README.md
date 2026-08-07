@@ -111,7 +111,7 @@
 `optimization.optimize_constrained_weights()`
 
 ### 가중치 결정 모드 (4가지, config 키 `optimization_mode`)
-- `optimization_mode="erc"` **(기본값, 2026-07-29 채택)**: 상관 인지 Equal Risk Contribution (cov 48M, 대각수축 0.7, Spinu CCD) — 팩터별 리스크 기여 w×(Σw) 균등화. [채택 근거](docs/experiments/mxwo_sharpe_ladder_20260729.md)
+- `optimization_mode="erc"` **(기본값, 2026-07-29 채택)**: 상관 인지 Equal Risk Contribution (cov 48M, 대각수축 0.2, Spinu CCD) — 팩터별 리스크 기여 w×(Σw) 균등화. [채택 근거](docs/experiments/mxwo_sharpe_ladder_20260729.md)
 - `optimization_mode="equal_risk_weight"`: IS 변동성 반비례(1/σ) 가중 (상관 무시 특수 케이스, 구 기본)
 - `optimization_mode="equal_weight"`: 1/N 동일가중 + 스타일 캡 재분배 (구 기본)
 - `optimization_mode="hardcoded"`: `data/hardcoded_weights.csv`에서 고정 비중 로드
@@ -119,7 +119,7 @@
 > 백테스트(`python main.py backtest`)는 config의 `optimization_mode`를 그대로 사용한다 (`hardcoded`만 `equal_weight`로 자동 변환).
 
 ### 절차 (erc 모드, MXWO 채택 스택)
-1. **ERC base 가중**: 선정 Top-50의 롤링 48개월 수익률 cov(대각 수축 `erc_shrinkage=0.7`)에서 팩터별 리스크 기여 w×(Σw)를 균등화하는 비중 산출 (Spinu CCD — 음상관 팩터도 양수 비중 보장). 선정에서 dedup을 안 하는 대신, 상관 높은 팩터 무리의 비중을 여기서 낮춘다
+1. **ERC base 가중**: 선정 Top-50의 롤링 48개월 수익률 cov(대각 수축 `erc_shrinkage=0.2`)에서 팩터별 리스크 기여 w×(Σw)를 균등화하는 비중 산출 (Spinu CCD — 음상관 팩터도 양수 비중 보장). 선정에서 dedup을 안 하는 대신, 상관 높은 팩터 무리의 비중을 여기서 낮춘다
 2. **TS 모멘텀 틸트** (`ts_mom_window=3`, base 단계): trailing 3개월 자기 누적수익이 음수인 팩터의 비중을 `ts_mom_scale=0.5`배 감쇠 (창 4→3 재채택 2026-08-07 — 재검증 스윕 + 실측 게이트). 캡 재분배 **이전** 적용 — 2026-08-06 순서 교정 (구 캡-후-틸트는 스타일 합이 캡 초과, 2026-06-30 EQ 26.1%)
 3. 스타일별 명목비중 합계가 **스타일 캡(25%)**을 넘지 않도록 비례 재분배 (`style_cap_basis="weight"` 기본) — 교정 후 캡 25% 준수
 4. `deploy_step=1.0`: 전량 조정 배포 (10bp 비용에선 부분 조정(0.5)이 열위로 역전, 2026-07-30 실측)
@@ -160,7 +160,7 @@
 기존 파이프라인([1]~[7])을 감싸 **롤링 48개월 윈도우**로 실행 (`is_window_months=48`; MXCN1A는 expanding). IS 데이터만으로 팩터 선정·가중치를 결정하고 OOS 1개월 수익률을 기록한다.
 
 - **계층적 리밸런싱**: Tier 1(6개월, 규칙 학습) / Tier 2(**1개월**, 팩터 선정+가중 — 월간 채택 2026-07-29) / Tier 3(매월, OOS 조회)
-- ⚠ **고회전 구성의 비용 회계**: factor-level 백테스트의 `backtest_cost_multiplier=0.6`은 저회전 전용 근사 — 월간 리밸에서는 실비용이 과소계상된다 (실측 netting 최대 1.8배). **정본 성과 판단은 `research/mp_level_cost_backtest.py` 실측 기준** (현 채택 스택 실측: net Sharpe 0.761 / MDD -4.27% / Calmar 0.435, 2026-08-07 TSM3)
+- ⚠ **고회전 구성의 비용 회계**: factor-level 백테스트의 `backtest_cost_multiplier=0.6`은 저회전 전용 근사 — 월간 리밸에서는 실비용이 과소계상된다 (실측 netting 최대 1.8배). **정본 성과 판단은 `research/mp_level_cost_backtest.py` 실측 기준** (현 채택 스택 실측: net Sharpe 0.782 / MDD -3.71% / Calmar 0.477, 2026-08-07 TSM3+수축0.2)
 - **과적합 진단 5지표**: Funnel Value-Add, OOS Percentile Tracking, Strict Jaccard, IS-OOS Rank Correlation, Deflation Ratio
 - **벤치마크 비교**: `--benchmark` 옵션으로 MP vs. 동일가중(1/N) 비교
 
@@ -168,7 +168,7 @@
 
 ### 용어: MP vs Constrained EW
 - **MP (Model Portfolio)** — 프로덕션 산출물 (Bloomberg Optimizer 입력 CSV). 역할 이름.
-- **Constrained EW** — MP를 만드는 **구성 방식**의 관례적 라벨 (선정 팩터 가중 + `style_cap=25%` 재분배). MXWO에선 Top-50 고정 + **ERC(수축 0.7) + TS모멘텀 틸트** 가중 (EW 1/N → ERW 1/σ → ERC로 진화)이나, 백테스트 리포트/CSV 컬럼의 "CEW" 라벨은 호환을 위해 유지.
+- **Constrained EW** — MP를 만드는 **구성 방식**의 관례적 라벨 (선정 팩터 가중 + `style_cap=25%` 재분배). MXWO에선 Top-50 고정 + **ERC(수축 0.2) + TS모멘텀 틸트** 가중 (EW 1/N → ERW 1/σ → ERC로 진화)이나, 백테스트 리포트/CSV 컬럼의 "CEW" 라벨은 호환을 위해 유지.
 - 백테스트 진단 리포트는 구성 방식을 명시하기 위해 "Constrained EW" 라벨을 사용. 프로덕션 CLI/파일명/CSV 컬럼은 "MP" 유지.
 - 과거 MP는 Monte Carlo 최적화로 구성됐으나 커밋 `8dfb64e`에서 제거됨.
 
@@ -331,7 +331,7 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 |---------|-----|------|-----------|
 | `style_cap` | 0.25 | 스타일 캡 (프로덕션 규제 요건) | `optimization.py` |
 | `optimization_mode` "erc" | - | 상관 인지 Equal Risk Contribution 가중 (2026-07-29 채택, **07-30 Spinu CCD 솔버로 정정** — RC 균등·음의 상관 헤지 팩터 우대 보장; cov 48M). "min_var" 모드도 지원 | `optimization.py` |
-| `erc_shrinkage` | 0.7 | ERC cov 대각 수축 비율 | `optimization.py` |
+| `erc_shrinkage` | 0.2 | ERC cov 대각 수축 비율 (0~1 전구간 스윕 단조 하강, 0.2 채택 2026-08-07 — 0은 특이 cov 회피) | `optimization.py` |
 | `deploy_step` | 1.0 | 부분 조정 배포 (1.0=전량). 20bp 시절 0.5, 10bp 전환 후 역전으로 1.0 (실측 0.672 vs 0.604) | `optimization.py`, `model_portfolio.py`, `walk_forward_engine.py` |
 | `ts_mom_window` / `ts_mom_scale` | 3 / 0.5 | 팩터 TS 모멘텀 틸트 — trailing 3M 자기수익 음수 팩터 비중 x0.5. 4→3 재채택 (2026-08-07 재검증: 2회 독립 재현 + 실측 net 0.721→0.761 전 지표 우위 — 스파이크 할인 철회) | `optimization.py` |
 | `sector_short_cap` | 0.15 | 섹터별 숏 gross 상한 (전체 숏 gross 대비) — 2020-11형 숏 crowding 완화. 종목 레벨이라 factor-level 백테스트 미반영 (실측으로 평가) | `weight_construction.py` |
@@ -382,10 +382,10 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | 팩터 선정 | 순수 Top-50 고정 (dedup off) | winner_median 클러스터 (~28 가변) |
 | 히스테리시스 | 0.25 | 0.5 |
 | 가중 리밸 | 월간 | 분기 |
-| 가중 | ERC 수축 0.7 + TSM 3M | ERC 수축 0.5 + TSM 3M |
+| 가중 | ERC 수축 0.2 + TSM 3M | ERC 수축 0.5 + TSM 3M |
 | TSM 틸트 위치 | 캡 이후 (캡 소폭 초과 가능) | 캡 이전 (캡 준수 보장) |
 | min_coverage | 10% | 없음 |
 | 섹터 숏캡 | 15% | 없음 (no-op 확인) |
 | spread 임계 | 0.05 | 0.05 (동일) |
 | 출력 경로 | `output/MXWO/` | `output/` |
-| 정본 실측 (mp_level) | net Sharpe 0.761 / MDD -4.27% | net Sharpe 0.703 / MDD -4.87% |
+| 정본 실측 (mp_level) | net Sharpe 0.782 / MDD -3.71% | net Sharpe 0.703 / MDD -4.87% |

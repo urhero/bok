@@ -52,7 +52,7 @@ PIPELINE_PARAMS = {
     "backtest_start": "2009-12-31",    # 백테스트 시작일
     "backtest_end": "2026-03-31",      # 백테스트 종료일
     "optimization_mode": "erc",        # "erc"(상관 인지 ERC, 2026-07-29 채택) / "equal_risk_weight"(1/sigma) / "equal_weight"(1/N) / "hardcoded". 근거: docs/experiments/mxwo_sharpe_ladder_20260729.md
-    "erc_shrinkage": 0.7,              # ERC cov 대각 수축 비율 (0.5~0.7 유효, 0.7 채택)
+    "erc_shrinkage": 0.2,              # ERC cov 대각 수축 비율. 0.2 채택 (2026-08-07 전구간 0~1 스윕: 단조 하강 곡선, 실측 net 0.761->0.782/MDD -3.71%. 0은 특이 cov(n<p)+집중 12%라 회피, 0.1~0.3 안전지대 내부점)
     "deploy_step": 1.0,                # 부분 조정 배포 (1.0=전량 조정). 20bp 시절 0.5 채택했으나 10bp 전환 후 역전 — 실측 step1.0 0.672 > 0.5 0.604 (2026-07-30)
     "ts_mom_window": 3,                # 팩터 TS 모멘텀 틸트: trailing N개월 자기수익 음수 팩터 비중 감쇠. 3 채택 (2026-08-07 재검증: 독립 재실행 2회 연속 3M 피크 재현 + 실측 net 0.721->0.761 전 지표 우위 — 구 "스파이크 할인" 논리 철회)
     "ts_mom_scale": 0.5,               # 감쇠 배율 (0.5/0.7 모두 유효, 0.5 채택)

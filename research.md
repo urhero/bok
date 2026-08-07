@@ -9,7 +9,7 @@
 
 ### 1.1 목적
 
-BOK은 **팩터 기반 Model Portfolio(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중(MP)을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다. **이 브랜치(`mxwo_sharpe1`)는 MXWO(선진국) 유니버스 기준**이며 (MXCN1A(중국)는 `main`), 유니버스는 `.env`가 결정한다. MXWO의 MP는 **롤링 IS 48개월 + rank_score 순수 Top-50 선정(클러스터 dedup off) + ERC(수축 0.7)·TS모멘텀 틸트 가중 + `style_cap`(25%)/섹터 숏캡(15%)** 으로 구성된다 (관례상 라벨은 Constrained EW) — 공분산/리스크 모델 기반의 종목단 최적화는 커밋 `8dfb64e`에서 제거됨.
+BOK은 **팩터 기반 Model Portfolio(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중(MP)을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다. **이 브랜치(`mxwo_sharpe1`)는 MXWO(선진국) 유니버스 기준**이며 (MXCN1A(중국)는 `main`), 유니버스는 `.env`가 결정한다. MXWO의 MP는 **롤링 IS 48개월 + rank_score 순수 Top-50 선정(클러스터 dedup off) + ERC(수축 0.2)·TS모멘텀 틸트 가중 + `style_cap`(25%)/섹터 숏캡(15%)** 으로 구성된다 (관례상 라벨은 Constrained EW) — 공분산/리스크 모델 기반의 종목단 최적화는 커밋 `8dfb64e`에서 제거됨.
 
 ### 핵심 Funnel 구조
 
@@ -202,7 +202,7 @@ MXWO 에서 off** — 롤링 IS 의 출렁이는 rank_score 분포에서 winner_
 모멘텀)이 노이즈가 아니라 알파원이었음 (docs/superpowers/specs/2026-07-28-mxwo-region-neutral-ranking-design.md).
 
 **2026-07-29 Sharpe 사다리 채택분** (상세: docs/experiments/mxwo_sharpe_ladder_20260729.md):
-`optimization_mode="erc"`(상관 인지 ERC, cov 48M 대각수축 0.7) + `spread_threshold_pct=0.05`
+`optimization_mode="erc"`(상관 인지 ERC, cov 48M 대각수축 0.2 — 2026-08-07 전구간 스윕 후 0.7에서 변경) + `spread_threshold_pct=0.05`
 + `selection_hysteresis=0.25` + `weight_rebal_months=1` + `deploy_step=1.0`(10bp 전환 후 부분조정 역전으로 전량 채택 2026-07-30;
 `blend_deploy_weights()` — mp/엔진/비용스크립트 공용). **비용의 두 역할 분리가 핵심**:
 `backtest_cost_multiplier=0.6`은 선정 입력용(비용 인지 선정이 A/B 최적; 22bp로 올리면
@@ -307,7 +307,7 @@ per-factor:
 
 | 모드 | 용도 | 동작 |
 |------|------|------|
-| `erc` (기본, 2026-07-29 채택) | 프로덕션/백테스트 | 상관 인지 ERC (cov 48M, 대각수축 0.7, Spinu CCD) + 스타일 캡 재분배 |
+| `erc` (기본, 2026-07-29 채택) | 프로덕션/백테스트 | 상관 인지 ERC (cov 48M, 대각수축 0.2, Spinu CCD) + 스타일 캡 재분배 |
 | `equal_risk_weight` (구 기본) | 연구 | IS 변동성 반비례(1/sigma) — 상관 무시 특수 케이스 (수축 1.0 극한과 동일 방향) |
 | `equal_weight` | 연구 (구구 기본) | 1/N 동일가중 + 스타일 캡 재분배 |
 | `hardcoded` | 구 프로덕션 | `data/hardcoded_weights.csv`에서 고정 가중치 로드 |
@@ -315,7 +315,7 @@ per-factor:
 **erc 모드 알고리즘 (MXWO 채택 스택)**:
 
 ```
-1. base 가중: 롤링 48M 수익률 cov -> 대각 수축 0.7 -> _solve_erc_ccd()
+1. base 가중: 롤링 48M 수익률 cov -> 대각 수축 0.2 -> _solve_erc_ccd()
    (리스크 기여 w_i*(Σw)_i 균등해. 음상관 팩터도 양수 비중 보장 —
     구 곱셈 반복 솔버의 붕괴 결함은 2026-07-30 Spinu CCD 교체로 해결)
 2. 스타일 캡 적용 (명목비중 기준):
@@ -678,7 +678,7 @@ Tier 3 (매월): OOS 수익률 조회
 | 단계 | 과적합 위험 | 이유 |
 |------|------------|------|
 | [4] 팩터 선정 (Top-50) | **높음** | 롤링 IS 48M t-stat 순위 Top-50 (dedup off). 평균 회귀 위험 |
-| [6] 가중치 계산 (ERC) | **중간** | cov 추정 기반 (수축 0.7로 노이즈 완화, 학습 파라미터 없음) |
+| [6] 가중치 계산 (ERC) | **중간** | cov 추정 기반 (수축 0.2로 노이즈 완화, 학습 파라미터 없음) |
 | [3] 섹터 제거 + L/N/S 라벨 | **낮음 (수정 완료)** | IS 전용 rule_bundle 적용으로 OOS 오염 제거됨 |
 | [2] 5분위 분석 | 낮음 | 횡단면 정렬이라 시계열 과적합 아님 |
 
@@ -778,7 +778,7 @@ python main.py mp <start> <end> --benchmark
 백테스트 결과 및 과적합 진단 상세는 [`docs/backtest_results_2009_2026.md`](docs/backtest_results_2009_2026.md) 참조.
 
 **현재 기본 설정 (config.py):**
-- `optimization_mode = "erc"` (cov 48M + 대각수축 0.7 + Spinu CCD, 2026-07-29 채택 — mxwo_sharpe_ladder_20260729.md)
+- `optimization_mode = "erc"` (cov 48M + 대각수축 0.2 + Spinu CCD; 수축 0.2는 2026-08-07 전구간 스윕 채택 — mxwo_sharpe_ladder_20260729.md 7차)
 - `ts_mom_window = 4`, `ts_mom_scale = 0.5` (TS 모멘텀 틸트, 2026-07-31 창 스윕 채택)
 - `factor_ranking_method = "tstat"` (기본; Sprint 1-A `"shrunk_tstat"` 실험 옵션 추가됨)
 - `use_cluster_dedup = False` (**MXWO: dedup off + 순수 Top-50** — 2026-07-28 A/B; MXCN1A(main)는 True/winner_median)
