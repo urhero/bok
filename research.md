@@ -319,8 +319,8 @@ per-factor:
    (리스크 기여 w_i*(Σw)_i 균등해. 음상관 팩터도 양수 비중 보장 —
     구 곱셈 반복 솔버의 붕괴 결함은 2026-07-30 Spinu CCD 교체로 해결)
 2. 스타일 캡 적용 (명목비중 기준):
-2. TS 모멘텀 틸트 (ts_mom_window=3, scale=0.5): trailing 3M 자기수익 음수
-   팩터의 base 비중 x0.5. 캡 재분배 '이전' 적용 — 캡 준수 보장 (2026-08-06
+2. TS 모멘텀 틸트 (ts_mom_window=3, scale=0.2): trailing 3M 자기수익 음수
+   팩터의 base 비중 x0.2. 캡 재분배 '이전' 적용 — 캡 준수 보장 (2026-08-06
    순서 교정, main/MXCN1A 와 동일. 구 캡-후-틸트는 EQ 26.1% 초과 사례)
 3. 스타일 캡 적용:
    a. 스타일별 비중 합계 계산
@@ -779,7 +779,7 @@ python main.py mp <start> <end> --benchmark
 
 **현재 기본 설정 (config.py):**
 - `optimization_mode = "erc"` (cov 48M + 대각수축 0.2 + Spinu CCD; 수축 0.2는 2026-08-07 전구간 스윕 채택 — mxwo_sharpe_ladder_20260729.md 7차)
-- `ts_mom_window = 4`, `ts_mom_scale = 0.5` (TS 모멘텀 틸트, 2026-07-31 창 스윕 채택)
+- `ts_mom_window = 3`, `ts_mom_scale = 0.2` (TS 모멘텀 틸트; 창 4→3 2026-08-07, 감쇠 0.5→0.2 2026-08-10 전구간 스윕 — mxwo_sharpe_ladder_20260729.md 8차)
 - `factor_ranking_method = "tstat"` (기본; Sprint 1-A `"shrunk_tstat"` 실험 옵션 추가됨)
 - `use_cluster_dedup = False` (**MXWO: dedup off + 순수 Top-50** — 2026-07-28 A/B; MXCN1A(main)는 True/winner_median)
 - `is_window_months = 48` (롤링 IS; MXCN1A는 expanding)

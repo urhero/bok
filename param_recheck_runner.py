@@ -48,6 +48,29 @@ for name, pp_d, eng_d in [("wrebal2", {}, {"weight_rebal_months": 2}),
                           ("frebal9", {}, {"factor_rebal_months": 9}),
                           ("frebal12", {}, {"factor_rebal_months": 12})]:
     CASES.append((name, pp_d, eng_d))
+# scale 전 구간 재검증 (2026-08-10 사용자 요청: 0~1, 최종 기준 TSM3+수축0.2 위에서.
+# 동명 케이스는 이 결과가 구 TSM4 기준 결과를 대체. 1.0=틸트 무효, 0=음수모멘텀 제외)
+for sc in (0.0, 0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9, 1.0):
+    CASES.append((f"scale{sc:g}", {"ts_mom_scale": sc}, {}))
+# 전 축 최종 기준 재스윕 (2026-08-10 사용자 요청: TSM3+수축0.2 반영 후 전부 재측정.
+# 수축/scale 축은 이미 최종 기준 측정치가 있어 제외. 인덱스 64~100)
+for w in (24, 30, 36, 42, 54, 60, 66):
+    CASES.append((f"is{w}", {}, {"is_window_months": w}))
+for t in (1, 2, 4, 5, 6, 7):
+    CASES.append((f"tsm{t}", {"ts_mom_window": t}, {}))
+for n in (35, 40, 45, 55, 60, 65):
+    CASES.append((f"top{n}", {}, {"top_factors": n}))
+for sp in (0.02, 0.03, 0.04, 0.065, 0.08, 0.10):
+    CASES.append((f"spread{sp:g}", {"spread_threshold_pct": sp}, {}))
+for h in (0.10, 0.15, 0.20, 0.35, 0.45, 0.60):
+    CASES.append((f"hyst{h:g}", {}, {"selection_hysteresis": h}))
+for name, pp_d, eng_d in [("wrebal2", {}, {"weight_rebal_months": 2}),
+                          ("wrebal3", {}, {"weight_rebal_months": 3}),
+                          ("wrebal6", {}, {"weight_rebal_months": 6}),
+                          ("frebal3", {}, {"factor_rebal_months": 3}),
+                          ("frebal9", {}, {"factor_rebal_months": 9}),
+                          ("frebal12", {}, {"factor_rebal_months": 12})]:
+    CASES.append((name, pp_d, eng_d))
 
 
 def metrics(r):
