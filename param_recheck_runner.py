@@ -73,6 +73,8 @@ for name, pp_d, eng_d in [("wrebal2", {}, {"weight_rebal_months": 2}),
     CASES.append((name, pp_d, eng_d))
 # 수축 축 최종 기준(scale0.2) 재스윕용: 0.7은 구 기준 baseline이라 케이스 부재 -> 추가 (인덱스 101)
 CASES.append(("shrink0.7", {"erc_shrinkage": 0.7}, {}))
+# 비용 민감도 (2026-08-11 사용자 요청): 20bp 기준 (인덱스 102)
+CASES.append(("cost20", {"transaction_cost_bps": 20.0}, {}))
 
 
 def metrics(r):
