@@ -780,6 +780,7 @@ python main.py mp <start> <end> --benchmark
 **현재 기본 설정 (config.py):**
 - `optimization_mode = "erc"` (cov 48M + 대각수축 0.2 + Spinu CCD; 수축 0.2는 2026-08-07 전구간 스윕 채택 — mxwo_sharpe_ladder_20260729.md 7차)
 - `ts_mom_window = 3`, `ts_mom_scale = 0.2` (TS 모멘텀 틸트; 창 4→3 2026-08-07, 감쇠 0.5→0.2 2026-08-10 전구간 스윕 — mxwo_sharpe_ladder_20260729.md 8차)
+- `COUNTRY_TAX_BPS` (국가별 증권거래세, 2026-08-12 도입): 수수료 10bp 와 **별도**로 법정 거래세를 매수/매도 방향별 부과. GBR 50/0, IRL 100/0, FRA 40/0, ESP 20/0, ITA 20/0, HKG 10/10, ZAF 25/0, USA 0/0.206 (bp), 그 외 면세. 적용 지점은 `mp_level_cost_backtest` **실측 전용** — factor-level 선정 입력에는 미반영 (선정 규칙 불변, 성과 회계만 정직화). 구현: `service/pipeline/transaction_tax.py`. 핵심은 턴오버의 **부호 있는 델타 보존** (Δw>0=매수/숏커버, Δw<0=매도/숏진입) — 영국 SDRT 같은 매수 편측 세목이 공매도 진입엔 안 붙고 커버에만 붙는 구조가 자동 처리됨. `cost_stock`(수수료)/`tax_stock`(세금) 분리 계상으로 netting ratio 진단 유지. 영향: net 0.840→0.739 (연 세금 23.5bp, 편도 6.19bp)
 - `factor_ranking_method = "tstat"` (기본; Sprint 1-A `"shrunk_tstat"` 실험 옵션 추가됨)
 - `use_cluster_dedup = False` (**MXWO: dedup off + 순수 Top-50** — 2026-07-28 A/B; MXCN1A(main)는 True/winner_median)
 - `is_window_months = 48` (롤링 IS; MXCN1A는 expanding)

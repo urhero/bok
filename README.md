@@ -160,7 +160,7 @@
 기존 파이프라인([1]~[7])을 감싸 **롤링 48개월 윈도우**로 실행 (`is_window_months=48`; MXCN1A는 expanding). IS 데이터만으로 팩터 선정·가중치를 결정하고 OOS 1개월 수익률을 기록한다.
 
 - **계층적 리밸런싱**: Tier 1(6개월, 규칙 학습) / Tier 2(**1개월**, 팩터 선정+가중 — 월간 채택 2026-07-29) / Tier 3(매월, OOS 조회)
-- ⚠ **고회전 구성의 비용 회계**: factor-level 백테스트의 `backtest_cost_multiplier=0.6`은 저회전 전용 근사 — 월간 리밸에서는 실비용이 과소계상된다 (실측 netting 최대 1.8배). **정본 성과 판단은 `research/mp_level_cost_backtest.py` 실측 기준** (현 채택 스택 실측: net Sharpe 0.840 / MDD -3.50% / Calmar 0.557, 2026-08-10 TSM3+수축0.2+scale0.2)
+- ⚠ **고회전 구성의 비용 회계**: factor-level 백테스트의 `backtest_cost_multiplier=0.6`은 저회전 전용 근사 — 월간 리밸에서는 실비용이 과소계상된다 (실측 netting 최대 1.8배). **정본 성과 판단은 `research/mp_level_cost_backtest.py` 실측 기준** (현 채택 스택 실측: net Sharpe 0.739 / MDD -3.71% / Calmar 0.461, 2026-08-12 수수료 10bp + 국가별 증권거래세 반영)
 - **과적합 진단 5지표**: Funnel Value-Add, OOS Percentile Tracking, Strict Jaccard, IS-OOS Rank Correlation, Deflation Ratio
 - **벤치마크 비교**: `--benchmark` 옵션으로 MP vs. 동일가중(1/N) 비교
 
@@ -388,4 +388,4 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | 섹터 숏캡 | 15% | 없음 (no-op 확인) |
 | spread 임계 | 0.05 | 0.05 (동일) |
 | 출력 경로 | `output/MXWO/` | `output/` |
-| 정본 실측 (mp_level) | net Sharpe 0.840 / MDD -3.50% | net Sharpe 0.703 / MDD -4.87% |
+| 정본 실측 (mp_level) | net Sharpe 0.739 / MDD -3.71% (거래세 반영) | net Sharpe 0.703 / MDD -4.87% (거래세 미반영) |
