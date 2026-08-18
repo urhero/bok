@@ -42,6 +42,7 @@ from service.backtest.walk_forward_engine import (
     _run_weight_optimization,
     deploy_weights,
 )
+from service.pipeline.transaction_tax import tax_cost
 from service.pipeline.factor_analysis import ANALYZE_COLS, calculate_factor_stats_batch
 from service.pipeline.model_portfolio import DATA_DIR, ModelPortfolioPipeline
 from service.pipeline.weight_construction import (
@@ -325,9 +326,13 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
             nav = 1.0 + float((prev_w * pr).sum())
             drift = prev_w * (1.0 + pr) / (nav if nav > 0 else 1.0)
             union = w_t.index.union(drift.index)
-            turno = float((w_t.reindex(union).fillna(0.0) - drift.reindex(union).fillna(0.0)).abs().sum())
+            # 부호 있는 델타 보존: 매수(+)/매도(-) 방향별 거래세 부과에 필요
+            delta = w_t.reindex(union).fillna(0.0) - drift.reindex(union).fillna(0.0)
+            turno = float(delta.abs().sum())
+            tax_stock = tax_cost(delta)
         else:
             turno = 0.0
+            tax_stock = 0.0
         cost_stock = mp_cost_bps / 1e4 * turno
 
         prev_w, prev_r = w_t, r_t
@@ -335,7 +340,8 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
         records.append({
             "date": t, "cew_return": cew,
             "gross_stock": gross, "cost_stock": cost_stock,
-            "net_stock": gross - cost_stock,
+            "tax_stock": tax_stock,
+            "net_stock": gross - cost_stock - tax_stock,
             "cost_factor_level": cost_fl,
             # netting ratio 용: factor-level 비용을 base bps 스케일로 환산
             # (trading_cost 는 bps 에 선형이므로 단순 비례 환산 가능)
