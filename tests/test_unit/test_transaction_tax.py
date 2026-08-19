@@ -42,3 +42,24 @@ def test_mixed_book_sums_by_direction(patched_rates):
 
 def test_empty_delta(patched_rates):
     assert tt.tax_cost(pd.Series(dtype=float)) == 0.0
+
+
+def test_excluded_countries_threshold():
+    """평균 (매수+매도)/2 기준 임계 이상 국가만 배제. 경계값은 포함(>=)."""
+    from service.pipeline.transaction_tax import excluded_countries
+
+    assert excluded_countries(None) == set()
+    assert excluded_countries(0) == set()
+    # 영(25)·아일랜드(50)·프랑스(20)·남아공(12.5) 는 10 초과, 스페인/이탈리아/홍콩은 정확히 10
+    assert excluded_countries(10.0) == {"GBR", "IRL", "FRA", "ZAF", "ESP", "ITA", "HKG"}
+    assert excluded_countries(10.01) == {"GBR", "IRL", "FRA", "ZAF"}
+    assert excluded_countries(30.0) == {"IRL"}
+
+
+def test_drop_high_tax_countries_noop_when_off():
+    """임계 None 이면 원본을 그대로 반환 (파일 IO 없이 조기 반환)."""
+    from service.pipeline.transaction_tax import drop_high_tax_countries
+
+    raw = pd.DataFrame({"gvkeyiid": ["A", "B"], "val": [1.0, 2.0]})
+    out = drop_high_tax_countries(raw, "NONEXISTENT_BENCHMARK", None)
+    pd.testing.assert_frame_equal(out, raw)

@@ -22,7 +22,7 @@ from typing import Any
 
 import pandas as pd
 
-from config import PARAM, PIPELINE_PARAMS
+from config import PARAM, PIPELINE_PARAMS, TAX_EXCLUSION_THRESHOLD_BP
 
 # 모듈 import
 from service.pipeline.factor_analysis import (
@@ -47,6 +47,10 @@ from service.pipeline.weight_history import (
     save_style_totals,
 )
 from service.download.parquet_io import load_factor_parquet
+from service.pipeline.transaction_tax import (
+    drop_high_tax_countries,
+    excluded_countries,
+)
 from service.download.paths import mreturn_filename
 from service.paths import DATA_DIR, HISTORY_DIR, OUTPUT_DIR, PROJECT_ROOT as _PROJECT_ROOT
 from utils.validation import validate_output_weights
@@ -274,6 +278,14 @@ class ModelPortfolioPipeline:
             try:
                 # 연도별 분할 parquet 또는 단일 파일 로드 (parquet_io가 자동 탐색)
                 raw = load_factor_parquet(DATA_DIR, benchmark, validate=True)
+                # 고세율 국가 배제 (실험 스위치, 기본 None=무동작). mp/백테스트/실측이
+                # 모두 이 로더를 지나므로 여기 한 곳이면 전 경로에 반영된다.
+                _n0 = len(raw)
+                raw = drop_high_tax_countries(raw, benchmark, TAX_EXCLUSION_THRESHOLD_BP)
+                if len(raw) != _n0:
+                    logger.info("고세율 국가 배제(>=%.1fbp): %s -> %s rows (%s)",
+                                TAX_EXCLUSION_THRESHOLD_BP, f"{_n0:,}", f"{len(raw):,}",
+                                ",".join(sorted(excluded_countries(TAX_EXCLUSION_THRESHOLD_BP))))
                 market_return_df = pd.read_parquet(mreturn_path)
 
                 # categorical → object 변환 (pivot_table/groupby의 observed=False OOM 방지)
