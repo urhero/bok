@@ -598,8 +598,10 @@ class WalkForwardEngine:
         # 성과 산출물이 아니라 상관 구조 참고 데이터. 테스트 모드는 생략)
         if not test_file and precomputed_ret_df is not None and not precomputed_ret_df.empty:
             try:
-                from service.paths import OUTPUT_DIR
-                precomputed_ret_df.to_csv(OUTPUT_DIR / "factor_returns_matrix.csv")
+                from service.paths import OUTPUT_DIR, dated
+                precomputed_ret_df.to_csv(dated(
+                    OUTPUT_DIR / "factor_returns_matrix.csv",
+                    precomputed_ret_df.index.max()))
             except OSError as e:
                 logger.warning("factor_returns_matrix 저장 실패 (%s)", e)
 

@@ -25,7 +25,7 @@ from matplotlib.patches import Ellipse, Rectangle
 
 from config import PARAM, PIPELINE_PARAMS
 from service.factor.factor_returns import aggregate_factor_returns
-from service.paths import HISTORY_DIR, OUTPUT_DIR
+from service.paths import HISTORY_DIR, OUTPUT_DIR, latest
 from service.pipeline.factor_analysis import filter_and_label_factors
 from service.report.style_colors import STYLE_COLORS, _DEFAULT_COLOR
 
@@ -106,7 +106,7 @@ def _fmt_tick(t):
 
 
 # ── 커버 페이지 ──────────────────────────────────────────────────────────────
-def _cover_page(pp, appendix_no, title_lines, desc, style_counts, today,
+def _cover_page(pp, appendix_no, title_lines, desc, style_counts, cover_date,
                 howto_draw, n_inport=0):
     fig = plt.figure(figsize=(8.27, 11.69))
     L, R, T = 64.0, PAGE_W - 64.0, 72.0
@@ -144,7 +144,7 @@ def _cover_page(pp, appendix_no, title_lines, desc, style_counts, today,
         _text(fig, col2 + 34, cy, f"In current model portfolio ({n_inport} factors)",
               11.5, SUB)
     _text(fig, L, PAGE_H - 56, _BM, 11, MUTE, va="bottom")
-    _text(fig, R, PAGE_H - 56, today, 11, MUTE, ha="right", va="bottom")
+    _text(fig, R, PAGE_H - 56, cover_date, 11, MUTE, ha="right", va="bottom")
     pp.savefig(fig)
     plt.close(fig)
 
@@ -409,7 +409,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
     valid = factor_rets.columns[(factor_rets == 0).sum() <= 10]
     factor_rets = factor_rets[valid]
 
-    meta_df = (pd.read_csv(OUTPUT_DIR / "meta_data.csv", index_col=0)
+    meta_df = (pd.read_csv(latest(OUTPUT_DIR / "meta_data.csv"), index_col=0)
                .sort_values(by="cagr", ascending=False).reset_index()
                .rename(columns={"index": "factorAbbreviation"}))
 
@@ -495,7 +495,8 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
         if n:
             style_counts[s] = n
     n_inport = sum(1 for r in records if r["in_port"])
-    today = pd.Timestamp.now().strftime("%B %Y")
+    # 커버 우하단 날짜 = 생성일이 아니라 데이터 기준일 (파일명과 일치, 2026-08-19)
+    cover_date = f"AS OF {pd.Timestamp(as_of).strftime('%d %b %Y').upper()}"
     n_months = len(cum_rets)
     start_label = cum_rets.index[0].strftime("%B %Y")
     cost_bps = int(PIPELINE_PARAMS.get("transaction_cost_bps", 10))
@@ -515,7 +516,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                     ["Average monthly returns of each factor's quintile",
                      f"portfolios, by GICS sector. {len(records)} factors,",
                      "ordered by in-sample L–S CAGR."],
-                    style_counts, today, howto, n_inport=n_inport)
+                    style_counts, cover_date, howto, n_inport=n_inport)
 
     def hdr_legend02(fig, right_px):
         x = right_px - 60
@@ -546,7 +547,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                     ["Average monthly return of each factor's quintile",
                      "portfolios and the long / short quintiles selected",
                      f"from them. {len(records)} factors, ordered by in-sample L–S CAGR."],
-                    style_counts, today, howto, n_inport=n_inport)
+                    style_counts, cover_date, howto, n_inport=n_inport)
 
     _render_grid_book03(OUTPUT_DIR / f"별첨03_{_BM}_Quintile_Return_Book_{as_of}.pdf",
                         records, cover03)
@@ -562,7 +563,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                     ["Cumulative return of each factor's long–short",
                      f"portfolio, net of {cost_bps} bp transaction cost.",
                      f"{len(records)} factors over {n_months} months, ordered by in-sample CAGR."],
-                    style_counts, today, howto, n_inport=n_inport)
+                    style_counts, cover_date, howto, n_inport=n_inport)
 
     _render_stacked_book(
         OUTPUT_DIR / f"별첨04_{_BM}_LongShort_Port_Return_Book_{as_of}.pdf", records,

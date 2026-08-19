@@ -42,6 +42,7 @@ from service.backtest.walk_forward_engine import (
     _run_weight_optimization,
     deploy_weights,
 )
+from service.paths import OUTPUT_DIR, latest
 from service.pipeline.transaction_tax import tax_cost
 from service.pipeline.factor_analysis import ANALYZE_COLS, calculate_factor_stats_batch
 from service.pipeline.model_portfolio import DATA_DIR, ModelPortfolioPipeline
@@ -388,7 +389,9 @@ def summarize(df: pd.DataFrame, test_file: str | None, parity_csv: str | None = 
 
     # parity: canonical(또는 지정) 결과 CSV 와 cew 비교
     if not test_file:
-        canon_path = Path(parity_csv) if parity_csv else PROJECT_ROOT / "output" / "walk_forward_results.csv"
+        # 유니버스별 OUTPUT_DIR + 기준일 최신본 (구: 루트 output 고정 -> MXWO 에서 오표기)
+        canon_path = (Path(parity_csv) if parity_csv
+                      else latest(OUTPUT_DIR / "walk_forward_results.csv"))
         if canon_path.exists():
             canon = pd.read_csv(canon_path, parse_dates=["date"]).set_index("date")
             joined = df[["cew_return"]].join(canon["cew_return"], rsuffix="_canon").dropna()

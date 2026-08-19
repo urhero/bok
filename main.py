@@ -211,6 +211,7 @@ def _run_backtest(args):
     )
     from service.report.reporting import print_overfit_report
     from service.backtest.walk_forward_engine import WalkForwardEngine
+    from service.paths import dated
     from service.pipeline.model_portfolio import OUTPUT_DIR
 
     # CLI 미지정 시 config 값 사용 (production parity)
@@ -240,19 +241,20 @@ def _run_backtest(args):
 
     result = engine.run(args.start_date, args.end_date, test_file=getattr(args, "test_file", None))
 
-    # 결과 저장
-    result.to_csv(str(OUTPUT_DIR / "walk_forward_results.csv"))
+    # 결과 저장 — 파일명 기준일 = 마지막 OOS 월 (backtest CLI 날짜는 엔진이 무시)
+    as_of = result.oos_returns.index.max() if len(result.oos_returns) else None
+    result.to_csv(str(dated(OUTPUT_DIR / "walk_forward_results.csv", as_of)))
 
     # 팩터 가중치 이력 직렬화 (viz 대시보드의 비중 추이/회전율용; 가산적, 기존 출력 불변)
     if not result.weight_history.empty:
-        result.weight_history.to_csv(OUTPUT_DIR / "walk_forward_weight_history.csv")
+        result.weight_history.to_csv(dated(OUTPUT_DIR / "walk_forward_weight_history.csv", as_of))
 
     # 과적합 진단 (full_period_cagr은 마지막 Tier 2 시점의 IS MP CAGR)
     oos_report = generate_overfit_report(result, full_period_cagr=result.is_full_period_cagr)
     print_overfit_report(oos_report)
 
     # 진단 결과 CSV 저장 (세로형: Category/Metric/Value/Interpretation) — 직렬화는 도메인 모듈로 위임
-    serialize_diagnostics_csv(oos_report, OUTPUT_DIR / "overfit_diagnostics.csv")
+    serialize_diagnostics_csv(oos_report, dated(OUTPUT_DIR / "overfit_diagnostics.csv", as_of))
 
     # 진단 표 포함 대시보드 자동 생성 (read-only viz). 실패해도 백테스트 산출물은 보존.
     # end_date=None: 최신 스냅샷 자동 선택. backtest CLI 날짜(args.end_date)는 production

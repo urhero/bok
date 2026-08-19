@@ -17,6 +17,7 @@ import pandas as pd
 
 from service.report import dashboard_charts as ch
 from service.report import dashboard_data as dd
+from service.paths import latest
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +197,7 @@ def _diagnostics_table(output_dir: Path, curves=None) -> str:
     Constrained EW 변형행과 CSV OOS 섹션은 숨긴다(패턴 판정 행은 유지). 곡선이 없으면
     (test 모드 등) 변형행을 그대로 EW/Top50/CEW 로 피벗하는 폴백을 쓴다.
     """
-    p = output_dir / "overfit_diagnostics.csv"
+    p = latest(output_dir / "overfit_diagnostics.csv")
     if not p.exists():
         return ""
     df = pd.read_csv(p, encoding="utf-8-sig").fillna("")
@@ -394,13 +395,13 @@ def _vol_regime_section(curves) -> str:
 
 def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
     """백테스트 섹션 HTML 조각 리스트와 'plotly.js 포함 여부' 반환."""
-    wf_path = output_dir / "walk_forward_results.csv"
+    wf_path = latest(output_dir / "walk_forward_results.csv")
     if not wf_path.exists():
         return (['<div class="note">walk_forward_results.csv 없음 - 백테스트 섹션 생략. '
                  '(python main.py backtest ... 실행 필요)</div>'], False)
 
     curves = dd.load_backtest_curves(wf_path)
-    diag = dd.parse_diagnostics(output_dir / "overfit_diagnostics.csv")
+    diag = dd.parse_diagnostics(latest(output_dir / "overfit_diagnostics.csv"))
     kpis = dd.build_kpis(curves, diag)
 
     start = curves.index.min().strftime("%Y-%m")
@@ -433,7 +434,7 @@ def _build_backtest_section(output_dir: Path) -> tuple[list[str], bool]:
 
     # 가중치 이력이 직렬화돼 있으면 스타일 비중 추이 + 회전율 추가 (백테스트 재실행 산출).
     # 스타일 추이는 범례(스타일 7~8개)가 넓어 풀폭 카드로 둔다 - 반폭이면 범례가 그래프 침범.
-    wh_path = output_dir / "walk_forward_weight_history.csv"
+    wh_path = latest(output_dir / "walk_forward_weight_history.csv")
     if wh_path.exists():
         wh = dd.load_weight_history(wh_path)
         fi_path = dd.DATA_DIR / "factor_info.csv"
@@ -502,7 +503,7 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
     cards.append(f'<div class="card">{_fig_div(ch.longs_shorts_fig(ls_df, ls_decomp))}</div>')
     cards.append(f'<div class="card">{_fig_div(ch.factor_tilt_fig(tilt))}</div>')
 
-    meta_path = output_dir / "meta_data.csv"
+    meta_path = latest(output_dir / "meta_data.csv")
     if meta_path.exists():
         meta = dd.load_meta(meta_path)
         cards.append(f'<div class="card">{_fig_div(ch.leaderboard_fig(meta, selected, tilt))}</div>')
@@ -532,7 +533,7 @@ def _correlation_regime_section(output_dir: Path) -> str:
       - 흡수률: rolling 12M cov 상위 5 고유값의 분산 설명 비중 (Kritzman 계열)
     CEW 연수익 음수인 해는 음영 처리해 국면 지표와 죽은 해의 겹침을 보여준다.
     """
-    path = output_dir / "factor_returns_matrix.csv"
+    path = latest(output_dir / "factor_returns_matrix.csv")
     if not path.exists():
         return ""
     rets = pd.read_csv(path, index_col=0, parse_dates=True)
@@ -570,7 +571,7 @@ def _correlation_regime_section(output_dir: Path) -> str:
                   row=1, col=1, secondary_y=True)
 
     # 하단: 월별 전략(CEW) 수익률 바 + 연수익 음수 해 음영 (두 행 공통)
-    wf = output_dir / "walk_forward_results.csv"
+    wf = latest(output_dir / "walk_forward_results.csv")
     if wf.exists():
         cew = pd.read_csv(wf, index_col=0, parse_dates=True)["cew_return"].dropna()
         fig.add_trace(go.Bar(
@@ -753,7 +754,7 @@ def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
     wfile = dd.find_latest_weights_file(output_dir, end_date)
     snap = dd.snapshot_date_from_path(wfile) if wfile else None
     if snap is None:
-        wf = output_dir / "walk_forward_results.csv"
+        wf = latest(output_dir / "walk_forward_results.csv")
         if wf.exists():
             snap = dd.load_backtest_curves(wf).index.max().strftime("%Y-%m-%d")
     snap = snap or (end_date or "latest")
