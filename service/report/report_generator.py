@@ -416,6 +416,12 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
     # ── 실사용(편입) 팩터 집합: 최신 mp 실행이 저장한 factor_weights_*.csv ──
     port_weights: dict[str, float] = {}
     weight_files = sorted(HISTORY_DIR.glob("factor_weights_*.csv"))
+    if weight_files and end_date:
+        # 기준일 이후 스냅샷은 배제 — 과거 기준일로 북을 다시 뽑을 때 최신 포트가
+        # 섞여 들어가는 것을 막는다 (2026-08-19).
+        cutoff = f"factor_weights_{str(end_date)[:10]}.csv"
+        eligible = [f for f in weight_files if f.name <= cutoff]
+        weight_files = eligible or weight_files
     if weight_files:
         wdf = pd.read_csv(weight_files[-1])
         port_weights = {r["factor"]: float(r["weight"]) for _, r in wdf.iterrows()
