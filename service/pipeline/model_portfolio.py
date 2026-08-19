@@ -120,7 +120,7 @@ class ModelPortfolioPipeline:
         self.factor_stats = self._analyze_factors(slim_data, factor_abbr_list, orders, test_file)
 
         if report:
-            self._generate_report(factor_abbr_list, factor_metadata)
+            self._generate_report(factor_abbr_list, factor_metadata, end_date)
             return
 
         # [3] 섹터 필터링 + L/N/S 라벨링 — README [3]
@@ -390,14 +390,15 @@ class ModelPortfolioPipeline:
         logger.info("Factors assigned in %.2fs", time.time() - t1)
         return result
 
-    def _generate_report(self, factor_abbr_list, factor_metadata):
+    def _generate_report(self, factor_abbr_list, factor_metadata, end_date=None):
         """리포트를 생성한다. run()에서 early return으로 이후 단계 스킵."""
         from service.report.report_generator import generate_report
 
         factor_name_list = factor_metadata.factorName.tolist()
         style_name_list = factor_metadata.styleName.tolist()
         logger.info("Report generation requested.")
-        generate_report(factor_abbr_list, factor_name_list, style_name_list, self.factor_stats)
+        generate_report(factor_abbr_list, factor_name_list, style_name_list,
+                        self.factor_stats, end_date)
         logger.info("Report generated.")
 
     def _construct_and_export(self, sim_result, kept_abbrs, filtered_data, end_date, test_file):

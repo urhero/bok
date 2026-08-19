@@ -392,7 +392,9 @@ def _render_grid_book03(pdf_path, records, cover_fn):
 
 
 # ── 메인 엔트리 ──────────────────────────────────────────────────────────────
-def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
+def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
+                    end_date: str | None = None):
+    """별첨 01~04 생성. end_date = 기준일(파일명 접미사). None 이면 최신 스냅샷일."""
     logger.info("Starting generate_report (A4 book redesign)...")
     plt.ioff()
 
@@ -423,8 +425,14 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
     else:
         logger.warning("factor_weights_*.csv not found in %s - 편입 표시 생략", HISTORY_DIR)
 
+    # 파일명 기준일: 인자 > 최신 factor_weights 파일명 > 오늘
+    as_of = end_date or (weight_files[-1].stem.replace("factor_weights_", "")
+                         if weight_files else pd.Timestamp.now().strftime("%Y-%m-%d"))
+    as_of = pd.Timestamp(as_of).strftime("%Y-%m-%d")
+    logger.info("별첨 기준일: %s", as_of)
+
     # ── 별첨01 xlsx ──
-    xlsx_path = OUTPUT_DIR / f"별첨01_{_BM}_Factor_Return_Info.xlsx"
+    xlsx_path = OUTPUT_DIR / f"별첨01_{_BM}_Factor_Return_Info_{as_of}.xlsx"
     info_df = meta_df[["factorAbbreviation", "factorName", "styleName", "cagr"]].copy()
     info_df["in_portfolio"] = info_df["factorAbbreviation"].map(
         lambda a: "Y" if a in port_weights else "")
@@ -516,7 +524,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
             _swatch(fig, x - 42 - (4 - i) * 12, 41.5, 9, 9, RAMP[i])
 
     _render_stacked_book(
-        OUTPUT_DIR / f"별첨02_{_BM}_Sector_Quintile_Return_Book.pdf", records,
+        OUTPUT_DIR / f"별첨02_{_BM}_Sector_Quintile_Return_Book_{as_of}.pdf", records,
         f"{_BM} · Sector × Quintile Returns",
         "Appendix 02 — Sector Quintile Return Book", "Avg monthly return, %",
         cover02,
@@ -540,7 +548,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
                      f"from them. {len(records)} factors, ordered by in-sample L–S CAGR."],
                     style_counts, today, howto, n_inport=n_inport)
 
-    _render_grid_book03(OUTPUT_DIR / f"별첨03_{_BM}_Quintile_Return_Book.pdf",
+    _render_grid_book03(OUTPUT_DIR / f"별첨03_{_BM}_Quintile_Return_Book_{as_of}.pdf",
                         records, cover03)
 
     # ── 별첨04 ──
@@ -557,7 +565,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
                     style_counts, today, howto, n_inport=n_inport)
 
     _render_stacked_book(
-        OUTPUT_DIR / f"별첨04_{_BM}_LongShort_Port_Return_Book.pdf", records,
+        OUTPUT_DIR / f"별첨04_{_BM}_LongShort_Port_Return_Book_{as_of}.pdf", records,
         f"{_BM} · Long–Short Cumulative Returns",
         "Appendix 04 — Long–Short Portfolio Return Book",
         f"Cumulative return, % · net of {cost_bps} bp cost",
