@@ -7,6 +7,7 @@ filter_and_label_factors()에서 L/N/S 라벨이 부여된 종목 데이터를 �
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -166,6 +167,50 @@ def calculate_style_weights(
     )
     weight_raw = weight_raw.drop(columns=["_style_fw_sum"])
     return weight_raw
+
+
+# MP 배포 배수 (2026-08-19 도입): 최종 MP 북을 실제 포트폴리오에 적용할 때 곱하는
+# 배수를 산출물에 미리 반영한다 (Bloomberg ex-ante TE 확인을 배수 적용 상태로 하기 위함).
+# data/mp_multiplier.csv 는 (effective_date, multiplier) 이력 — 해당 시점 이후 다음
+# 변경 전까지 유효한 계단식 값. 파일/해당 행이 없으면 1.0 (미적용).
+MULTIPLIER_COLS = ("mp_ls_weight", "ls_weight", "style_ls_weight")
+
+
+def multiplier_for_target(book_gross: float, target_gross: float) -> float:
+    """목표 총 gross(롱+|숏|)에 맞추는 배수. netting 변동을 흡수해 노출을 고정한다.
+
+    고정 배수와 달리 매 시점 배수가 달라지지만, 실제 노출(=ex-ante TE 의 주 동인)이
+    항상 목표값이 된다. 팩터 겹침 정도(netting)는 투자 판단이 아니라 부산물이므로
+    그것이 포트 크기를 결정하지 않게 하는 것이 목적 (2026-08-19 채택).
+    """
+    if book_gross <= 0:
+        logger.warning("book gross 가 0 이하 - 배수 1.0 로 폴백")
+        return 1.0
+    return target_gross / book_gross
+
+
+def resolve_multiplier(as_of, path) -> float:
+    """기준일에 유효한 배수 = effective_date <= as_of 중 가장 최근 값."""
+    path = Path(path)
+    if not path.exists():
+        return 1.0
+    hist = pd.read_csv(path, parse_dates=["effective_date"]).sort_values("effective_date")
+    eligible = hist[hist["effective_date"] <= pd.Timestamp(as_of)]
+    return float(eligible["multiplier"].iloc[-1]) if len(eligible) else 1.0
+
+
+def apply_multiplier(df: pd.DataFrame, multiplier: float) -> pd.DataFrame:
+    """종목 비중 컬럼에만 배수를 적용한다.
+
+    factor_weight 는 팩터 배분(피벗 컬럼 키)이라 스케일하지 않는다 — 곱하면
+    피벗 헤더가 바뀌고 팩터 비중의 의미(합=1)도 깨진다.
+    """
+    if multiplier == 1.0:
+        return df
+    for c in MULTIPLIER_COLS:
+        if c in df.columns:
+            df[c] = df[c] * multiplier
+    return df
 
 
 def build_pivoted_export(final_weights: pd.DataFrame, sim_result) -> pd.DataFrame:

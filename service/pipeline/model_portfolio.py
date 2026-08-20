@@ -33,15 +33,19 @@ from service.pipeline.factor_analysis import (
 from service.pipeline.optimization import optimize_constrained_weights
 from service.pipeline.weight_construction import (
     aggregate_mp_weights,
+    apply_multiplier,
     build_factor_weight_frames,
     build_pivoted_export,
     calculate_style_weights,
+    multiplier_for_target,
+    resolve_multiplier,
 )
 from service.factor.factor_returns import aggregate_factor_returns  # re-export (하위호환)
 from service.factor.universe_mask import apply_universe_mask, compute_universe_classification
 from service.pipeline.universe import evaluate_universe
 from service.pipeline.weight_history import (
     load_prev_factor_weights,
+    save_deploy_multiplier,
     save_factor_styles,
     save_factor_weights,
     save_style_totals,
@@ -424,6 +428,24 @@ class ModelPortfolioPipeline:
         # 결합 및 출력
         final_weights = pd.concat([weight_raw, agg_w], axis=0, ignore_index=True)
         final_weights = final_weights.sort_values(["style", "factor", "ticker", "gvkeyiid"]).reset_index(drop=True)
+        # MP 배포 배수 사전 적용 (2026-08-19): 산출물이 이미 배수 적용 상태로 나가
+        # Bloomberg ex-ante TE 를 그대로 확인할 수 있게 한다. style 집계/피벗보다
+        # 먼저 적용해 세 산출물이 모두 같은 배수를 반영하도록 한다. 성과 백테스트·
+        # 실측은 팩터 비중에서 재구성하므로 이 배수의 영향을 받지 않는다.
+        mp_rows = final_weights["style"] == "MP"
+        book_gross = float(final_weights.loc[mp_rows, "mp_ls_weight"].abs().sum())
+        target = self.pipeline_params.get("mp_target_gross")
+        if target:
+            mult, mode = multiplier_for_target(book_gross, float(target)), f"target_gross={target:g}"
+        else:
+            mult, mode = resolve_multiplier(end_date, DATA_DIR / "mp_multiplier.csv"), "manual_csv"
+        final_weights = apply_multiplier(final_weights, mult)
+        logger.info("MP 배포 배수 %.4f (%s): gross %.2f%% -> %.2f%% (롱/숏 각 %.2f%%)",
+                    mult, mode, book_gross * 100, book_gross * mult * 100,
+                    book_gross * mult * 50)
+        if not test_file:
+            save_deploy_multiplier(HISTORY_DIR, end_date, book_gross, mult, mode)
+
         final_style_weight = final_weights.groupby(["ddt", "ticker", "isin", "gvkeyiid", "style"])[
             ["ls_weight", "style_ls_weight", "factor_weight"]
         ].sum()
