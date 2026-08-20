@@ -354,3 +354,55 @@ def style_delta_fig(deltas: pd.DataFrame) -> go.Figure:
     fig.update_layout(title="전월 대비 스타일 비중 변화", height=340,
                       yaxis_tickformat=".1%", xaxis_tickangle=-30, **_BASE_LAYOUT)
     return fig
+
+
+def deploy_exposure_fig(df: pd.DataFrame) -> go.Figure:
+    """배포 노출 고정 현황 (2026-08-19): 배수 전 book gross(좌축) + 적용 배수(우축).
+
+    목표 노출을 고정하면 배수가 netting 변동을 그대로 흡수하므로, 두 선이
+    거울처럼 반대로 움직이는 것이 정상이다 (gross 낮은 달 = 배수 큼).
+    """
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["book_gross_before"], name="배수 전 book gross",
+        line=dict(color="#3b82f6", width=2),
+        hovertemplate="%{x|%Y-%m}<br>gross %{y:.1%}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["long_exposure"] * 2, name="배포 gross (목표 고정)",
+        line=dict(color="#22c55e", width=2),
+        hovertemplate="%{x|%Y-%m}<br>배포 gross %{y:.1%}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df["multiplier"], name="적용 배수", yaxis="y2",
+        line=dict(color="#fcd535", width=2),
+        hovertemplate="%{x|%Y-%m}<br>배수 %{y:.3f}<extra></extra>",
+    ))
+    fig.update_layout(
+        title="배포 노출 · 적용 배수 추이", height=360,
+        margin=dict(l=60, r=55, t=50, b=70), **_DARK,
+        yaxis=dict(title="gross 노출", tickformat=".0%", rangemode="tozero"),
+        yaxis2=dict(title="배수", overlaying="y", side="right", rangemode="tozero", showgrid=False),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.28, x=0, font=dict(size=11)),
+    )
+    return fig
+
+
+def rolling_te_fig(r: pd.Series, window: int = 24) -> go.Figure:
+    """실현 TE 추이: 롤링 window 개월 표준편차의 연환산 (시장중립 -> 액티브=오버레이)."""
+    te = r.rolling(window).std() * (12 ** 0.5)
+    fig = go.Figure(go.Scatter(
+        x=te.index, y=te, name=f"실현 TE ({window}M 롤링)",
+        line=dict(color="#f97316", width=2),
+        hovertemplate="%{x|%Y-%m}<br>TE %{y:.2%}<extra></extra>",
+    ))
+    full = float(r.std() * (12 ** 0.5))
+    fig.add_hline(y=full, line=dict(color=_MUTED, width=1.4, dash="dot"),
+                  annotation_text=f"전기간 {full:.2%}", annotation_position="top left")
+    fig.update_layout(
+        title=f"실현 Tracking Error ({window}개월 롤링, 연환산)", height=330,
+        margin=dict(l=60, r=30, t=50, b=60), **_DARK,
+        yaxis=dict(title="TE", tickformat=".1%", rangemode="tozero"),
+        showlegend=False,
+    )
+    return fig

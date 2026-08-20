@@ -20,6 +20,11 @@ import pandas as pd
 from rich.progress import track
 
 from config import PARAM, PIPELINE_PARAMS
+from service.backtest.stock_level import (
+    build_stock_series,
+    series_metrics,
+    stock_weights_at,
+)
 from service.backtest.data_slicer import get_oos_dates
 from service.factor.selection import (
     apply_selection_hysteresis,
@@ -163,6 +168,7 @@ def _apply_rules_and_aggregate(
     rule_bundle: dict[str, Any],
     pipeline: ModelPortfolioPipeline,
     universe_df: pd.DataFrame | None = None,
+    out_frames: dict | None = None,
 ) -> pd.DataFrame:
     """IS에서 학습한 규칙을 (사전 계산된) 전체 데이터 5분위 통계에 적용하고 팩터 수익률을 사전 계산한다.
 
@@ -252,6 +258,13 @@ def _apply_rules_and_aggregate(
     if not valid_abbrs:
         logger.warning("No valid factors after applying IS rules to full data")
         return pd.DataFrame()
+
+    # 종목단 재구성용 프레임 보존 (2026-08-19): 노출/배수/TE 시계열 산출에 필요.
+    # 호출부가 out_frames 를 넘기면 abbr -> 라벨 프레임 매핑을 채워준다 (반환 시그니처
+    # 불변 -> 기존 호출부/테스트 영향 없음).
+    if out_frames is not None:
+        out_frames.clear()
+        out_frames.update(dict(zip(valid_abbrs, valid_filtered)))
 
     # aggregate_factor_returns 1회 실행 (전기간)
     precomputed_ret_df = aggregate_factor_returns(
@@ -436,6 +449,8 @@ class WalkForwardEngine:
         )
 
         # 2. 캐시 초기화
+        stock_frames: dict = {}
+        stock_monthly: list = []
         cached_rule_bundle: dict | None = None
         precomputed_ret_df: pd.DataFrame | None = None
         cached_weights: dict[str, float] | None = None
@@ -474,7 +489,7 @@ class WalkForwardEngine:
                 # 사전 계산된 전체 데이터 5분위 통계에 규칙 적용 + aggregate 1회 실행
                 precomputed_ret_df = _apply_rules_and_aggregate(
                     factor_stats_full, factor_abbr_list_full, cached_rule_bundle, pipeline,
-                    universe_df=universe_df,
+                    universe_df=universe_df, out_frames=stock_frames,
                 )
 
                 if precomputed_ret_df.empty:
@@ -583,6 +598,18 @@ class WalkForwardEngine:
                 logger.warning("OOS date %s not in precomputed_ret_df, skipping", oos_date)
                 continue
 
+            # 종목단 재구성 (2026-08-19): 프레임이 살아있는 이 시점에 월별 종목
+            # 순비중만 뽑아 둔다 (프레임 자체는 무거워 보관하지 않음).
+            if stock_frames:
+                w_t, r_t = stock_weights_at(
+                    stock_frames, cached_weights, oos_date,
+                    pd.Timestamp(pp["backtest_start"]),
+                    stock_weight_cap=pp.get("stock_weight_cap"),
+                    sector_short_cap=pp.get("sector_short_cap"),
+                )
+                if len(w_t):
+                    stock_monthly.append((oos_date, w_t, r_t))
+
             record = self._assemble_oos_record(
                 oos_date, precomputed_ret_df, cached_weights, cached_meta,
                 cached_top50_factors, cached_is_cew_cagr, is_rule_rebal, is_weight_rebal,
@@ -604,6 +631,23 @@ class WalkForwardEngine:
                     precomputed_ret_df.index.max()))
             except OSError as e:
                 logger.warning("factor_returns_matrix 저장 실패 (%s)", e)
+
+        # 배포 기준 시계열 저장 (노출/배수/TE) — 종목단 netting 반영
+        if not test_file and stock_monthly:
+            try:
+                from service.paths import OUTPUT_DIR, dated
+                series = build_stock_series(
+                    stock_monthly, float(PIPELINE_PARAMS["transaction_cost_bps"]),
+                    pp.get("mp_target_gross"),
+                )
+                series.to_csv(dated(OUTPUT_DIR / "stock_level_series.csv", series.index.max()))
+                m = series_metrics(series)
+                logger.info(
+                    "배포 기준(노출 %.1f%%): Sharpe %.3f / CAGR %.2f%% / MDD %.2f%% / TE %.2f%% / IR %.2f",
+                    m["avg_long_exposure"] * 100, m["sharpe"], m["cagr"] * 100,
+                    m["mdd"] * 100, m["tracking_error"] * 100, m["info_ratio"])
+            except Exception as e:  # 산출물 보존 우선
+                logger.warning("stock_level_series 생성 실패 (%s)", e)
 
         return WalkForwardResult(results)
 

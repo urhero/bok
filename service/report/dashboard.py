@@ -393,6 +393,52 @@ def _vol_regime_section(curves) -> str:
     )
 
 
+def _deploy_section(output_dir: Path, end_date=None) -> str:
+    """배포 기준(목표 노출 고정) 섹션: KPI + 노출/배수 추이 + 실현 TE (2026-08-19).
+
+    stock_level_series_*.csv (백테스트가 종목단 재구성으로 생성) 를 읽는다.
+    없으면 빈 문자열 -> 구 산출물에서도 대시보드가 깨지지 않는다.
+    """
+    path = latest(output_dir / "stock_level_series.csv", end_date)
+    if not path.exists():
+        return ""
+    df = pd.read_csv(path, parse_dates=["date"]).set_index("date")
+    if df.empty:
+        return ""
+    from service.backtest.stock_level import series_metrics
+    m = series_metrics(df)
+    tgt = float(df["long_exposure"].median() * 2)
+    fixed = df["long_exposure"].round(6).nunique() == 1
+
+    kpi = "".join(
+        f'<div class="kpi"><div class="kpi-label">{lbl}</div>'
+        f'<div class="kpi-value">{val}</div></div>'
+        for lbl, val in [
+            ("실현 TE", f"{m['tracking_error']:.2%}"),
+            ("IR", f"{m['info_ratio']:.2f}"),
+            ("CAGR", f"{m['cagr']:.2%}"),
+            ("MDD", f"{m['mdd']:.2%}"),
+            ("Sharpe", f"{m['sharpe']:.2f}"),
+            ("턴오버", f"{m['turnover']:.1f}x"),
+        ]
+    )
+    note = (
+        f"롱 +{m['avg_long_exposure']:.1%} / 숏 -{m['avg_long_exposure']:.1%} "
+        f"(목표 gross {tgt:.0%}{'· 매월 정확히 고정됨' if fixed else ''}) · "
+        f"적용 배수 {df['multiplier'].min():.3f}~{df['multiplier'].max():.3f} (중앙 {df['multiplier'].median():.3f}) · "
+        f"배수 전 book gross {df['book_gross_before'].min():.0%}~{df['book_gross_before'].max():.0%}. "
+        "시장중립 오버레이라 <b>액티브수익 = 오버레이수익</b> 이므로 "
+        "TE = 월 순수익 표준편차의 연환산 (실현/ex-post 기준 — Bloomberg 의 ex-ante 추정치와는 다름)."
+    )
+    return (
+        '<h2>배포 기준 성과 · 노출 (실제 적용 규모)</h2>'
+        f'<div class="kpi-row">{kpi}</div>'
+        f'<div class="card full"><div class="note">{note}</div></div>'
+        f'<div class="card full">{_fig_div(ch.deploy_exposure_fig(df))}</div>'
+        f'<div class="card full">{_fig_div(ch.rolling_te_fig(df["net_return"].dropna()))}</div>'
+    )
+
+
 def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str], bool]:
     """백테스트 섹션 HTML 조각 리스트와 'plotly.js 포함 여부' 반환."""
     wf_path = latest(output_dir / "walk_forward_results.csv", end_date)
@@ -748,6 +794,9 @@ def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
     data_dir = Path(data_dir) if data_dir else dd.DATA_DIR
 
     bt_parts, js_in_bt = _build_backtest_section(output_dir, end_date)
+    deploy_html = _deploy_section(output_dir, end_date)
+    if deploy_html:
+        bt_parts.append(deploy_html)
     pf_parts = _build_portfolio_section(output_dir, end_date, js_already=js_in_bt, data_dir=data_dir)
 
     # 파일명용 스냅샷 날짜: 가중치 파일 -> 백테스트 마지막 -> 'latest'
