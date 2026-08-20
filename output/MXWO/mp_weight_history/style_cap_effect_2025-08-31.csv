@@ -1,0 +1,51 @@
+factor,styleName,raw_weight,fitted_weight
+UnexpectedInvChg,Earnings Quality,0.00564112,0.006939238
+CQDOHtoSales,Historical Growth,0.003512205,0.0022496714
+OCFRatio,Capital Efficiency,0.01673681,0.020588236
+FCFSales,Earnings Quality,0.0033123284,0.004074552
+AdjIntCov,Capital Efficiency,0.0036640472,0.0045072064
+IntCovRatio,Capital Efficiency,0.004067513,0.005003517
+CQPTTMCFtoSales,Historical Growth,0.01491228,0.009551757
+SalesToInvCap,Earnings Quality,0.0039397688,0.004846377
+ETO,Earnings Quality,0.020310948,0.024984842
+CashAdjEV,Valuation,0.0185507,0.022819532
+ConsQPosChginTTMCF,Historical Growth,0.003717875,0.0023814093
+PAdjChg1YOCF,Historical Growth,0.024576556,0.015742013
+CFROIC,Capital Efficiency,0.002637365,0.0032442675
+PAdjChg3YFCF,Historical Growth,0.018340573,0.011747682
+AdjInvPEGC,Analyst Expectations,0.017487584,0.021511776
+TotalAccruals,Earnings Quality,0.00984288,0.012107895
+CapAcqRatio,Capital Efficiency,0.0036377518,0.00447486
+UnexpectedRecChg,Earnings Quality,0.063696474,0.07835413
+AstAdjChg1YOCF,Historical Growth,0.022811243,0.014611278
+PAdjChg3YOCF,Historical Growth,0.025940012,0.016615348
+AstAdjChg1YFCF,Historical Growth,0.027487524,0.017606573
+PAdjChg3YSales,Historical Growth,0.044801734,0.028696837
+PAdjChg1YFCF,Historical Growth,0.0060971477,0.003905404
+ConsQPosChgTTMEPS,Historical Growth,0.002922894,0.0018722002
+Chg3YFCF,Historical Growth,0.022861892,0.014643719
+AdjRevMagC,Analyst Expectations,0.015558823,0.019139174
+InvPEGC,Analyst Expectations,0.0235862,0.029013786
+Chg1YOPM,Historical Growth,0.025015078,0.016022902
+Chg3YAstTo,Historical Growth,0.020509413,0.013136886
+BookLev,Volatility,0.02055846,0.025289312
+Rev3MFY1C,Analyst Expectations,0.016281506,0.020028157
+RecTurn,Capital Efficiency,0.112902746,0.13888359
+WCAccruals,Earnings Quality,0.033582557,0.04131047
+SGAToSalesChg1Y,Earnings Quality,0.015061242,0.01852709
+PAdjChg1YSales,Historical Growth,0.020261435,0.012978051
+OCFIC,Earnings Quality,0.0024396605,0.0030010678
+CQDRItoSales,Historical Growth,0.04106007,0.026300192
+EPSSurpC,Analyst Expectations,0.048141886,0.059220158
+CashAst,Valuation,0.048067674,0.059128862
+TTMRecInvToSales,Historical Growth,0.044698473,0.028630698
+CashBurn,Earnings Quality,0.003832199,0.0047140536
+PAdjChg1YEPS,Historical Growth,0.017194433,0.011013544
+EbitdaToAst,Capital Efficiency,0.014428153,0.017748319
+AdjRev3MFY1C,Analyst Expectations,0.0024571694,0.0030226063
+FCFEV,Valuation,0.004011744,0.0049349153
+ShortIntTrdVol,Price Momentum,0.023261588,0.028614476
+AssetTurn,Earnings Quality,0.0040957415,0.005038241
+Chg1YOCF,Historical Growth,0.0035813649,0.0022939702
+RevMagFY1C,Analyst Expectations,0.015348721,0.018880727
+WCapToAst,Earnings Quality,0.032556552,0.04004837
