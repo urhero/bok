@@ -129,8 +129,12 @@ def _kpi_cards(kpis: dict) -> str:
         ("MDD", fnum(kpis["mdd"], ".2%")),
         ("Sharpe", fnum(kpis["sharpe"], ".2f")),
         ("Calmar", fnum(kpis["calmar"], ".2f")),
-        ("Funnel", kpis.get("funnel_pattern") or "-"),
     ]
+    # 배포 기준일 때만 TE/IR 노출 (2026-08-19)
+    if kpis.get("tracking_error") is not None:
+        items += [("실현 TE", fnum(kpis["tracking_error"], ".2%")),
+                  ("IR", fnum(kpis["info_ratio"], ".2f"))]
+    items.append(("Funnel", kpis.get("funnel_pattern") or "-"))
     return "".join(
         f'<div class="kpi"><div class="kpi-label">{lbl}</div>'
         f'<div class="kpi-val">{val}</div></div>'
@@ -393,46 +397,56 @@ def _vol_regime_section(curves) -> str:
     )
 
 
-def _deploy_section(output_dir: Path, end_date=None) -> str:
-    """배포 기준(목표 노출 고정) 섹션: KPI + 노출/배수 추이 + 실현 TE (2026-08-19).
+def _deployed_curves(curves: pd.DataFrame, series: pd.DataFrame) -> pd.DataFrame:
+    """곡선을 배포 기준(실제 적용 규모)으로 환산한다 (2026-08-19).
 
-    stock_level_series_*.csv (백테스트가 종목단 재구성으로 생성) 를 읽는다.
-    없으면 빈 문자열 -> 구 산출물에서도 대시보드가 깨지지 않는다.
+    - 전략 곡선(cew): 종목단 재구성 실측 net_return 으로 **교체** (netting 반영 —
+      배수만 곱한 근사가 아니라 실제 배포 북의 수익).
+    - 비교 곡선(EW 계열): 같은 월별 배수 경로를 곱해 축을 맞춘다 (근사 — 이들은
+      종목단 netting 을 측정하지 않으므로 상대 비교 용도로만 유효).
     """
+    mult = series["multiplier"].reindex(curves.index)
+    out = curves.copy()
+    out["cew_return"] = series["net_return"].reindex(curves.index)
+    for c in ("ew_return", "ew_all_return", "ew_top50_return"):
+        if c in out.columns:
+            out[c] = out[c] * mult
+    out = out.dropna(subset=["cew_return"])
+    for rc, cc in (("cew_return", "cew_cumulative"), ("ew_return", "ew_cumulative"),
+                   ("ew_all_return", "ew_all_cumulative"),
+                   ("ew_top50_return", "ew_top50_cumulative")):
+        if rc in out.columns and cc in out.columns:
+            out[cc] = (1 + out[rc].fillna(0)).cumprod()
+    return out
+
+
+def _load_deploy_series(output_dir: Path, end_date=None) -> pd.DataFrame | None:
+    """배포 기준 종목단 시계열 로드. 없으면 None (구 산출물에서도 대시보드 유지)."""
     path = latest(output_dir / "stock_level_series.csv", end_date)
     if not path.exists():
-        return ""
+        return None
     df = pd.read_csv(path, parse_dates=["date"]).set_index("date")
-    if df.empty:
-        return ""
-    from service.backtest.stock_level import series_metrics
-    m = series_metrics(df)
-    tgt = float(df["long_exposure"].median() * 2)
-    fixed = df["long_exposure"].round(6).nunique() == 1
+    return df if not df.empty else None
 
-    kpi = "".join(
-        f'<div class="kpi"><div class="kpi-label">{lbl}</div>'
-        f'<div class="kpi-value">{val}</div></div>'
-        for lbl, val in [
-            ("실현 TE", f"{m['tracking_error']:.2%}"),
-            ("IR", f"{m['info_ratio']:.2f}"),
-            ("CAGR", f"{m['cagr']:.2%}"),
-            ("MDD", f"{m['mdd']:.2%}"),
-            ("Sharpe", f"{m['sharpe']:.2f}"),
-            ("턴오버", f"{m['turnover']:.1f}x"),
-        ]
-    )
+
+def _deploy_section(output_dir: Path, end_date=None) -> str:
+    """노출 · 적용 배수 · 실현 TE 섹션 (2026-08-19). 성과 KPI 는 메인 섹션이 담당."""
+    df = _load_deploy_series(output_dir, end_date)
+    if df is None:
+        return ""
+    tgt = float(df["long_exposure"].median() * 2)
+    fixed_flag = df["long_exposure"].round(6).nunique() == 1
     note = (
-        f"롱 +{m['avg_long_exposure']:.1%} / 숏 -{m['avg_long_exposure']:.1%} "
-        f"(목표 gross {tgt:.0%}{'· 매월 정확히 고정됨' if fixed else ''}) · "
-        f"적용 배수 {df['multiplier'].min():.3f}~{df['multiplier'].max():.3f} (중앙 {df['multiplier'].median():.3f}) · "
-        f"배수 전 book gross {df['book_gross_before'].min():.0%}~{df['book_gross_before'].max():.0%}. "
-        "시장중립 오버레이라 <b>액티브수익 = 오버레이수익</b> 이므로 "
-        "TE = 월 순수익 표준편차의 연환산 (실현/ex-post 기준 — Bloomberg 의 ex-ante 추정치와는 다름)."
+        f"롱 +{df['long_exposure'].mean():.1%} / 숏 -{df['long_exposure'].mean():.1%} "
+        f"(목표 gross {tgt:.0%}{' · 매월 정확히 고정됨' if fixed_flag else ''}) · "
+        f"적용 배수 {df['multiplier'].min():.3f}~{df['multiplier'].max():.3f} "
+        f"(중앙 {df['multiplier'].median():.3f}) · "
+        f"배수 전 book gross {df['book_gross_before'].min():.0%}~{df['book_gross_before'].max():.0%} "
+        "— 배수가 이 변동을 흡수해 노출을 고정한다. TE 는 시장중립 오버레이라 "
+        "액티브수익=오버레이수익 이므로 월 순수익 표준편차의 연환산 (실현/ex-post)."
     )
     return (
-        '<h2>배포 기준 성과 · 노출 (실제 적용 규모)</h2>'
-        f'<div class="kpi-row">{kpi}</div>'
+        '<h2>노출 · 적용 배수 · 실현 TE</h2>'
         f'<div class="card full"><div class="note">{note}</div></div>'
         f'<div class="card full">{_fig_div(ch.deploy_exposure_fig(df))}</div>'
         f'<div class="card full">{_fig_div(ch.rolling_te_fig(df["net_return"].dropna()))}</div>'
@@ -448,7 +462,21 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
 
     curves = dd.load_backtest_curves(wf_path)
     diag = dd.parse_diagnostics(latest(output_dir / "overfit_diagnostics.csv", end_date))
-    kpis = dd.build_kpis(curves, diag)
+
+    # 배포 기준 전환 (2026-08-19): 종목단 실측 시계열이 있으면 곡선을 실제 적용
+    # 규모로 환산한다 -> KPI/수익곡선/낙폭/히트맵/롤링Sharpe/낙폭구간이 모두 따라감.
+    # diag(과적합 진단 파일)는 factor-level 미스케일 값이라 KPI 오버라이드에서 제외.
+    deploy = _load_deploy_series(output_dir, end_date)
+    if deploy is not None:
+        curves = _deployed_curves(curves, deploy)
+        kpis = dd.build_kpis(curves, None)
+        r = curves["cew_return"].dropna()
+        te = float(r.std() * (12 ** 0.5))
+        kpis["tracking_error"] = te
+        kpis["info_ratio"] = (kpis["cagr"] / te) if te else float("nan")
+        kpis["exposure"] = float(deploy["long_exposure"].mean())
+    else:
+        kpis = dd.build_kpis(curves, diag)
 
     start = curves.index.min().strftime("%Y-%m")
     end = curves.index.max().strftime("%Y-%m")
@@ -456,12 +484,17 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
     title_range = f"{is_title} · OOS {start}~{end}" if is_title else f"OOS {start}~{end}"
     is_note = (f"{is_body} · 성과는 OOS {start}~ 집계 · " if is_body else "")
     parts = [
+        f'<h2>1. 백테스트 — 배포 기준 ({title_range}, OOS {kpis["n_months"]}개월)</h2>'
+        if deploy is not None else
         f'<h2>1. 백테스트 ({title_range}, OOS {kpis["n_months"]}개월)</h2>',
         f'<div class="kpi-grid">{_kpi_cards(kpis)}</div>',
         # 집계 기준 + 상세 통계 카드 전체를 기본 숨김 — summary 는 화살표만
         # (2026-08-07 사용자 지정)
         f'<details class="note-toggle"><summary></summary>'
-        f'<div class="note">{is_note}상세 통계/벤치마크 = 선정 EW(1/N)</div>'
+        f'<div class="note">{is_note}상세 통계/벤치마크 = 선정 EW(1/N)'
+        + (f' · <b>배포 기준</b>: 전략 곡선은 종목단 재구성 실측(롱 +{kpis["exposure"]:.1%}/숏 -{kpis["exposure"]:.1%}), '
+           '비교 곡선(EW 계열)은 동일 배수 경로를 곱한 근사' if deploy is not None else '')
+        + '</div>'
         f'{_backtest_stats_card(curves)}</details>',
         f'<div class="card full">{_fig_div(ch.equity_curve_fig(curves), include_js=True)}</div>',
     ]
