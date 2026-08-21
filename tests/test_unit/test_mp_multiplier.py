@@ -74,3 +74,37 @@ def test_target_gross_normalization():
 def test_target_gross_zero_book_falls_back():
     from service.pipeline.weight_construction import multiplier_for_target
     assert multiplier_for_target(0.0, 0.40) == 1.0
+
+
+@pytest.fixture
+def tgt_hist(tmp_path):
+    p = tmp_path / "mp_target_gross.csv"
+    p.write_text(
+        "effective_date,target_gross,note\n"
+        "2025-06-30,0.40,pm20\n"
+        "2025-11-30,0.32,pm16\n"
+        "2026-02-28,0.20,pm10\n",
+        encoding="utf-8",
+    )
+    return p
+
+
+def test_target_gross_schedule_is_step_function(tgt_hist):
+    """목표 노출도 계단식 — 변경일 이후 다음 변경 전까지 유효."""
+    from service.pipeline.weight_construction import resolve_target_gross
+    assert resolve_target_gross("2025-08-31", tgt_hist, 0.40) == 0.40
+    assert resolve_target_gross("2025-11-29", tgt_hist, 0.40) == 0.40
+    assert resolve_target_gross("2025-11-30", tgt_hist, 0.40) == 0.32
+    assert resolve_target_gross("2026-02-28", tgt_hist, 0.40) == 0.20
+    assert resolve_target_gross("2026-06-30", tgt_hist, 0.40) == 0.20
+
+
+def test_target_gross_before_history_uses_config_default(tgt_hist):
+    from service.pipeline.weight_construction import resolve_target_gross
+    assert resolve_target_gross("2025-01-31", tgt_hist, 0.40) == 0.40
+
+
+def test_target_gross_missing_file_uses_default(tmp_path):
+    from service.pipeline.weight_construction import resolve_target_gross
+    assert resolve_target_gross("2026-06-30", tmp_path / "none.csv", 0.40) == 0.40
+    assert resolve_target_gross("2026-06-30", tmp_path / "none.csv", None) is None

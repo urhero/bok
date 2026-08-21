@@ -39,6 +39,7 @@ from service.pipeline.weight_construction import (
     calculate_style_weights,
     multiplier_for_target,
     resolve_multiplier,
+    resolve_target_gross,
 )
 from service.factor.factor_returns import aggregate_factor_returns  # re-export (하위호환)
 from service.factor.universe_mask import apply_universe_mask, compute_universe_classification
@@ -434,7 +435,12 @@ class ModelPortfolioPipeline:
         # 실측은 팩터 비중에서 재구성하므로 이 배수의 영향을 받지 않는다.
         mp_rows = final_weights["style"] == "MP"
         book_gross = float(final_weights.loc[mp_rows, "mp_ls_weight"].abs().sum())
-        target = self.pipeline_params.get("mp_target_gross")
+        # 목표 노출은 시점별 이력(data/mp_target_gross.csv)이 우선 — 운용 중 규모를
+        # 바꿔도 과거 시점 재현이 그때 규모로 정확히 나온다 (2026-08-21).
+        target = resolve_target_gross(
+            end_date, DATA_DIR / "mp_target_gross.csv",
+            self.pipeline_params.get("mp_target_gross"),
+        )
         if target:
             mult, mode = multiplier_for_target(book_gross, float(target)), f"target_gross={target:g}"
         else:
@@ -451,6 +457,9 @@ class ModelPortfolioPipeline:
         ].sum()
 
         suffix = f"_{Path(test_file).stem}" if test_file else ""
+        # 배포 규모를 파일명에 명시 (총 gross % — 예: gross32 = 롱/숏 각 ±16%)
+        if target:
+            suffix += f"_gross{round(float(target) * 100)}"
         final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test{suffix}.csv")
         final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_test{suffix}.csv")
 

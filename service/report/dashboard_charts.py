@@ -121,11 +121,31 @@ def equity_curve_fig(curves: pd.DataFrame) -> go.Figure:
             visible=("legendonly" if key in ("ew_top50", "ew") else True),
             hovertemplate="%{x|%Y-%m}<br>" + label + " %{y:.4f}<extra></extra>",
         ))
-    fig.update_layout(
+    # BM / BM+MP 오버레이는 스케일이 10배 이상 달라 보조축에 둔다 (2026-08-21).
+    # 좌축=전략군(오버레이 단독), 우축=벤치마크 및 벤치마크+오버레이.
+    has_bm = "bm_cumulative" in curves.columns
+    if has_bm:
+        fig.add_trace(go.Scatter(
+            x=curves.index, y=curves["bm_cumulative"], name="BM (MXWO)", yaxis="y2",
+            line=dict(color="#8b95a5", width=1.8, dash="dot"),
+            hovertemplate="%{x|%Y-%m}<br>BM %{y:.4f}<extra></extra>",
+        ))
+        if "bm_mp_cumulative" in curves.columns:
+            fig.add_trace(go.Scatter(
+                x=curves.index, y=curves["bm_mp_cumulative"], name="BM + MP 오버레이",
+                yaxis="y2", line=dict(color="#0ecb81", width=2.2),
+                hovertemplate="%{x|%Y-%m}<br>BM+MP %{y:.4f}<extra></extra>",
+            ))
+    layout = dict(
         title="누적 수익 곡선", height=400,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.22, x=0),
-        yaxis_title="누적 (시작=1)", **_BASE_LAYOUT,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.28, x=0),
+        yaxis_title="오버레이 누적 (시작=1)", **_BASE_LAYOUT,
     )
+    if has_bm:
+        layout["yaxis2"] = dict(title="BM 기준 누적 (시작=1)", overlaying="y",
+                                side="right", showgrid=False)
+        layout["margin"] = dict(l=60, r=60, t=50, b=80)
+    fig.update_layout(**layout)
     return fig
 
 
@@ -368,9 +388,17 @@ def deploy_exposure_fig(df: pd.DataFrame) -> go.Figure:
         line=dict(color="#3b82f6", width=2),
         hovertemplate="%{x|%Y-%m}<br>gross %{y:.1%}<extra></extra>",
     ))
+    # Gross Active Risk 목표 궤적 (계단식) — Bloomberg ex-ante TE 를 일정하게
+    # 유지하기 위한 Active Risk 조정 이력을 그대로 보여준다 (2026-08-21).
+    if "target_gross" in df.columns and df["target_gross"].notna().any():
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df["target_gross"], name="Gross Active Risk 목표",
+            line=dict(color="#22c55e", width=2.4, shape="hv"),
+            hovertemplate="%{x|%Y-%m}<br>목표 gross %{y:.0%}<extra></extra>",
+        ))
     fig.add_trace(go.Scatter(
-        x=df.index, y=df["long_exposure"] * 2, name="배포 gross (목표 고정)",
-        line=dict(color="#22c55e", width=2),
+        x=df.index, y=df["long_exposure"] * 2, name="실제 배포 gross",
+        line=dict(color="#0ecb81", width=1.6, dash="dot"),
         hovertemplate="%{x|%Y-%m}<br>배포 gross %{y:.1%}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
@@ -379,7 +407,7 @@ def deploy_exposure_fig(df: pd.DataFrame) -> go.Figure:
         hovertemplate="%{x|%Y-%m}<br>배수 %{y:.3f}<extra></extra>",
     ))
     fig.update_layout(
-        title="배포 노출 · 적용 배수 추이", height=360,
+        title="Gross Active Risk · 배수 추이", height=360,
         margin=dict(l=60, r=55, t=50, b=70), **_DARK,
         yaxis=dict(title="gross 노출", tickformat=".0%", rangemode="tozero"),
         yaxis2=dict(title="배수", overlaying="y", side="right", rangemode="tozero", showgrid=False),

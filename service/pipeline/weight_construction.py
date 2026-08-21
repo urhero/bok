@@ -189,6 +189,21 @@ def multiplier_for_target(book_gross: float, target_gross: float) -> float:
     return target_gross / book_gross
 
 
+def resolve_target_gross(as_of, path, default: float | None) -> float | None:
+    """기준일에 유효한 목표 총 gross = effective_date <= as_of 중 가장 최근 값.
+
+    data/mp_target_gross.csv 는 (effective_date, target_gross) 계단식 이력 —
+    운용 중 노출 규모를 바꿔도 과거 시점 재현이 그때의 규모로 정확히 나온다.
+    파일/해당 행이 없으면 config 기본값으로 폴백.
+    """
+    path = Path(path)
+    if not path.exists():
+        return default
+    hist = pd.read_csv(path, parse_dates=["effective_date"]).sort_values("effective_date")
+    eligible = hist[hist["effective_date"] <= pd.Timestamp(as_of)]
+    return float(eligible["target_gross"].iloc[-1]) if len(eligible) else default
+
+
 def resolve_multiplier(as_of, path) -> float:
     """기준일에 유효한 배수 = effective_date <= as_of 중 가장 최근 값."""
     path = Path(path)

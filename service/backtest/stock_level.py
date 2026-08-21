@@ -85,11 +85,14 @@ def stock_weights_at(frames, w_dep, t, backtest_start_ts, stock_weight_cap: floa
     return w.sort_index(), r
 
 
-def build_stock_series(monthly, mp_cost_bps: float, target_gross: float | None) -> pd.DataFrame:
+def build_stock_series(monthly, mp_cost_bps: float, target_gross) -> pd.DataFrame:
     """월별 (date, w_t, r_t) 시퀀스 -> 노출/배수/비용/수익 시계열.
 
     target_gross 를 주면 매월 `배수 = target/gross` 로 노출을 고정한다 (netting
     변동 흡수). 배수는 롱/숏에 동일 적용되므로 달러 중립성은 유지된다.
+
+    target_gross 는 스칼라 또는 callable(date)->float. callable 이면 시점별
+    목표 노출 일정(Active Risk 조정 이력)을 그대로 반영한다 (2026-08-21).
 
     반환 컬럼(배포 기준 = 배수 적용 후):
       book_gross_before / multiplier / long_exposure / short_exposure
@@ -98,7 +101,8 @@ def build_stock_series(monthly, mp_cost_bps: float, target_gross: float | None) 
     rows, prev_w, prev_r = [], None, None
     for t, w_t, r_t in monthly:
         book_gross = float(w_t.abs().sum()) if len(w_t) else 0.0
-        mult = multiplier_for_target(book_gross, target_gross) if target_gross else 1.0
+        tg = target_gross(t) if callable(target_gross) else target_gross
+        mult = multiplier_for_target(book_gross, tg) if tg else 1.0
 
         gross = float((w_t * r_t).sum()) if len(w_t) else 0.0
         if prev_w is not None and len(prev_w) and len(w_t):
@@ -117,6 +121,7 @@ def build_stock_series(monthly, mp_cost_bps: float, target_gross: float | None) 
         rows.append({
             "date": t,
             "book_gross_before": book_gross,
+            "target_gross": tg if tg else np.nan,
             "multiplier": mult,
             "long_exposure": book_gross * mult / 2.0,
             "short_exposure": -book_gross * mult / 2.0,

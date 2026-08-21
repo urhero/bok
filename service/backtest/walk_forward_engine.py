@@ -636,9 +636,13 @@ class WalkForwardEngine:
         if not test_file and stock_monthly:
             try:
                 from service.paths import OUTPUT_DIR, dated
+                # 목표 노출 일정(Active Risk 조정 이력) 반영 — 시점별로 다른 규모
+                from service.paths import DATA_DIR as _DD
+                from service.pipeline.weight_construction import resolve_target_gross
+                _tg_path, _tg_def = _DD / "mp_target_gross.csv", pp.get("mp_target_gross")
                 series = build_stock_series(
                     stock_monthly, float(PIPELINE_PARAMS["transaction_cost_bps"]),
-                    pp.get("mp_target_gross"),
+                    lambda d: resolve_target_gross(d, _tg_path, _tg_def),
                 )
                 series.to_csv(dated(OUTPUT_DIR / "stock_level_series.csv", series.index.max()))
                 m = series_metrics(series)

@@ -408,6 +408,9 @@ def _deployed_curves(curves: pd.DataFrame, series: pd.DataFrame) -> pd.DataFrame
     mult = series["multiplier"].reindex(curves.index)
     out = curves.copy()
     out["cew_return"] = series["net_return"].reindex(curves.index)
+    # 목표 노출(Gross Active Risk) 궤적 — 시점별 조정 이력을 곡선 옆에 보존
+    if "target_gross" in series.columns:
+        out["target_gross"] = series["target_gross"].reindex(curves.index)
     for c in ("ew_return", "ew_all_return", "ew_top50_return"):
         if c in out.columns:
             out[c] = out[c] * mult
@@ -417,6 +420,25 @@ def _deployed_curves(curves: pd.DataFrame, series: pd.DataFrame) -> pd.DataFrame
                    ("ew_top50_return", "ew_top50_cumulative")):
         if rc in out.columns and cc in out.columns:
             out[cc] = (1 + out[rc].fillna(0)).cumprod()
+    return out
+
+
+def _attach_benchmark(curves: pd.DataFrame) -> pd.DataFrame:
+    """BM(MXWO) 월수익을 붙이고 BM / BM+MP 오버레이 누적을 만든다 (2026-08-21).
+
+    MP 는 시장중립 오버레이이므로 실제 운용 수익 = BM + MP. 파일이 없으면 무동작.
+    """
+    path = dd.DATA_DIR / "MXWO_bm_returns.csv"
+    if not path.exists() or "cew_return" not in curves.columns:
+        return curves
+    bm = pd.read_csv(path, parse_dates=["date"]).set_index("date")["bm_return"]
+    out = curves.copy()
+    out["bm_return"] = bm.reindex(out.index)
+    if out["bm_return"].isna().all():
+        return curves
+    out["bm_mp_return"] = out["bm_return"] + out["cew_return"]
+    out["bm_cumulative"] = (1 + out["bm_return"].fillna(0)).cumprod()
+    out["bm_mp_cumulative"] = (1 + out["bm_mp_return"].fillna(0)).cumprod()
     return out
 
 
@@ -469,6 +491,7 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
     deploy = _load_deploy_series(output_dir, end_date)
     if deploy is not None:
         curves = _deployed_curves(curves, deploy)
+        curves = _attach_benchmark(curves)
         kpis = dd.build_kpis(curves, None)
         r = curves["cew_return"].dropna()
         te = float(r.std() * (12 ** 0.5))
