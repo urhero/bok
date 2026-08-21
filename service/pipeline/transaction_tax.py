@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 
 import pandas as pd
@@ -23,11 +24,21 @@ import pandas as pd
 from config import COUNTRY_TAX_BPS, PARAM
 from service.paths import DATA_DIR
 
+logger = logging.getLogger(__name__)
+
 
 @lru_cache(maxsize=4)
-def _rate_frame(benchmark: str) -> pd.DataFrame:
-    """gvkeyiid -> (buy, sell) 세율(소수배율) 테이블. 국가맵은 정적 속성이라 캐시."""
-    cmap = pd.read_parquet(DATA_DIR / f"{benchmark}_country_map.parquet")
+def _rate_frame(benchmark: str) -> pd.DataFrame | None:
+    """gvkeyiid -> (buy, sell) 세율(소수배율) 테이블. 국가맵은 정적 속성이라 캐시.
+
+    국가맵 파일이 없으면 None -> 거래세 미적용 (해당 유니버스에 매핑이 없거나
+    CI/테스트 환경처럼 데이터가 없는 경우. 크래시 대신 0 으로 degrade).
+    """
+    path = DATA_DIR / f"{benchmark}_country_map.parquet"
+    if not path.exists():
+        logger.warning("%s 없음 - 국가별 거래세 미적용", path.name)
+        return None
+    cmap = pd.read_parquet(path)
     rates = cmap["country"].map(lambda c: COUNTRY_TAX_BPS.get(c, (0.0, 0.0)))
     return pd.DataFrame(
         {"buy": [r[0] / 1e4 for r in rates], "sell": [r[1] / 1e4 for r in rates]},
@@ -42,7 +53,10 @@ def tax_cost(delta: pd.Series, benchmark: str | None = None) -> float:
     """
     if delta is None or len(delta) == 0:
         return 0.0
-    rf = _rate_frame(benchmark or PARAM["benchmark"]).reindex(delta.index).fillna(0.0)
+    frame = _rate_frame(benchmark or PARAM["benchmark"])
+    if frame is None:
+        return 0.0
+    rf = frame.reindex(delta.index).fillna(0.0)
     buys = delta.clip(lower=0.0)
     sells = (-delta).clip(lower=0.0)
     return float((buys * rf["buy"]).sum() + (sells * rf["sell"]).sum())

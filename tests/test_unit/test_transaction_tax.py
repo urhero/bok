@@ -63,3 +63,13 @@ def test_drop_high_tax_countries_noop_when_off():
     raw = pd.DataFrame({"gvkeyiid": ["A", "B"], "val": [1.0, 2.0]})
     out = drop_high_tax_countries(raw, "NONEXISTENT_BENCHMARK", None)
     pd.testing.assert_frame_equal(out, raw)
+
+
+def test_missing_country_map_degrades_to_zero(monkeypatch, tmp_path):
+    """국가맵 파일이 없으면 크래시 대신 세금 0 (CI/미매핑 유니버스 대비)."""
+    monkeypatch.setattr(tt, "DATA_DIR", tmp_path)
+    tt._rate_frame.cache_clear()
+    try:
+        assert tt.tax_cost(pd.Series({"X": 1.0}), benchmark="NO_SUCH_BM") == 0.0
+    finally:
+        tt._rate_frame.cache_clear()
