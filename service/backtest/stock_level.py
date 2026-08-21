@@ -12,6 +12,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+from service.pipeline.bm_weights import apply_bm_short_cap, bm_weights_at
 from service.pipeline.transaction_tax import tax_cost
 from service.pipeline.weight_construction import multiplier_for_target
 
@@ -85,53 +86,69 @@ def stock_weights_at(frames, w_dep, t, backtest_start_ts, stock_weight_cap: floa
     return w.sort_index(), r
 
 
-def build_stock_series(monthly, mp_cost_bps: float, target_gross) -> pd.DataFrame:
+def build_stock_series(monthly, mp_cost_bps: float, target_gross,
+                       benchmark: str | None = None) -> pd.DataFrame:
     """월별 (date, w_t, r_t) 시퀀스 -> 노출/배수/비용/수익 시계열.
 
     target_gross 를 주면 매월 `배수 = target/gross` 로 노출을 고정한다 (netting
-    변동 흡수). 배수는 롱/숏에 동일 적용되므로 달러 중립성은 유지된다.
+    변동 흡수). 스칼라 또는 callable(date)->float 둘 다 허용 — callable 이면
+    시점별 목표 노출 일정(Active Risk 조정 이력)을 반영한다.
 
-    target_gross 는 스칼라 또는 callable(date)->float. callable 이면 시점별
-    목표 노출 일정(Active Risk 조정 이력)을 그대로 반영한다 (2026-08-21).
+    benchmark 를 주면 **배수 적용 후** 종목별 숏을 BM 비중까지로 제한한다
+    (2026-08-21 채택). 상한 초과분은 여유 있는 숏에 재분배하고 롱은 비례 조정 —
+    달러 중립 유지. BM 여력이 부족하면 목표 노출에 미달할 수 있다.
 
-    반환 컬럼(배포 기준 = 배수 적용 후):
-      book_gross_before / multiplier / long_exposure / short_exposure
-      gross_return / cost / tax / net_return / turnover_oneway
+    수익·비용·세금은 모두 **최종 배포 비중**에서 직접 계산하므로 제약이
+    수익률에 정확히 반영된다.
+
+    반환 컬럼: book_gross_before / target_gross / multiplier /
+      long_exposure / short_exposure / gross_return / cost / tax /
+      net_return / turnover_oneway / bm_capped_names
     """
     rows, prev_w, prev_r = [], None, None
     for t, w_t, r_t in monthly:
         book_gross = float(w_t.abs().sum()) if len(w_t) else 0.0
         tg = target_gross(t) if callable(target_gross) else target_gross
         mult = multiplier_for_target(book_gross, tg) if tg else 1.0
+        w_dep = w_t * mult
 
-        gross = float((w_t * r_t).sum()) if len(w_t) else 0.0
-        if prev_w is not None and len(prev_w) and len(w_t):
+        n_capped = 0
+        if benchmark:
+            bm = bm_weights_at(benchmark, t)
+            if bm is not None:
+                before = w_dep[w_dep < 0]
+                w_dep = apply_bm_short_cap(w_dep, bm, (tg / 2.0) if tg else None)
+                after = w_dep.reindex(before.index)
+                n_capped = int((after > before + 1e-12).sum())
+
+        gross = float((w_dep * r_t).sum()) if len(w_dep) else 0.0
+        if prev_w is not None and len(prev_w) and len(w_dep):
             pr = prev_r.reindex(prev_w.index).fillna(0.0)
             nav = 1.0 + float((prev_w * pr).sum())
             drift = prev_w * (1.0 + pr) / (nav if nav > 0 else 1.0)
-            union = w_t.index.union(drift.index)
-            delta = w_t.reindex(union).fillna(0.0) - drift.reindex(union).fillna(0.0)
+            union = w_dep.index.union(drift.index)
+            delta = w_dep.reindex(union).fillna(0.0) - drift.reindex(union).fillna(0.0)
             turno = float(delta.abs().sum())
             tax = tax_cost(delta)
         else:
-            turno, tax, delta = 0.0, 0.0, None
+            turno, tax = 0.0, 0.0
         cost = mp_cost_bps / 1e4 * turno
 
-        # 배수는 비중·수익·비용·세금에 모두 선형으로 걸린다 (동일 스케일).
         rows.append({
             "date": t,
             "book_gross_before": book_gross,
             "target_gross": tg if tg else np.nan,
             "multiplier": mult,
-            "long_exposure": book_gross * mult / 2.0,
-            "short_exposure": -book_gross * mult / 2.0,
-            "gross_return": gross * mult,
-            "cost": cost * mult,
-            "tax": tax * mult,
-            "net_return": (gross - cost - tax) * mult,
-            "turnover_oneway": turno / 2.0 * mult,
+            "long_exposure": float(w_dep[w_dep > 0].sum()),
+            "short_exposure": float(w_dep[w_dep < 0].sum()),
+            "gross_return": gross,
+            "cost": cost,
+            "tax": tax,
+            "net_return": gross - cost - tax,
+            "turnover_oneway": turno / 2.0,
+            "bm_capped_names": n_capped,
         })
-        prev_w, prev_r = w_t, r_t
+        prev_w, prev_r = w_dep, r_t
     return pd.DataFrame(rows).set_index("date")
 
 

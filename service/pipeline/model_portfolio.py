@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from config import PARAM, PIPELINE_PARAMS, TAX_EXCLUSION_THRESHOLD_BP
@@ -52,6 +53,7 @@ from service.pipeline.weight_history import (
     save_style_totals,
 )
 from service.download.parquet_io import load_factor_parquet
+from service.pipeline.bm_weights import apply_bm_short_cap, bm_weights_at
 from service.pipeline.transaction_tax import (
     drop_high_tax_countries,
     excluded_countries,
@@ -449,6 +451,28 @@ class ModelPortfolioPipeline:
         logger.info("MP 배포 배수 %.4f (%s): gross %.2f%% -> %.2f%% (롱/숏 각 %.2f%%)",
                     mult, mode, book_gross * 100, book_gross * mult * 100,
                     book_gross * mult * 50)
+
+        # 종목별 숏 <= BM 비중 (2026-08-21): 총 보유가 음수가 되지 않게.
+        # 상한은 팩터별이 아니라 **netting 완료된 최종 MP 순비중**에 걸고(배수 적용 후),
+        # 종목별 축소 비율을 팩터 전개행에도 동일하게 곱해 "팩터행 합 = MP행"
+        # 항등식을 유지한다 (팩터별 기여도가 제약 반영분으로 바뀜, 사용자 결정).
+        if self.pipeline_params.get("bm_short_cap") and target:
+            bm = bm_weights_at(self.config["benchmark"], end_date)
+            if bm is None:
+                logger.warning("BM 비중 없음 - 숏 상한 미적용 (%s)", end_date)
+            else:
+                mp_w = final_weights.loc[mp_rows].groupby("gvkeyiid")["mp_ls_weight"].sum()
+                capped = apply_bm_short_cap(mp_w, bm, float(target) / 2.0)
+                # 순비중 ~0 종목은 비율 1 (조정 불필요) — 0 으로 두면 팩터 전개
+                # 상세가 통째로 지워진다 (롱/숏이 상쇄된 종목).
+                ratio = (capped / mp_w).where(mp_w.abs() > 1e-12, 1.0)
+                ratio = ratio.replace([np.inf, -np.inf], 1.0).fillna(1.0)
+                key = final_weights["gvkeyiid"].map(ratio).fillna(1.0)
+                for c in ("mp_ls_weight", "ls_weight", "style_ls_weight"):
+                    final_weights[c] = final_weights[c] * key
+                n_cut = int((ratio < 1 - 1e-9).sum())
+                logger.info("BM 숏 상한: %d종목 축소, 롱 %.2f%% / 숏 %.2f%% (팩터행 동반 조정)",
+                            n_cut, capped[capped > 0].sum() * 100, capped[capped < 0].sum() * 100)
         if not test_file:
             save_deploy_multiplier(HISTORY_DIR, end_date, book_gross, mult, mode)
 

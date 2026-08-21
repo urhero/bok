@@ -33,12 +33,17 @@ def test_no_target_leaves_book_unscaled():
 
 
 def test_returns_scale_with_multiplier():
-    """수익·비용·세금이 모두 같은 배수로 스케일된다 (일관성)."""
+    """수익·비용은 배수에 거의 선형 — NAV 드리프트만 2차 항으로 남는다.
+
+    비중 변화(턴오버)를 실제 배포 북의 NAV 로 정규화하므로 완전한 상수배는
+    아니다 (드리프트가 스케일에 비선형). 차이는 상대 1e-4 수준.
+    """
     un = build_stock_series(_monthly([0.80, 0.80]), 10.0, None)
     sc = build_stock_series(_monthly([0.80, 0.80]), 10.0, 0.40)
     ratio = 0.40 / 0.80
     assert sc["gross_return"].tolist() == pytest.approx((un["gross_return"] * ratio).tolist())
-    assert sc["net_return"].tolist() == pytest.approx((un["net_return"] * ratio).tolist())
+    assert sc["net_return"].tolist() == pytest.approx(
+        (un["net_return"] * ratio).tolist(), rel=1e-4)
 
 
 def test_tracking_error_is_annualized_std():
@@ -49,12 +54,22 @@ def test_tracking_error_is_annualized_std():
     assert m["tracking_error"] == pytest.approx(r.std() * np.sqrt(12))
 
 
+def _varied(gross_list, rets):
+    """월별 수익이 다른 시퀀스 (Sharpe 가 퇴화하지 않도록)."""
+    out = []
+    for i, (g, r) in enumerate(zip(gross_list, rets)):
+        w = pd.Series({"A": g / 2, "B": -g / 2})
+        rr = pd.Series({"A": r, "B": -r})
+        out.append((pd.Timestamp("2020-01-31") + pd.DateOffset(months=i), w, rr))
+    return out
+
+
 def test_sharpe_invariant_only_when_gross_constant():
     """gross 가 일정하면 배수는 상수배 -> Sharpe 불변."""
-    seq = _monthly([0.80] * 6, ret=0.02)
+    seq = _varied([0.80] * 6, [0.02, -0.01, 0.03, 0.005, -0.02, 0.015])
     m_un = series_metrics(build_stock_series(seq, 10.0, None))
     m_sc = series_metrics(build_stock_series(seq, 10.0, 0.40))
-    assert m_sc["sharpe"] == pytest.approx(m_un["sharpe"], rel=1e-6)
+    assert m_sc["sharpe"] == pytest.approx(m_un["sharpe"], rel=1e-3)
 
 
 def test_targeting_changes_return_path_when_gross_varies():
