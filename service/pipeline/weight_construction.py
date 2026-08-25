@@ -81,11 +81,49 @@ def build_factor_weight_frames(
     return weight_raw
 
 
+def sector_short_cap_scales(sec_gross: pd.Series, cap_frac: float) -> pd.Series:
+    """섹터별 숏 gross -> 캡 준수 배율 (water-filling, 2026-08-25 수렴 수정).
+
+    cap = cap_frac * 총 숏 gross. 초과 섹터를 캡에 동결하고 잘린 물량을 아직
+    동결되지 않은 섹터에 비례 재분배 — 재분배가 새 초과를 만들면 반복한다
+    (매회 >=1 섹터 동결이라 섹터 수 내 확정 종료. 구 1-pass 는 재분배 수혜
+    섹터가 캡을 재초과해도 방치했음). 전 섹터 동결 시(숏 섹터 < 1/cap_frac 개)
+    캡이 우선 — 총 숏 gross 축소를 허용한다 (crowding 국면에서 캡 해제 금지;
+    중립 유지는 호출부가 롱 비례 축소로 담당).
+
+    Returns:
+        섹터별 배율 Series (호출부는 숏 종목 행에 map 해서 곱한다).
+    """
+    total = float(sec_gross.sum())
+    cap = cap_frac * total
+    scale = pd.Series(1.0, index=sec_gross.index)
+    cur = sec_gross.astype(float).copy()
+    frozen = pd.Series(False, index=sec_gross.index)
+    for _ in range(len(sec_gross)):
+        over = (cur > cap + 1e-12) & ~frozen
+        if not over.any():
+            break
+        # 구 1-pass 와 동일한 곱 순서 유지 (재초과 없던 케이스 byte-identical)
+        scale[over] = cap / sec_gross[over]
+        freed = float((cur[over] - cap).sum())
+        cur[over] = cap
+        frozen |= over
+        free = ~frozen
+        free_g = float(cur[free].sum())
+        if free_g <= 1e-12:
+            break  # 전 섹터 동결 — gross 축소 (캡 우선)
+        factor = 1.0 + freed / free_g
+        scale[free] *= factor
+        cur[free] *= factor
+    return scale
+
+
 def apply_sector_short_cap(agg_w: pd.DataFrame, cap: float | None) -> pd.DataFrame:
     """숏 crowding 완화 (2026-07-30 채택): 섹터별 숏 gross 가 전체 숏 gross 의
-    cap 비율을 넘으면 그 섹터 숏을 줄이고, 잘린 만큼을 다른 섹터 숏에 비례
-    재분배한다 (총 숏 gross 보존 — 2020-11형 백신 로테이션 이벤트 리스크 대응).
-    mp_level_cost_backtest.stock_weights_at 의 sector_short_cap 과 동일 로직.
+    cap 비율을 넘으면 그 섹터 숏을 줄이고, 잘린 만큼을 다른 섹터 숏에 재분배한다
+    (water-filling — sector_short_cap_scales 참조. 2020-11형 백신 로테이션 이벤트
+    리스크 대응). 캡 인피저블 시 숏 gross 가 줄며, 달러 중립 유지를 위해 롱도
+    같은 비율로 축소한다. backtest stock_level.stock_weights_at 과 로직 공유.
     """
     if not cap or agg_w.empty:
         return agg_w
@@ -95,21 +133,21 @@ def apply_sector_short_cap(agg_w: pd.DataFrame, cap: float | None) -> pd.DataFra
     if total_sg <= 1e-12:
         return agg_w
     sec_gross = w[shorts].abs().groupby(agg_w.loc[shorts, "sec"]).sum()
-    over = sec_gross[sec_gross > cap * total_sg]
-    if over.empty:
+    if not (sec_gross > cap * total_sg).any():
         return agg_w
+    scales = sector_short_cap_scales(sec_gross, cap)
     agg_w = agg_w.copy()
-    freed = 0.0
-    for sec, sg in over.items():
-        idx = agg_w.index[shorts & (agg_w["sec"] == sec)]
-        agg_w.loc[idx, "mp_ls_weight"] *= (cap * total_sg) / sg
-        freed += sg - cap * total_sg
-    under_idx = agg_w.index[shorts & ~agg_w["sec"].isin(over.index)]
-    under_g = agg_w.loc[under_idx, "mp_ls_weight"].abs().sum()
-    if under_g > 1e-12 and freed > 0:
-        agg_w.loc[under_idx, "mp_ls_weight"] *= 1.0 + freed / under_g
+    agg_w.loc[shorts, "mp_ls_weight"] *= agg_w.loc[shorts, "sec"].map(scales).to_numpy()
+    new_sg = agg_w.loc[shorts, "mp_ls_weight"].abs().sum()
+    if new_sg < total_sg - 1e-9:  # 인피저블 — 롱 비례 축소로 중립 유지
+        longs = w > 0
+        agg_w.loc[longs, "mp_ls_weight"] *= new_sg / total_sg
+        logger.warning("sector_short_cap %.0f%% 인피저블 (숏 섹터 %d개): "
+                       "숏 gross %.2f%% -> %.2f%%, 롱 동반 축소",
+                       cap * 100, len(sec_gross), total_sg * 100, new_sg * 100)
+    cut = float((sec_gross * (1.0 - scales)).clip(lower=0).sum())  # 축소 섹터 절감분 합
     logger.info("sector_short_cap %.0f%%: %s 섹터 숏 축소, %.2f%%p 재분배",
-                cap * 100, list(over.index), freed * 100)
+                cap * 100, list(sec_gross.index[scales < 1 - 1e-12]), cut * 100)
     return agg_w
 
 

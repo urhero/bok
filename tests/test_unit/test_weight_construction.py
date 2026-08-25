@@ -336,3 +336,77 @@ def test_sector_short_cap_noop_when_under_cap_or_off():
     ])
     assert apply_sector_short_cap(agg, cap=0.6).equals(agg)
     assert apply_sector_short_cap(agg, cap=None).equals(agg)
+
+
+def test_sector_short_cap_matches_old_one_pass_when_no_reviolation():
+    """재위반이 없는 케이스는 구 1-pass 알고리즘과 float 까지 동일해야 한다 (회귀 가드)."""
+    from service.pipeline.weight_construction import apply_sector_short_cap
+    d = pd.Timestamp("2026-06-30")
+    agg = _mk_agg([
+        [d, "A", "iA", "gA", "Financials", -0.30, 0.1],
+        [d, "B", "iB", "gB", "Energy", -0.10, 0.1],
+        [d, "C", "iC", "gC", "Tech", 0.40, 0.1],
+    ])
+    out = apply_sector_short_cap(agg, cap=0.5)
+    # 구 로직 float 연산 순서 그대로 재현 (0.30-0.20 의 이진 오차까지 동일해야 byte 보존)
+    freed = 0.30 - 0.5 * 0.40
+    assert out.loc[0, "mp_ls_weight"] == -0.30 * ((0.5 * 0.40) / 0.30)
+    assert out.loc[1, "mp_ls_weight"] == -0.10 * (1.0 + freed / 0.10)
+    assert out.loc[2, "mp_ls_weight"] == 0.40
+
+
+def test_sector_short_cap_waterfills_reviolation():
+    """재분배 수혜 섹터가 캡을 재초과하면 수렴까지 반복해야 한다 (구 1-pass 버그)."""
+    from service.pipeline.weight_construction import apply_sector_short_cap
+    d = pd.Timestamp("2026-06-30")
+    # cap 0.15, 숏 7개 섹터 (합 1.0): A 0.25 초과 -> 1-pass 재분배 시 B/C(0.14)가 0.158로 재초과
+    secs = {"A": 0.25, "B": 0.14, "C": 0.14, "D": 0.13, "E": 0.12, "F": 0.11, "G": 0.11}
+    rows = [[d, s, f"i{s}", f"g{s}", s, -g, 0.1] for s, g in secs.items()]
+    rows.append([d, "L", "iL", "gL", "Tech", 1.0, 0.1])
+    agg = _mk_agg(rows)
+    out = apply_sector_short_cap(agg, cap=0.15)
+    shorts = out[out["mp_ls_weight"] < 0]
+    total_sg = shorts["mp_ls_weight"].abs().sum()
+    sec_g = shorts.groupby("sec")["mp_ls_weight"].apply(lambda x: x.abs().sum())
+    assert abs(total_sg - 1.0) < 1e-9, "feasible 케이스는 총 숏 gross 보존"
+    assert (sec_g <= 0.15 * total_sg + 1e-9).all(), f"전 섹터 캡 준수 실패: {sec_g.to_dict()}"
+    assert out[out["mp_ls_weight"] > 0]["mp_ls_weight"].sum() == 1.0, "feasible 케이스 롱 불변"
+
+
+def test_sector_short_cap_infeasible_cap_wins_and_stays_neutral():
+    """숏 섹터 < 1/cap 개면 캡 우선: 숏 gross 축소 + 롱 동반 축소 (달러 중립 유지)."""
+    from service.pipeline.weight_construction import apply_sector_short_cap
+    d = pd.Timestamp("2026-06-30")
+    rows = [[d, s, f"i{s}", f"g{s}", s, -0.25, 0.1] for s in ["A", "B", "C", "D"]]
+    rows.append([d, "L", "iL", "gL", "Tech", 1.0, 0.1])
+    agg = _mk_agg(rows)
+    out = apply_sector_short_cap(agg, cap=0.15)  # 4섹터 x 0.15 = 0.6 < 1.0 인피저블
+    shorts = out[out["mp_ls_weight"] < 0]
+    sec_g = shorts.groupby("sec")["mp_ls_weight"].apply(lambda x: x.abs().sum())
+    assert (sec_g <= 0.15 * 1.0 + 1e-9).all(), "원 gross 기준 캡 준수"
+    total_sg = shorts["mp_ls_weight"].abs().sum()
+    assert abs(total_sg - 0.6) < 1e-9, "숏 gross 0.6 으로 축소"
+    long_sum = out[out["mp_ls_weight"] > 0]["mp_ls_weight"].sum()
+    assert abs(long_sum - total_sg) < 1e-9, "롱 동반 축소 -> 달러 중립"
+
+
+def test_stock_level_sector_short_cap_shares_helper():
+    """백테스트 경로(stock_weights_at)도 water-filling 캡을 준수해야 한다 (parity)."""
+    from service.backtest.stock_level import stock_weights_at
+    t = pd.Timestamp("2026-06-30")
+    # 1개 팩터, 롱 1종목 + 숏 7종목(섹터 A~G) -> 팩터 EW 라 숏 균등이지만
+    # 종목 수를 섹터별로 달리해 gross 편중을 만든다: A 3종목, 나머지 1종목씩
+    recs = []
+    for i in range(3):
+        recs.append({"ddt": t, "gvkeyiid": f"sA{i}", "label": -1, "M_RETURN": 0.0, "sec": "A"})
+    for s in ["B", "C", "D", "E", "F", "G"]:
+        recs.append({"ddt": t, "gvkeyiid": f"s{s}", "label": -1, "M_RETURN": 0.0, "sec": s})
+    recs.append({"ddt": t, "gvkeyiid": "long1", "label": 1, "M_RETURN": 0.0, "sec": "Tech"})
+    frames = {"F1": pd.DataFrame(recs)}
+    w, _r = stock_weights_at(frames, {"F1": 1.0}, t, pd.Timestamp("2000-01-31"),
+                             sector_short_cap=0.15)
+    shorts = w[w < 0]
+    total_sg = shorts.abs().sum()
+    sec_g = shorts.abs().groupby(shorts.index.str[1]).sum()  # gvkeyiid 두번째 문자 = 섹터
+    assert (sec_g <= 0.15 * total_sg + 1e-9).all(), f"캡 위반: {sec_g.to_dict()}"
+    assert abs(total_sg - 1.0) < 1e-9, "feasible(7섹터) -> 숏 gross 보존 (팩터 숏 사이드 = wf 1.0)"

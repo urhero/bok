@@ -14,7 +14,7 @@ import pandas as pd
 
 from service.pipeline.bm_weights import apply_bm_short_cap, bm_weights_at
 from service.pipeline.transaction_tax import tax_cost
-from service.pipeline.weight_construction import multiplier_for_target
+from service.pipeline.weight_construction import multiplier_for_target, sector_short_cap_scales
 
 logger = logging.getLogger(__name__)
 
@@ -51,28 +51,27 @@ def stock_weights_at(frames, w_dep, t, backtest_start_ts, stock_weight_cap: floa
     w = g["w"].sum()
     r = g["r"].first()
     if sector_short_cap:
-        # 숏 crowding 완화: 섹터별 숏 gross 가 전체 숏 gross 의 cap 비율을 넘으면
-        # 그 섹터 숏을 줄이고, 잘린 만큼을 다른 섹터 숏에 비례 재분배 (총 숏 gross 보존).
+        # 숏 crowding 완화: 섹터별 숏 gross 캡 (water-filling — 프로덕션
+        # weight_construction.sector_short_cap_scales 와 로직 공유, parity 보장).
+        # 인피저블 시 숏 gross 축소 + 롱 비례 축소 (달러 중립 유지, 캡 우선).
         sec_map = g["sec"].first()
         shorts = w[w < 0]
         total_sg = shorts.abs().sum()
         if total_sg > 1e-12:
             sec_of = sec_map.reindex(shorts.index)
             sec_gross = shorts.abs().groupby(sec_of).sum()
-            over = sec_gross[sec_gross > sector_short_cap * total_sg]
-            if not over.empty:
-                w2 = w.copy()
-                freed = 0.0
-                for sec, sg in over.items():
-                    scale = (sector_short_cap * total_sg) / sg
-                    idx = shorts.index[sec_of == sec]
-                    w2[idx] = w2[idx] * scale
-                    freed += sg - sector_short_cap * total_sg
-                under_idx = shorts.index[~sec_of.isin(over.index)]
-                under_g = w2[under_idx].abs().sum()
-                if under_g > 1e-12 and freed > 0:
-                    w2[under_idx] *= 1.0 + freed / under_g
-                w = w2
+            if (sec_gross > sector_short_cap * total_sg).any():
+                scales = sector_short_cap_scales(sec_gross, sector_short_cap)
+                w = w.copy()
+                w[shorts.index] *= sec_of.map(scales).to_numpy()
+                new_sg = w[shorts.index].abs().sum()
+                if new_sg < total_sg - 1e-9:  # 인피저블 — 롱 동반 축소
+                    long_idx = w.index[w > 0]
+                    w[long_idx] *= new_sg / total_sg
+                    logger.warning("sector_short_cap %.0f%% 인피저블 (%s, 숏 섹터 %d개): "
+                                   "숏 gross 축소 %.2f%% -> %.2f%%",
+                                   sector_short_cap * 100, t, len(sec_gross),
+                                   total_sg * 100, new_sg * 100)
     if stock_weight_cap:
         for side in (1, -1):
             mask = (w * side) > 0

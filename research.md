@@ -220,7 +220,11 @@ gross 0.682 / 월비용 7.4bp / netting 0.65; factor-level 정본 CSV 0.390. 상
 mp/엔진/실측 3곳 공용; 창 6/9/12·감쇠 0.5/0.7 전부 유효 고원). ④ `sector_short_cap=0.15`
 — MP 종목 합산 후 섹터별 숏 gross 상한 (`apply_sector_short_cap()`, weight_construction;
 2020-11 백신 로테이션형 숏 crowding 완화. 종목 레벨이라 factor-level 백테스트에는 미반영
-— 실측 판단). 최종 실측 (10bp, 채택 스택): **net Sharpe 0.692 / MDD -4.95% / Calmar 0.352**
+— 실측 판단). **2026-08-25 수렴 수정**: 구 1-pass 재분배는 수혜 섹터가 캡을 재초과해도
+방치했음 (실측 98개월 중 35개월 발동, 2020-11 포함). water-filling(초과 섹터 캡 동결 후
+잔여 섹터 재분배 반복, `sector_short_cap_scales()` — 프로덕션/백테스트 stock_level 공용)으로
+교체, 재위반 시 수렴 보장. 숏 섹터 수 < 1/cap 이면 캡 우선(숏 gross 축소 + 롱 동반 축소로
+달러 중립 유지; 실측 이력 발동 0회). 실측 영향: net Sharpe 0.714→0.715 (성과 중립, 제약 준수화). 최종 실측 (10bp, 채택 스택): **net Sharpe 0.692 / MDD -4.95% / Calmar 0.352**
 (EWMA/GARCH fast-vol, semi-cov, 종목 캡, 팩터 MDD 필터는 실측 기각 — 실험 로그 참조).
 
 **단면 커버리지 필터** (`min_coverage_pct`, 기본 0.10, 2026-07-27 채택): 월별 (유효 관측 종목수 / 유니버스 종목수)의 기간 평균이 임계 미만인 팩터를 lag 직후 배치로 제외. 은행 전용 팩터(MXWO에서 NaN ~99%, 7종)처럼 구조적으로 희소한 팩터는 L/S 폭이 좁아 노이즈가 큰데도 클러스터 선정 슬롯과 스타일 예산을 차지하는 문제를 방지. MXWO A/B: 제외 시 CEW 전체 Sharpe 0.106→0.160, 최근 3년 0.056→0.230 (EW_Top50/EW_All 불변 — 효과는 전량 선정 단계에서 발생). **walk-forward에서는 IS 학습(`_run_rule_learning`)에만 적용**하고 전체 데이터 사전계산(`factor_stats_full`)에는 적용하지 않는다 — IS에서 탈락한 팩터는 `kept_abbrs`에서 빠져 OOS에 반영되고, 임계 근처에서 IS/full 커버리지가 엇갈릴 때 kept 팩터의 full stats가 사라지는 불일치를 피하기 위함.
