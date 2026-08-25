@@ -40,9 +40,10 @@ PIPELINE_PARAMS = {
     # 팩터별 전액 계상은 교차 팩터 netting(실거래는 MP 합산 후 월 1회 매매)을 무시해
     # 비용을 과대평가한다. MP-level(종목단) 비용 백테스트 실측 결과
     # 실제 종목매매비용 / 팩터별 전액계상 비용 = 0.574 (2026-07-03,
-    # docs/experiments/mp_level_cost_20260703.md) -> 0.6 으로 근사 적용 (20bp x 0.6 = 12bp).
+    # docs/experiments/mp_level_cost_20260703.md) -> 0.6 으로 근사 적용
+    # (현 MXWO 10bp x 0.6 = 6bp; 도입 당시 MXCN 20bp x 0.6 = 12bp).
     # mp(운영) 파이프라인에는 적용되지 않음 (백테스트 전용).
-    "backtest_cost_multiplier": 0.6,   # 선정 입력용 비용 (12bp; 비용 인지 선정이 A/B 최적 — 0/22bp 모두 열위). 주의: factor-level 성과 회계는 고회전 구성에서 실비용 과소계상 -> 정본 성과 판단은 mp_level_cost_backtest 실측 기준 (step0.5 실측 netting 1.09, net Sharpe 0.564)
+    "backtest_cost_multiplier": 0.6,   # 선정 입력용 비용 (6bp; 비용 인지 선정이 A/B 최적 — 0/22bp 모두 열위). 주의: factor-level 성과 회계는 고회전 구성에서 실비용 과소계상 -> 정본 성과 판단은 mp_level_cost_backtest 실측 기준 (step0.5 실측 netting 1.09, net Sharpe 0.564)
     "top_factor_count": 50,            # 상위 팩터 선정 수
     "spread_threshold_pct": 0.05,      # L/N/S 라벨링 임계값. MXWO: 0.05 채택 (2026-07-29, 0.025~0.05 고원; 구 0.10)
     "min_sector_stocks": 10,           # 섹터-날짜 최소 종목 수 (프로덕션)

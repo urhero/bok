@@ -282,12 +282,14 @@ def _resolve_backtest_cost_bps(pp: dict) -> float:
     팩터별 전액 계상은 교차 팩터 netting(실거래는 MP 합산 후 월 1회 매매)을 무시해
     비용을 과대평가한다. MP-level 실측 netting ratio = 0.574 (실제 종목매매비용 /
     팩터별 전액계상 비용, docs/experiments/mp_level_cost_20260703.md) -> 기본 배수
-    0.6 으로 근사 (20bp x 0.6 = 12bp). 상세는 config.py 주석 참조.
+    0.6 으로 근사 (현 MXWO 기본 10bp x 0.6 = 6bp). 상세는 config.py 주석 참조.
 
     - 배수는 config PIPELINE_PARAMS['backtest_cost_multiplier'] 로 조정한다 (figure 관리).
     - 운영 mp 파이프라인에는 적용되지 않는다 (이 함수는 백테스트 엔진 전용).
     """
-    base = float(pp.get("transaction_cost_bps", 20.0))
+    # 키 폴백 없음 (2026-08-25): 구 fallback 20.0 은 config(10bp)와 어긋나 키 누락 시
+    # 조용히 2배 비용으로 돌았음. 호출자는 모두 PIPELINE_PARAMS 기반 -> fail-loud.
+    base = float(pp["transaction_cost_bps"])
     mult = float(pp.get("backtest_cost_multiplier", 0.6))
     return base * mult
 
@@ -390,7 +392,7 @@ class WalkForwardEngine:
         if pp["optimization_mode"] == "hardcoded":
             pp["optimization_mode"] = "equal_weight"  # hardcoded는 backtest에서 사용 불가
 
-        # factor-level 백테스트 비용 보정: 종목비용 x backtest_cost_multiplier (기본 0.6 -> 20bp x 0.6 = 12bp).
+        # factor-level 백테스트 비용 보정: 종목비용 x backtest_cost_multiplier (기본 0.6 -> 10bp x 0.6 = 6bp).
         # 팩터별 전액 계상은 교차 팩터 netting(실거래는 MP 합산 후 월 1회 매매)을 무시해 과대평가
         # -> MP-level 실측 netting ratio 0.574 로 근사 (_resolve_backtest_cost_bps 참조).
         # 이 pp 가 이후 ModelPortfolioPipeline / aggregate_factor_returns 전체에 적용됨.

@@ -101,8 +101,11 @@ class WalkForwardResult:
         else:
             self.weight_history = pd.DataFrame()
 
-        # IS meta 이력 (Tier 2 리밸런싱 시점만)
-        self.is_meta_history = [r["is_meta"] for r in results if r.get("is_weight_rebal") and r.get("is_meta") is not None]
+        # IS meta 이력 (Tier 2 리밸런싱 시점만). None 자리(Tier 2 실패 달)를 보존해
+        # overfit_diagnostics 의 weight_rebal_indices 와 위치 정렬을 유지한다
+        # (2026-08-25: 구 필터링은 실패 달 이후 전 구간의 meta<->OOS 창 짝을 한 칸씩
+        # 밀었음. 소비자는 meta is None 을 이미 skip 함).
+        self.is_meta_history = [r["is_meta"] for r in results if r.get("is_weight_rebal")]
 
         # Active factors 이력 (Tier 2 리밸런싱 시점만, weight>0 팩터 set)
         self.active_factors_history = [

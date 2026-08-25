@@ -313,3 +313,45 @@ class TestDeflationRatio:
         dr = calc_deflation_ratio(result, full_period_cagr=-0.05)
         assert np.isnan(dr["deflation_ratio"])
         assert "음수" in dr["interpretation"]
+
+
+# ── is_meta_history 위치 정렬 (2026-08-25 수정) ────────────────────────────────
+
+def test_rank_correlation_alignment_survives_none_meta():
+    """Tier 2 실패 달(is_meta=None)이 있어도 이후 meta 가 자기 OOS 창과 짝지어져야 한다.
+
+    구 버그: result_stitcher 가 None 을 필터링해 meta 리스트가 한 칸 밀림 ->
+    실패 달 이후 전 구간의 IS-OOS Rank Correlation 이 엉뚱한 창과 비교됨.
+    """
+    import pandas as pd
+    from service.backtest.result_stitcher import WalkForwardResult
+    from service.backtest.overfit_diagnostics import calc_is_oos_rank_correlation
+
+    def meta(scores):
+        return pd.DataFrame({
+            "factorAbbreviation": ["X", "Y", "Z"],
+            "rank_score": scores,
+        })
+
+    aligned_ret = {"X": 0.30, "Y": 0.20, "Z": 0.10}      # meta [3,2,1] 과 순위 일치 -> +1
+    reversed_ret = {"X": 0.10, "Y": 0.20, "Z": 0.30}     # 순위 정반대 -> -1
+
+    def rec(date, m, fr):
+        return {
+            "date": pd.Timestamp(date), "oos_return": 0.0, "oos_ew_return": 0.0,
+            "oos_factor_returns": fr, "weights": {"X": 1.0}, "is_meta": m,
+            "is_rule_rebal": False, "is_weight_rebal": True,
+            "oos_all_factor_returns": fr, "top50_factors": [],
+            "active_factors": ["X"], "is_cew_cagr": 0.0,
+        }
+
+    results = [
+        rec("2024-01-31", meta([3, 2, 1]), aligned_ret),   # 창1: +1
+        rec("2024-02-29", None, reversed_ret),             # Tier 2 실패 달 (창2 는 skip)
+        rec("2024-03-31", meta([3, 2, 1]), aligned_ret),   # 창3: +1 (구 버그면 창2 와 짝 -> -1)
+    ]
+    wfr = WalkForwardResult(results)
+    assert len(wfr.is_meta_history) == 3, "None 자리 보존 (weight_rebal_indices 와 등길이)"
+
+    out = calc_is_oos_rank_correlation(wfr)
+    assert out["spearman_values"] == [1.0, 1.0], f"정렬 복원 실패: {out['spearman_values']}"
