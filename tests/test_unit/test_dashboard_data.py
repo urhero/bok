@@ -453,13 +453,14 @@ def test_compute_drawdown_episodes():
 
 
 def test_drawdown_episodes_section_renders():
-    """곡선별 낙폭 episode 표 렌더 (헤더/캡션 포함). 곡선 없으면 빈 문자열."""
+    """낙폭 episode 표: (본전략, 비교곡선) 분리 렌더 (2026-08-28). 곡선 없으면 빈 튜플."""
     pytest.importorskip("plotly")  # dashboard import 가 plotly 끌어옴
     from service.report.dashboard import _drawdown_episodes_section
-    html = _drawdown_episodes_section(_curves())
-    assert "peak→trough" in html and "episodes, MDD" in html
+    main, others = _drawdown_episodes_section(_curves())
+    assert "peak→trough" in main and "episodes, MDD" in main
+    assert "episodes, MDD" in others          # EW 계열은 비교곡선 쪽으로
     bare = _curves().drop(columns=["cew_cumulative", "ew_all_cumulative", "ew_top50_cumulative"])
-    assert _drawdown_episodes_section(bare) == ""
+    assert _drawdown_episodes_section(bare) == ("", "")
 
 
 def test_monthly_returns_table():

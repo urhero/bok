@@ -186,7 +186,7 @@ def equity_curve_fig(curves: pd.DataFrame) -> go.Figure:
         title="누적 수익 곡선", height=410,
         legend=dict(orientation="h", yanchor="bottom", y=-0.24, x=0),
         legend2=dict(orientation="h", yanchor="bottom", y=-0.36, x=0),
-        yaxis_title="오버레이 누적 (시작=1)", **_BASE_LAYOUT,
+        yaxis_title="전략 누적 (시작=1)", **_BASE_LAYOUT,
     )
     layout["margin"] = dict(l=60, r=60, t=50, b=95)
     if has_bm:

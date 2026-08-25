@@ -325,19 +325,20 @@ def _dd_episode_row(e: dict) -> str:
     )
 
 
-def _drawdown_episodes_section(curves) -> str:
-    """EW/Top50/CEW 곡선별 낙폭 episode(1% 이상) 표를 묶어 반환(곡선 없으면 생략)."""
-    blocks = []
+def _drawdown_episodes_section(curves) -> tuple[str, str]:
+    """곡선별 낙폭 episode(0.5% 이상) 표. (본전략 HTML, 비교곡선 HTML) 튜플 —
+    본전략만 기본 표시하고 EW 계열은 접힘용으로 분리 (2026-08-28 사용자 지정)."""
+    main, others = [], []
     for label, cum_col in _DD_CURVE_SPECS:
         label = label.format(strat=_strategy_label())
         if cum_col not in curves.columns:
             continue
-        eps = dd.compute_drawdown_episodes(curves[cum_col], min_depth=0.01)
+        eps = dd.compute_drawdown_episodes(curves[cum_col], min_depth=0.005)
         if not eps:
             continue
         mdd = min(e["depth"] for e in eps)
         rows = "".join(_dd_episode_row(e) for e in eps)
-        blocks.append(
+        block = (
             '<div class="card full">'
             f'<div class="dd-cap">{escape(label)} - {len(eps)} episodes, MDD {mdd:.2%}</div>'
             '<table class="diag-table"><thead><tr>'
@@ -346,7 +347,8 @@ def _drawdown_episodes_section(curves) -> str:
             '</tr></thead><tbody>'
             f'{rows}</tbody></table></div>'
         )
-    return "".join(blocks)
+        (main if cum_col == "cew_cumulative" else others).append(block)
+    return "".join(main), "".join(others)
 
 
 def _benchmark() -> str:
@@ -520,7 +522,7 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
     wf_path = latest(output_dir / "walk_forward_results.csv", end_date)
     if not wf_path.exists():
         return (['<div class="note">walk_forward_results.csv 없음 - 백테스트 섹션 생략. '
-                 '(python main.py backtest ... 실행 필요)</div>'], False)
+                 '(python main.py backtest ... 실행 필요)</div>'], [], False)
 
     curves = dd.load_backtest_curves(wf_path)
     diag = dd.parse_diagnostics(latest(output_dir / "overfit_diagnostics.csv", end_date))
@@ -565,8 +567,22 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
     mret = dd.monthly_returns_table(curves)
     if not mret.empty:
         parts.append(f'<div class="card full">{_fig_div(ch.monthly_returns_heatmap_fig(mret))}</div>')
+
+    # 차트 순서 (2026-08-28 사용자 지정): 히트맵 다음 = 스타일 비중 추이(구 낙폭
+    # 자리와 맞교환), 낙폭은 팩터 회전율 '아래' 로 이동.
+    wh_path = latest(output_dir / "walk_forward_weight_history.csv", end_date)
+    wh_charts = None
+    if wh_path.exists():
+        wh = dd.load_weight_history(wh_path)
+        fi_path = dd.DATA_DIR / "factor_info.csv"
+        fmap = dd.factor_style_map(fi_path) if fi_path.exists() else {}
+        style_hist = dd.style_weight_history(wh, fmap)
+        turnover = dd.compute_turnover(wh)
+        churn_split = dd.selection_churn_split(wh)
+        wh_charts = (style_hist, turnover, churn_split)
+        parts.append(f'<div class="card full">{_fig_div(ch.style_weight_evolution_fig(style_hist))}</div>')
+
     parts.append(_grid2([
-        f'<div class="card">{_fig_div(ch.drawdown_fig(curves))}</div>',
         f'<div class="card">{_fig_div(ch.monthly_dist_fig(curves))}</div>',
     ]))
     # 실현 TE — 월별 수익 분포 아래 (2026-08-26 사용자 지정, 배포 기준일 때만 의미)
@@ -577,43 +593,38 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
     if len(r) >= 12:
         parts.append(f'<div class="card full">{_fig_div(ch.rolling_sharpe_fig(r))}</div>')
 
-    # 가중치 이력이 직렬화돼 있으면 스타일 비중 추이 + 회전율 추가 (백테스트 재실행 산출).
-    # 스타일 추이는 범례(스타일 7~8개)가 넓어 풀폭 카드로 둔다 - 반폭이면 범례가 그래프 침범.
-    wh_path = latest(output_dir / "walk_forward_weight_history.csv", end_date)
-    if wh_path.exists():
-        wh = dd.load_weight_history(wh_path)
-        fi_path = dd.DATA_DIR / "factor_info.csv"
-        fmap = dd.factor_style_map(fi_path) if fi_path.exists() else {}
-        style_hist = dd.style_weight_history(wh, fmap)
-        turnover = dd.compute_turnover(wh)
-        churn_split = dd.selection_churn_split(wh)
-        parts.append(f'<div class="card full">{_fig_div(ch.style_weight_evolution_fig(style_hist))}</div>')
+    if wh_charts is not None:
+        _, turnover, churn_split = wh_charts
         parts.append(f'<div class="card full">{_fig_div(ch.turnover_fig(turnover, churn_split))}</div>')
+    # 낙폭 차트 — 팩터 회전율 아래 (2026-08-28 사용자 지정)
+    parts.append(f'<div class="card full">{_fig_div(ch.drawdown_fig(curves))}</div>')
 
-    # 참고성 섹션은 기본 접힘 - 클릭 시에만 표시 (2026-08-07 사용자 지정)
+    dd_main, dd_others = _drawdown_episodes_section(curves)
+    if dd_main:
+        parts.append('<h2>낙폭 구간 분석 (0.5% 이상 episode, 깊은 순)</h2>')
+        parts.append(dd_main)
+
+    # 접힌 항목은 페이지 맨 아래로 모은다 (2026-08-28 사용자 지정)
+    folded: list[str] = []
     vol_regime_section = _vol_regime_section(curves)
     if vol_regime_section:
-        parts.append(_collapsible('변동성 국면 (multiplier 참고)', vol_regime_section))
-
+        folded.append(_collapsible('변동성 국면 (multiplier 참고)', vol_regime_section))
     diag_tbl = _diagnostics_table(output_dir, curves, end_date)
     if diag_tbl:
-        parts.append(_collapsible('과적합 진단 상세', diag_tbl))
+        folded.append(_collapsible('과적합 진단 상세', diag_tbl))
+    if dd_others:
+        folded.append(_collapsible('낙폭 구간 분석 — 비교 곡선 (전체 EW · Top50 EW)', dd_others))
 
-    dd_section = _drawdown_episodes_section(curves)
-    if dd_section:
-        parts.append('<h2>낙폭 구간 분석 (1% 이상 episode, 깊은 순)</h2>')
-        parts.append(dd_section)
-
-    return parts, True
+    return parts, folded, True
 
 
 def _build_portfolio_section(output_dir: Path, end_date: str | None,
-                             js_already: bool, data_dir: Path) -> list[str]:
+                             js_already: bool, data_dir: Path) -> tuple[list[str], list[str]]:
     weights_path = dd.find_latest_weights_file(output_dir, end_date)
     if weights_path is None:
-        return ['<h2>2. 현재 포트 / 배팅</h2>'
-                '<div class="note">total_aggregated_weights_*.csv 없음 - '
-                '현재 포트 섹션 생략. (python main.py mp ... 실행 필요)</div>']
+        return (['<h2>2. 현재 포트 / 배팅</h2>'
+                 '<div class="note">total_aggregated_weights_*.csv 없음 - '
+                 '현재 포트 섹션 생략. (python main.py mp ... 실행 필요)</div>'], [])
 
     weights = dd.load_weights(weights_path)
     snap = dd.snapshot_date_from_path(weights_path) or "?"
@@ -664,17 +675,20 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
         cards.append(f'<div class="card">{_fig_div(ch.leaderboard_fig(meta, selected, tilt))}</div>')
 
     parts = [f'<h2>2. 현재 포트 / 배팅 (스냅샷 {snap})</h2>', _grid2(cards)]
+    folded: list[str] = []
 
-    clusters_html = _factor_clusters_section(output_dir, snap)
-    if clusters_html:
-        parts.append(clusters_html)
+    clusters_main, clusters_folded = _factor_clusters_section(output_dir, snap)
+    if clusters_main:
+        parts.append(clusters_main)
+    if clusters_folded:
+        folded.append(clusters_folded)
     cap_html = _style_cap_section(output_dir, snap)
     if cap_html:
         parts.append(cap_html)
     regime_html = _correlation_regime_section(output_dir, end_date)
     if regime_html:
-        parts.append(regime_html)
-    return parts
+        folded.append(regime_html)
+    return parts, folded
 
 
 def _correlation_regime_section(output_dir: Path, end_date=None) -> str:
@@ -832,17 +846,17 @@ def _style_cap_section(output_dir: Path, snap: str) -> str:
             f'<tbody>{"".join(rows)}</tbody></table></div>')
 
 
-def _factor_clusters_section(output_dir: Path, snap: str) -> str:
+def _factor_clusters_section(output_dir: Path, snap: str) -> tuple[str, str]:
     """ERC 상관 무리 섹션: 어떤 팩터들이 한 배팅으로 묶였고 예산을 어떻게 나눴는지.
 
     mp 가 저장한 mp_weight_history/factor_clusters_{snap}.csv 기반 (없으면 생략).
     """
     path = output_dir / "mp_weight_history" / f"factor_clusters_{snap}.csv"
     if not path.exists():
-        return ""
+        return "", ""
     df = pd.read_csv(path)
     if df.empty:
-        return ""
+        return "", ""
 
     # 스타일 색 = 단일 출처 (차트/PDF 와 동일 매핑 — 등장 순서 무관 고정색)
     from service.report.style_colors import STYLE_COLORS, _DEFAULT_COLOR
@@ -995,9 +1009,9 @@ def _factor_clusters_section(output_dir: Path, snap: str) -> str:
                  'ERC 비중(캡 전)=ERC 산출 원비중, 캡 후=스타일 캡 재분배 후 '
                  '최종 명목 비중. 전월 대비=직전 스냅샷 대비 캡 후 증감.</div>')
     return (f'<h2>3. ERC 비중 순위 (캡 후 내림차순)</h2>'
-            f'{css}{rank_note}{flat_table}'
-            + _collapsible('ERC 상관 무리 (어떤 팩터가 한 배팅으로 묶였나)',
-                           f'{note}{"".join(groups)}'))
+            f'{css}{rank_note}{flat_table}',
+            _collapsible('ERC 상관 무리 (어떤 팩터가 한 배팅으로 묶였나)',
+                         f'{note}{"".join(groups)}'))
 
 
 def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
@@ -1006,11 +1020,11 @@ def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
     output_dir = Path(output_dir) if output_dir else dd.OUTPUT_DIR
     data_dir = Path(data_dir) if data_dir else dd.DATA_DIR
 
-    bt_parts, js_in_bt = _build_backtest_section(output_dir, end_date)
+    bt_parts, bt_folded, js_in_bt = _build_backtest_section(output_dir, end_date)
     deploy_html = _deploy_section(output_dir, end_date)
     if deploy_html:
         bt_parts.append(deploy_html)
-    pf_parts = _build_portfolio_section(output_dir, end_date, js_already=js_in_bt, data_dir=data_dir)
+    pf_parts, pf_folded = _build_portfolio_section(output_dir, end_date, js_already=js_in_bt, data_dir=data_dir)
 
     # 파일명용 스냅샷 날짜: 가중치 파일 -> 백테스트 마지막 -> 'latest'
     wfile = dd.find_latest_weights_file(output_dir, end_date)
@@ -1029,7 +1043,8 @@ def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
         '<button id="theme-btn" class="theme-btn" onclick="__toggleTheme()">라이트 모드</button>'
         '</header>'
     )
-    body = header + "".join(bt_parts) + "".join(pf_parts)
+    # 접힌(참고성) 항목은 전부 페이지 맨 아래 (2026-08-28 사용자 지정)
+    body = header + "".join(bt_parts) + "".join(pf_parts) + "".join(bt_folded + pf_folded)
     html = (
         '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
