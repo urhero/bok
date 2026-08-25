@@ -220,6 +220,30 @@ def blend_deploy_weights(
     return {f: w / total for f, w in blended.items() if w > 1e-10}
 
 
+def weight_kwargs_from(pp: dict) -> dict:
+    """PIPELINE_PARAMS -> optimize_constrained_weights 키워드 인자 추출 (단일 출처).
+
+    2026-08-25 도입: 운용 mp(model_portfolio)와 백테스트(walk_forward_engine)가
+    이 추출을 각자 손으로 복제했었고, 실제로 구버전 mp 가 erc_* 를 누락해
+    수축 0.5/0.7 불일치 사고가 났었다 (production parity 는 코드로 강제할 것).
+    새 파라미터를 추가하면 이 함수 한 곳만 고치면 두 경로에 함께 반영된다.
+    폴백 기본값은 함수 시그니처와 동일하게 유지 (config 미등재 키 전용).
+    """
+    return {
+        "mode": pp["optimization_mode"],
+        "style_cap": pp["style_cap"],
+        "style_cap_basis": pp.get("style_cap_basis", "weight"),
+        "erw_vol_window": pp.get("erw_vol_window"),
+        "erc_shrinkage": float(pp.get("erc_shrinkage", 0.5)),
+        "erc_shrink_target": pp.get("erc_shrink_target", "diag"),
+        "erc_cov_type": pp.get("erc_cov_type", "full"),
+        "erc_vol_model": pp.get("erc_vol_model", "sample"),
+        "erc_ewma_lambda": float(pp.get("erc_ewma_lambda", 0.97)),
+        "ts_mom_window": pp.get("ts_mom_window"),
+        "ts_mom_scale": float(pp.get("ts_mom_scale", 0.5)),
+    }
+
+
 def optimize_constrained_weights(
     rtn_df: pd.DataFrame,
     style_list: list[str],

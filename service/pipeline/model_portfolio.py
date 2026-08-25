@@ -31,7 +31,7 @@ from service.pipeline.factor_analysis import (
     calculate_factor_stats_batch,
     filter_and_label_factors,
 )
-from service.pipeline.optimization import optimize_constrained_weights
+from service.pipeline.optimization import optimize_constrained_weights, weight_kwargs_from
 from service.pipeline.weight_construction import (
     aggregate_mp_weights,
     apply_multiplier,
@@ -160,22 +160,11 @@ class ModelPortfolioPipeline:
 
         # TS 모멘텀 틸트는 optimize_constrained_weights 내부에서 캡 재분배 이전 적용
         # (2026-08-06 순서 교정 — 캡 25% 준수 보장, main/MXCN1A 와 동일).
-        # erc_* 파라미터도 엔진과 동일하게 전달 (구버전 mp 는 누락 -> 수축 0.5/0.7
-        # 불일치가 있었음 — 함께 교정).
-        pp_ = self.pipeline_params
+        # 파라미터 추출은 weight_kwargs_from 단일 출처 (2026-08-25 — 엔진과 공유,
+        # 구버전 mp 의 erc_* 누락 사고 재발 방지).
         sim_result = optimize_constrained_weights(
             ret_subset, style_list, test_mode=bool(test_file),
-            mode=pp_["optimization_mode"],
-            style_cap=pp_["style_cap"],
-            style_cap_basis=pp_.get("style_cap_basis", "weight"),
-            erw_vol_window=pp_.get("erw_vol_window"),
-            erc_shrinkage=float(pp_.get("erc_shrinkage", 0.5)),
-            erc_shrink_target=pp_.get("erc_shrink_target", "diag"),
-            erc_cov_type=pp_.get("erc_cov_type", "full"),
-            erc_vol_model=pp_.get("erc_vol_model", "sample"),
-            erc_ewma_lambda=float(pp_.get("erc_ewma_lambda", 0.97)),
-            ts_mom_window=pp_.get("ts_mom_window"),
-            ts_mom_scale=float(pp_.get("ts_mom_scale", 0.5)),
+            **weight_kwargs_from(self.pipeline_params),
         )
 
         weights_tbl = sim_result[1]

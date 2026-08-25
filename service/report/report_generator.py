@@ -403,7 +403,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
     # 별첨은 전체 이력 표시 (backtest_start 기본값 2017-12 절단 우회; 2026-08-06)
     factor_rets = aggregate_factor_returns(
         cleaned_raw, kept_abbr, backtest_start="1900-01-01",
-        cost_bps=float(PIPELINE_PARAMS.get("transaction_cost_bps", 20.0)))
+        cost_bps=float(PIPELINE_PARAMS["transaction_cost_bps"]))  # 폴백 금지 (2026-08-25 P3 동일 조치)
     factor_rets.loc[factor_rets.index[0]] = 0.0
     factor_rets = factor_rets.sort_index()
     valid = factor_rets.columns[(factor_rets == 0).sum() <= 10]
@@ -505,7 +505,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
     cover_date = f"AS OF {pd.Timestamp(as_of).strftime('%d %b %Y').upper()}"
     n_months = len(cum_rets)
     start_label = cum_rets.index[0].strftime("%B %Y")
-    cost_bps = int(PIPELINE_PARAMS.get("transaction_cost_bps", 10))
+    cost_bps = int(PIPELINE_PARAMS["transaction_cost_bps"])  # 폴백 금지 (2026-08-25 P3 동일 조치)
 
     # ── 별첨02 ──
     def cover02(pp):

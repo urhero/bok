@@ -43,7 +43,7 @@ from service.pipeline.model_portfolio import (
     ModelPortfolioPipeline,
     aggregate_factor_returns,
 )
-from service.pipeline.optimization import optimize_constrained_weights
+from service.pipeline.optimization import optimize_constrained_weights, weight_kwargs_from
 
 logger = logging.getLogger(__name__)
 
@@ -309,19 +309,9 @@ def _run_weight_optimization(
     style_list = [style_map[f] for f in factor_list]
     ret_subset = ret_df_is[factor_list]
 
+    # 파라미터 추출은 weight_kwargs_from 단일 출처 (2026-08-25 — mp 와 공유)
     _best_stats, weights_tbl = optimize_constrained_weights(
-        ret_subset, style_list,
-        mode=pp["optimization_mode"],
-        style_cap=pp["style_cap"],
-        style_cap_basis=pp.get("style_cap_basis", "weight"),
-        erw_vol_window=pp.get("erw_vol_window"),
-        erc_shrinkage=float(pp.get("erc_shrinkage", 0.5)),
-        erc_shrink_target=pp.get("erc_shrink_target", "diag"),
-        erc_cov_type=pp.get("erc_cov_type", "full"),
-        erc_vol_model=pp.get("erc_vol_model", "sample"),
-        erc_ewma_lambda=float(pp.get("erc_ewma_lambda", 0.97)),
-        ts_mom_window=pp.get("ts_mom_window"),
-        ts_mom_scale=float(pp.get("ts_mom_scale", 0.5)),
+        ret_subset, style_list, **weight_kwargs_from(pp),
     )
 
     weights_dict = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))

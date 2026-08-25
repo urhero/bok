@@ -493,3 +493,31 @@ class TestEqualRiskWeightMode:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ── weight_kwargs_from (2026-08-25 파라미터 배관 단일화) ──────────────────────
+
+def test_weight_kwargs_covers_all_tunable_params():
+    """weight_kwargs_from 이 optimize_constrained_weights 의 튜너블 파라미터를
+    전부 커버해야 한다 — 함수에 파라미터를 추가하고 헬퍼에 빠뜨리면 실패
+    (mp/백테스트 배관 이중화 사고 재발 방지 가드)."""
+    import inspect
+    from config import PIPELINE_PARAMS
+    from service.pipeline.optimization import optimize_constrained_weights, weight_kwargs_from
+
+    kwargs = weight_kwargs_from(dict(PIPELINE_PARAMS))
+    sig_params = set(inspect.signature(optimize_constrained_weights).parameters)
+
+    # 헬퍼가 넘기는 키는 전부 유효한 파라미터여야 함
+    assert set(kwargs) <= sig_params, f"무효 키: {set(kwargs) - sig_params}"
+
+    # 데이터/구조 인자 외 튜너블은 전부 헬퍼가 담당해야 함
+    non_tunable = {"rtn_df", "style_list", "tol", "test_mode"}
+    assert sig_params - non_tunable == set(kwargs), (
+        f"헬퍼 미커버 파라미터 (양쪽 호출부에 수동 배관 금지): "
+        f"{sig_params - non_tunable - set(kwargs)}"
+    )
+
+    # config 값이 실제로 반영되는지 (폴백이 아닌 config 우선)
+    assert kwargs["erc_shrinkage"] == PIPELINE_PARAMS["erc_shrinkage"]
+    assert kwargs["mode"] == PIPELINE_PARAMS["optimization_mode"]

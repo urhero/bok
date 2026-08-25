@@ -103,7 +103,10 @@ def sector_short_cap_scales(sec_gross: pd.Series, cap_frac: float) -> pd.Series:
         over = (cur > cap + 1e-12) & ~frozen
         if not over.any():
             break
-        # 구 1-pass 와 동일한 곱 순서 유지 (재초과 없던 케이스 byte-identical)
+        # 구 1-pass 와 동일한 곱 구조 유지. 단 total/free_g 를 종목단이 아닌
+        # 섹터단 합으로 계산하므로 재초과 없던 케이스도 ULP(~1e-16) 차이가
+        # 날 수 있음 (2026-08-25 Opus 검증: 무재초과 케이스의 13.6%) — 값 영향
+        # 없는 부동소수 반올림 차이로, byte-diff 회귀 시 참고.
         scale[over] = cap / sec_gross[over]
         freed = float((cur[over] - cap).sum())
         cur[over] = cap

@@ -28,7 +28,8 @@ class WalkForwardResult:
         oos_cumulative: OOS CEW 누적 수익률.
         oos_ew_cumulative: OOS EW 누적 수익률.
         weight_history: 팩터 가중치 이력 DataFrame.
-        is_meta_history: Tier 2 리밸런싱 시점별 IS meta 리스트.
+        is_meta_history: Tier 2 리밸런싱 시점별 IS meta 리스트 (실패 달은 None
+            자리 유지 — weight_rebal_indices 와 위치 정렬).
         active_factors_history: Tier 2 시점별 weight>0 팩터 set 리스트.
         oos_all_factor_returns_history: OOS 월별 전체 팩터 수익률 dict 리스트.
         rebalance_log: 리밸런싱 로그 DataFrame.

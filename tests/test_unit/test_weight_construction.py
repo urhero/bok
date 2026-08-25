@@ -339,7 +339,11 @@ def test_sector_short_cap_noop_when_under_cap_or_off():
 
 
 def test_sector_short_cap_matches_old_one_pass_when_no_reviolation():
-    """재위반이 없는 케이스는 구 1-pass 알고리즘과 float 까지 동일해야 한다 (회귀 가드)."""
+    """재위반 없는 케이스의 구 1-pass 수식 재현 (2섹터 케이스).
+
+    주의: 일반 케이스에서는 total/free_g 합산 단위(종목단 vs 섹터단) 차이로
+    ULP(~1e-16) 수준 차이가 가능 (Opus 검증 2026-08-25). 이 테스트는 두 합이
+    일치하는 최소 케이스에서 수식 구조가 같음을 고정하는 용도."""
     from service.pipeline.weight_construction import apply_sector_short_cap
     d = pd.Timestamp("2026-06-30")
     agg = _mk_agg([
@@ -391,16 +395,17 @@ def test_sector_short_cap_infeasible_cap_wins_and_stays_neutral():
 
 
 def test_stock_level_sector_short_cap_shares_helper():
-    """백테스트 경로(stock_weights_at)도 water-filling 캡을 준수해야 한다 (parity)."""
+    """백테스트 경로(stock_weights_at)도 재위반 시 water-filling 수렴해야 한다 (parity).
+
+    섹터별 종목 수 = weight_construction 재위반 시나리오와 동일 비율 (A 25 / B·C 14 /
+    D 13 / E 12 / F·G 11): 구 1-pass 는 A 절단분 재분배로 B·C 가 0.1587 > cap 재초과
+    -> 구 코드에서 실패하는 회귀 가드 (2026-08-25 Sonnet 검증 지적으로 강화).
+    """
     from service.backtest.stock_level import stock_weights_at
     t = pd.Timestamp("2026-06-30")
-    # 1개 팩터, 롱 1종목 + 숏 7종목(섹터 A~G) -> 팩터 EW 라 숏 균등이지만
-    # 종목 수를 섹터별로 달리해 gross 편중을 만든다: A 3종목, 나머지 1종목씩
-    recs = []
-    for i in range(3):
-        recs.append({"ddt": t, "gvkeyiid": f"sA{i}", "label": -1, "M_RETURN": 0.0, "sec": "A"})
-    for s in ["B", "C", "D", "E", "F", "G"]:
-        recs.append({"ddt": t, "gvkeyiid": f"s{s}", "label": -1, "M_RETURN": 0.0, "sec": s})
+    counts = {"A": 25, "B": 14, "C": 14, "D": 13, "E": 12, "F": 11, "G": 11}
+    recs = [{"ddt": t, "gvkeyiid": f"s{s}{i}", "label": -1, "M_RETURN": 0.0, "sec": s}
+            for s, n in counts.items() for i in range(n)]
     recs.append({"ddt": t, "gvkeyiid": "long1", "label": 1, "M_RETURN": 0.0, "sec": "Tech"})
     frames = {"F1": pd.DataFrame(recs)}
     w, _r = stock_weights_at(frames, {"F1": 1.0}, t, pd.Timestamp("2000-01-31"),
@@ -408,5 +413,5 @@ def test_stock_level_sector_short_cap_shares_helper():
     shorts = w[w < 0]
     total_sg = shorts.abs().sum()
     sec_g = shorts.abs().groupby(shorts.index.str[1]).sum()  # gvkeyiid 두번째 문자 = 섹터
-    assert (sec_g <= 0.15 * total_sg + 1e-9).all(), f"캡 위반: {sec_g.to_dict()}"
+    assert (sec_g <= 0.15 * total_sg + 1e-9).all(), f"캡 재초과 방치 (구 1-pass 버그): {sec_g.to_dict()}"
     assert abs(total_sg - 1.0) < 1e-9, "feasible(7섹터) -> 숏 gross 보존 (팩터 숏 사이드 = wf 1.0)"
