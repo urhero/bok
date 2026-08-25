@@ -40,6 +40,7 @@
 
 ### C. 마무리
 - **문서 업데이트** (`README.md`, `research.md`, 해당 시 이 파일도)
+- **실험(A/B) 문서는 `docs/experiments/_TEMPLATE.md` 기반으로 작성** — 채택 전 검증 체크리스트(mp_level 실측, RC 분포, byte-diff) 필수 경유
 - 비교 대상: `aggregated_weights_*`, `total_aggregated_weights_*`, `meta_data.csv`
 - A, B **모두** 변경 전후 일치해야 함 (의도된 변경 제외)
 
