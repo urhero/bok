@@ -648,21 +648,20 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
 
     ls_decomp = dd.longs_shorts_style_decomposition(weights, n=20, id_col="isin")
     cards.append(f'<div class="card">{_fig_div(ch.longs_shorts_fig(ls_df, ls_decomp))}</div>')
-    cards.append(f'<div class="card">{_fig_div(ch.factor_tilt_fig(tilt))}</div>')
-
-    meta_path = latest(output_dir / "meta_data.csv", end_date)
-    if meta_path.exists():
-        meta = dd.load_meta(meta_path)
-        cards.append(f'<div class="card">{_fig_div(ch.leaderboard_fig(meta, selected, tilt))}</div>')
-
-    # 전월 대비 변화는 팩터 단위로 (2026-08-28 사용자 지정) — 직전 스냅샷 파일이
-    # 없으면 스타일 단위 델타로 폴백
+    # 팩터 틸트 차트는 제거하고 그 자리에 전월 대비 팩터 비중 변화 (2026-08-28
+    # 사용자 지정 — 틸트는 3번 섹션 ERC 비중 순위 표와 내용 중복). 직전 스냅샷이
+    # 없으면 스타일 단위 델타로 폴백.
     fd = dd.factor_delta_decomposition(output_dir, snap) if snap != "?" else None
     if fd is not None:
         fdf, prev_snap = fd
         cards.append(f'<div class="card">{_fig_div(ch.factor_delta_fig(fdf, prev_snap, snap))}</div>')
     elif deltas is not None and not deltas.empty:
         cards.append(f'<div class="card">{_fig_div(ch.style_delta_fig(deltas))}</div>')
+
+    meta_path = latest(output_dir / "meta_data.csv", end_date)
+    if meta_path.exists():
+        meta = dd.load_meta(meta_path)
+        cards.append(f'<div class="card">{_fig_div(ch.leaderboard_fig(meta, selected, tilt))}</div>')
 
     parts = [f'<h2>2. 현재 포트 / 배팅 (스냅샷 {snap})</h2>', _grid2(cards)]
 
@@ -884,6 +883,41 @@ def _factor_clusters_section(output_dir: Path, snap: str) -> str:
         color = "#4FBF87" if v > 1e-9 else "#E06C75" if v < -1e-9 else "var(--muted)"
         return f'<td class="num" style="color:{color}">{v*100:+.2f}%p</td>'
 
+    def _erc_cell_flat(factor: str) -> str:
+        if not raw_map:
+            return ''
+        raw = raw_map.get(factor)
+        return (f'<td class="num">{raw*100:.2f}%</td>' if raw is not None
+                else '<td class="num">-</td>')
+
+    # 평면 순위표: 무리 구분 없이 캡 후 비중 내림차순 (2026-08-28 사용자 지정)
+    flat = df.sort_values("weight", ascending=False)
+    flat_rows = "".join(
+        f'<tr><td class="num" style="width:34px;color:var(--muted)">{i}</td>'
+        f'{_factor_cell(r.factor)}'
+        f'<td><span class="chip" style="background:{style_colors.get(r.styleName, "#888")}22;'
+        f'color:{style_colors.get(r.styleName, "#888")}">{r.styleName}</span></td>'
+        f'{_erc_cell_flat(r.factor)}'
+        f'<td class="num">{r.weight*100:.2f}%</td>'
+        f'<td class="bar"><div style="width:{min(r.weight*100/0.07, 100):.0f}%;'
+        f'background:{style_colors.get(r.styleName, "#888")}"></div></td>'
+        f'{_delta_cell(r.factor)}</tr>'
+        for i, r in enumerate(flat.itertuples(), 1)
+    )
+    erc_col_f = '<col class="c-w">' if raw_map else ''
+    erc_th_f = '<th style="text-align:right">ERC 비중(캡 전)</th>' if raw_map else ''
+    delta_col_f = '<col class="c-w">' if has_delta else ''
+    delta_th_f = '<th style="text-align:right">전월 대비</th>' if has_delta else ''
+    flat_table = (
+        f'<div class="cluster"><table class="cl-table">'
+        f'<colgroup><col style="width:34px"><col class="c-factor"><col class="c-style">'
+        f'{erc_col_f}<col class="c-w"><col class="c-bar">{delta_col_f}</colgroup>'
+        f'<thead><tr><th>#</th><th>팩터</th><th>스타일</th>'
+        f'{erc_th_f}<th style="text-align:right">ERC 비중(캡 후)</th><th></th>'
+        f'{delta_th_f}</tr></thead>'
+        f'<tbody>{flat_rows}</tbody></table></div>'
+    )
+
     groups = []
     for cid, g in df.groupby("cluster_id"):
         total_w = g["weight"].sum()
@@ -916,8 +950,8 @@ def _factor_clusters_section(output_dir: Path, snap: str) -> str:
         delta_col = '<col class="c-w">' if has_delta else ''
         delta_th = '<th style="text-align:right">전월 대비</th>' if has_delta else ''
         groups.append(
-            # 전부 펼침 (2026-08-25 사용자 지정 — 독립 팩터도 바로 보이게)
-            f'<details open class="cluster"><summary>{title}</summary>'
+            # 접힌 상태 디폴트 (2026-08-28 사용자 지정 — 순위표가 기본 뷰)
+            f'<details class="cluster"><summary>{title}</summary>'
             f'<table class="cl-table">'
             f'<colgroup><col class="c-factor"><col class="c-style">'
             f'{erc_col}<col class="c-w"><col class="c-bar">{delta_col}</colgroup>'
@@ -957,8 +991,13 @@ def _factor_clusters_section(output_dir: Path, snap: str) -> str:
             f'ERC 비중(캡 전)=ERC 산출 원비중, ERC 비중(캡 후)=스타일 캡 재분배 후 '
             f'최종 명목 비중 (막대·합산 비중·2번 섹션 차트와 동일 기준). '
             f'전월 대비=직전 스냅샷 대비 캡 후 비중 증감.</div>')
-    return (f'<h2>3. ERC 상관 무리 (어떤 팩터가 한 배팅으로 묶였나)</h2>'
-            f'{css}{note}{"".join(groups)}')
+    rank_note = ('<div class="note">전 팩터를 캡 후 최종 비중 내림차순으로 나열. '
+                 'ERC 비중(캡 전)=ERC 산출 원비중, 캡 후=스타일 캡 재분배 후 '
+                 '최종 명목 비중. 전월 대비=직전 스냅샷 대비 캡 후 증감.</div>')
+    return (f'<h2>3. ERC 비중 순위 (캡 후 내림차순)</h2>'
+            f'{css}{rank_note}{flat_table}'
+            + _collapsible('ERC 상관 무리 (어떤 팩터가 한 배팅으로 묶였나)',
+                           f'{note}{"".join(groups)}'))
 
 
 def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,

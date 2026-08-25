@@ -150,42 +150,48 @@ def build_vol_regime_chart(df: pd.DataFrame) -> go.Figure:
 
 
 def equity_curve_fig(curves: pd.DataFrame) -> go.Figure:
+    """누적 수익 곡선 (2026-08-28 사용자 지정 범례 배치).
+
+    범례 1행(legend)  : 본전략 · BM(MXWO, 실선 그린 — 구 BM+MP 오버레이 색 승계)
+    범례 2행(legend2) : 전체/Top50/선정 EW — 전부 기본 숨김(legendonly)
+    BM+MP 오버레이 곡선은 삭제 (BM 이 그 색·역할을 이어받음). BM 은 스케일이
+    10배 이상 달라 보조축(y2) 유지.
+    """
     fig = go.Figure()
-    for key, color, label, width in _STRAT:
-        col = f"{key}_cumulative"
-        if col not in curves.columns:
-            continue
-        fig.add_trace(go.Scatter(
-            x=curves.index, y=curves[col], name=label,
-            line=dict(color=color, width=width),
-            # Top50 EW / 선정 EW 는 기본 숨김 - 범례 클릭 시에만 표시 (2026-08-07)
-            visible=("legendonly" if key in ("ew_top50", "ew") else True),
-            hovertemplate="%{x|%Y-%m}<br>" + label + " %{y:.4f}<extra></extra>",
-        ))
-    # BM / BM+MP 오버레이는 스케일이 10배 이상 달라 보조축에 둔다 (2026-08-21).
-    # 좌축=전략군(오버레이 단독), 우축=벤치마크 및 벤치마크+오버레이.
+    strat = dict((k, (c, l, w)) for k, c, l, w in _STRAT)
+    color, label, width = strat["cew"]
+    fig.add_trace(go.Scatter(
+        x=curves.index, y=curves["cew_cumulative"], name=label,
+        line=dict(color=color, width=width),
+        hovertemplate="%{x|%Y-%m}<br>" + label + " %{y:.4f}<extra></extra>",
+    ))
     has_bm = "bm_cumulative" in curves.columns
     if has_bm:
         fig.add_trace(go.Scatter(
             x=curves.index, y=curves["bm_cumulative"], name="BM (MXWO)", yaxis="y2",
-            line=dict(color="#8b95a5", width=1.8, dash="dot"),
+            line=dict(color="#0ecb81", width=2.2),
             hovertemplate="%{x|%Y-%m}<br>BM %{y:.4f}<extra></extra>",
         ))
-        if "bm_mp_cumulative" in curves.columns:
-            fig.add_trace(go.Scatter(
-                x=curves.index, y=curves["bm_mp_cumulative"], name="BM + MP 오버레이",
-                yaxis="y2", line=dict(color="#0ecb81", width=2.2),
-                hovertemplate="%{x|%Y-%m}<br>BM+MP %{y:.4f}<extra></extra>",
-            ))
+    for key in ("ew_all", "ew_top50", "ew"):
+        col = f"{key}_cumulative"
+        if col not in curves.columns:
+            continue
+        c, l, w = strat[key]
+        fig.add_trace(go.Scatter(
+            x=curves.index, y=curves[col], name=l, legend="legend2",
+            line=dict(color=c, width=w), visible="legendonly",
+            hovertemplate="%{x|%Y-%m}<br>" + l + " %{y:.4f}<extra></extra>",
+        ))
     layout = dict(
-        title="누적 수익 곡선", height=400,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.28, x=0),
+        title="누적 수익 곡선", height=410,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.24, x=0),
+        legend2=dict(orientation="h", yanchor="bottom", y=-0.36, x=0),
         yaxis_title="오버레이 누적 (시작=1)", **_BASE_LAYOUT,
     )
+    layout["margin"] = dict(l=60, r=60, t=50, b=95)
     if has_bm:
         layout["yaxis2"] = dict(title="BM 기준 누적 (시작=1)", overlaying="y",
                                 side="right", showgrid=False)
-        layout["margin"] = dict(l=60, r=60, t=50, b=80)
     fig.update_layout(**layout)
     return fig
 
