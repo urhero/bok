@@ -478,6 +478,8 @@ class WalkForwardEngine:
                 # IS 는 캐시된 전체 merged 를 날짜 슬라이스해 재사용 (Tier 1 마다의 재-merge/copy 제거).
                 #   merged_full[ddt<=cutoff] == _prepare_metadata(is_raw)  (동일 행·순서, inner merge 키에 ddt 포함)
                 #   -> byte-identical. factor_metadata/abbr/orders 도 전체와 동일(factor_info.csv 고정).
+                # 경계 계약: <= inclusive (data_slicer.slice_data_by_date 와 동일 — < 로 바꾸면
+                #   IS 가 1개월 짧아지는 off-by-one. 계약 테스트는 test_oos_purity 참조).
                 merged_is = merged_full[merged_full["ddt"] <= pd.Timestamp(is_end_date)]
                 if is_start_date is not None:
                     # 롤링 IS: lag(shift 1) 소실 방지를 위해 시작 1개월 이전부터 슬라이스

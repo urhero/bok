@@ -39,6 +39,8 @@ def _rate_frame(benchmark: str) -> pd.DataFrame | None:
         logger.warning("%s 없음 - 국가별 거래세 미적용", path.name)
         return None
     cmap = pd.read_parquet(path)
+    # 중복 키 방어: gvkeyiid 중복 시 tax_cost 의 reindex 가 크래시 (데이터 계약 강제)
+    cmap = cmap.drop_duplicates("gvkeyiid")
     rates = cmap["country"].map(lambda c: COUNTRY_TAX_BPS.get(c, (0.0, 0.0)))
     return pd.DataFrame(
         {"buy": [r[0] / 1e4 for r in rates], "sell": [r[1] / 1e4 for r in rates]},
@@ -80,6 +82,10 @@ def drop_high_tax_countries(
     drop = excluded_countries(threshold_bp)
     if not drop:
         return raw
-    cmap = pd.read_parquet(DATA_DIR / f"{benchmark}_country_map.parquet")
+    path = DATA_DIR / f"{benchmark}_country_map.parquet"
+    if not path.exists():  # _rate_frame 과 동일한 degrade (커밋 7a0ed44 의 형제 경로)
+        logger.warning("%s 없음 - 고세율 국가 배제 미적용", path.name)
+        return raw
+    cmap = pd.read_parquet(path)
     bad = set(cmap.loc[cmap["country"].isin(drop), "gvkeyiid"])
     return raw[~raw["gvkeyiid"].isin(bad)]

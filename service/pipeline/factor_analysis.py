@@ -47,6 +47,8 @@ def attach_region(merged_data: pd.DataFrame, country_map_path) -> pd.DataFrame:
     REGION_MAP 미등재 국가는 region NaN 으로 남아 지역 랭킹에서 자동 제외된다.
     """
     cmap = pd.read_parquet(country_map_path)
+    # 중복 키 방어: gvkeyiid 중복 시 left merge 가 merged_data 행을 배수로 부풀림
+    cmap = cmap.drop_duplicates("gvkeyiid")
     cmap["region"] = cmap["country"].map(REGION_MAP)
     unmapped = cmap.loc[cmap["region"].isna(), "country"].unique().tolist()
     if unmapped:

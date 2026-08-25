@@ -90,7 +90,10 @@ def evaluate_universe(kept_abbrs, kept_names, kept_styles, filtered_data, end_da
     meta = meta_all[meta_all["factorAbbreviation"].isin(valid)].reset_index(drop=True)
 
     months = len(ret_df) - 1
-    meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
+    # 명시 정렬 (다른 지표 3개와 동일한 reindex 관례): 위치 대입은 중복 팩터명으로
+    # 컬럼 dedup 이 발동하면 meta(중복 행 유지)와 길이가 어긋나 크래시했음
+    meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).reindex(
+        meta["factorAbbreviation"]).values
 
     # Sprint 1-C: Newey-West 보정 t-stat 진단 컬럼 (관찰용)
     from service.factor.selection import (

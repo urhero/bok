@@ -73,3 +73,33 @@ def test_missing_country_map_degrades_to_zero(monkeypatch, tmp_path):
         assert tt.tax_cost(pd.Series({"X": 1.0}), benchmark="NO_SUCH_BM") == 0.0
     finally:
         tt._rate_frame.cache_clear()
+
+
+def test_drop_high_tax_countries_degrades_without_country_map():
+    """임계를 켜도 국가맵 parquet 이 없으면 크래시 대신 원본 반환 (2026-08-25 가드).
+
+    _rate_frame 은 7a0ed44 에서 같은 가드를 받았으나 이 형제 경로는 누락돼 있었음.
+    """
+    import pandas as pd
+    from service.pipeline.transaction_tax import drop_high_tax_countries
+
+    raw = pd.DataFrame({"gvkeyiid": ["a", "b"], "val": [1.0, 2.0]})
+    out = drop_high_tax_countries(raw, "NONEXISTENT_BENCHMARK", 10.0)  # 임계 on
+    assert out is raw, "국가맵 없음 -> 배제 미적용 (원본 그대로)"
+
+
+def test_attach_region_dedups_country_map(tmp_path):
+    """country map 에 gvkeyiid 중복이 있어도 left merge 가 행을 부풀리지 않아야 한다."""
+    import pandas as pd
+    from service.pipeline.factor_analysis import attach_region
+
+    cmap_path = tmp_path / "cmap.parquet"
+    pd.DataFrame({
+        "gvkeyiid": ["g1", "g1", "g2"],   # g1 중복
+        "country": ["USA", "USA", "JPN"],
+    }).to_parquet(cmap_path)
+
+    merged = pd.DataFrame({"gvkeyiid": ["g1", "g2"], "val": [1.0, 2.0]})
+    out = attach_region(merged, cmap_path)
+    assert len(out) == 2, f"중복 조인으로 행 부풀림: {len(out)}"
+    assert "region" in out.columns
