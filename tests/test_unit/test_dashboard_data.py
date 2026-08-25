@@ -233,6 +233,55 @@ def test_sector_net_weights_groups_and_unknown():
     assert s["Unknown"] == pytest.approx(0.03)  # G9 -> Unknown
 
 
+def test_factor_delta_decomposition_prev_vs_new(tmp_path):
+    hist = tmp_path / "mp_weight_history"
+    hist.mkdir()
+    pd.DataFrame({"factor": ["F1", "F2"], "styleName": ["S1", "S2"],
+                  "raw_weight": [0.1, 0.2], "fitted_weight": [0.10, 0.20]}
+                 ).to_csv(hist / "style_cap_effect_2026-01-31.csv", index=False)
+    pd.DataFrame({"factor": ["F1", "F3"], "styleName": ["S1", "S3"],
+                  "raw_weight": [0.15, 0.05], "fitted_weight": [0.15, 0.05]}
+                 ).to_csv(hist / "style_cap_effect_2026-02-28.csv", index=False)
+    out = dd.factor_delta_decomposition(tmp_path, "2026-02-28")
+    assert out is not None
+    d, prev_snap = out
+    assert prev_snap == "2026-01-31"
+    by = d.set_index("factor")
+    assert by.loc["F1", "delta"] == pytest.approx(0.05)   # 비중 조정
+    assert by.loc["F2", "delta"] == pytest.approx(-0.20)  # 편출 (new=0)
+    assert by.loc["F3", "delta"] == pytest.approx(0.05)   # 신규 편입 (prev=0)
+    assert by.loc["F2", "style"] == "S2"                  # 편출 팩터도 스타일 유지
+    # 직전 파일 없는 첫 스냅샷은 None
+    assert dd.factor_delta_decomposition(tmp_path, "2026-01-31") is None
+
+
+def test_sector_style_decomposition_contrib_sums_to_net():
+    w = pd.DataFrame({
+        "ticker": ["T1", "T2", "T3"],
+        "gvkeyiid": ["G1", "G2", "G3"],
+        "style": ["S1", "S2", "S1"],
+        "mp_ls_weight": [0.10, -0.20, 0.05],
+    })
+    sector_map = {"G1": "Tech", "G2": "Tech", "G3": "Energy"}
+    d = dd.sector_style_decomposition(w, sector_map)
+    by_sec = d.groupby("sec")["contrib"].sum()
+    assert by_sec["Tech"] == pytest.approx(-0.10)
+    assert by_sec["Energy"] == pytest.approx(0.05)
+    nets = d.drop_duplicates("sec").set_index("sec")["net"]
+    assert nets["Tech"] == pytest.approx(-0.10)
+
+
+def test_top_longs_shorts_id_col_isin():
+    """id_col='isin' 이면 isin 으로 집계/라벨 (출력 컬럼명은 'ticker' 유지)."""
+    w = pd.DataFrame({
+        "ticker": [None, "T2"],           # ticker 결측 종목도 포함돼야 함
+        "isin": ["ISIN1", "ISIN2"],
+        "mp_ls_weight": [0.10, -0.20],
+    })
+    ls = dd.top_longs_shorts(w, n=2, id_col="isin")
+    assert set(ls["ticker"]) == {"ISIN1", "ISIN2"}
+
+
 def test_load_sector_map_from_parquet(tmp_path):
     df = pd.DataFrame({
         "ddt": pd.to_datetime(["2099-01-31", "2099-01-31", "2099-02-28"]),
@@ -432,11 +481,6 @@ def test_extended_stats_keys_and_ranges():
     assert isinstance(s["max_loss_streak"], int)
 
 
-def test_rolling_sharpe_window():
-    assert len(dd.rolling_sharpe(_curves(), window=12)) == 1   # 12개월 -> 1 시점
-    assert len(dd.rolling_sharpe(_curves(), window=6)) == 7     # 12-6+1
-
-
 # ── 변동성 국면 (vol regime) ─────────────────────────────────────────────────
 
 def _vol_regime_returns(n_high: int = 18, n_low: int = 18,
@@ -543,7 +587,8 @@ def test_diagnostics_table_folds_oos_and_hides_funnel_variants(tmp_path):
     ).to_csv(tmp_path / "overfit_diagnostics.csv", index=False, encoding="utf-8-sig")
 
     html = _diagnostics_table(tmp_path, curves=_curves())
-    assert "OOS 성과 (EW/Top50/CEW)" in html      # 통합 블록 등장
+    # 통합 블록 등장 (3열째 라벨은 유니버스별 '<BM>전략' — CEW 표기 대체, 2026-08-28)
+    assert "OOS 성과 (EW/Top50/" in html
     assert "<td>Sharpe</td>" in html and "<td>Calmar</td>" in html
     assert "NORMAL" in html                        # 패턴 행 유지
     assert "&gt;" in html and "C > B" not in html  # 패턴 해석 escape

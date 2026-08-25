@@ -847,7 +847,7 @@ CLAUDE.md 의 코드 변경 검증 절차(aggregated_weights before/after diff)�
 | 파일 | 책임 |
 |------|------|
 | `service/report/dashboard_data.py` | CSV -> DataFrame + 파생지표(낙폭/KPI/스타일집계/상위롱숏/팩터틸트/선정셋/진단파싱). plotly 의존 없음 -> 단위 테스트 용이 |
-| `service/report/dashboard_charts.py` | DataFrame -> plotly Figure. `STYLE_COLORS`는 `report_generator.py` 미러 + Volatility 보강(결합도 회피 위해 복제) |
+| `service/report/dashboard_charts.py` | DataFrame -> plotly Figure. 스타일 색은 `service/report/style_colors.py` 단일 출처(STYLE_COLORS, 다크 팔레트 2026-08-25 통일)를 report_generator(PDF)와 공유. 본전략 라벨은 `<benchmark>전략` (구 CEW 표기 대체) |
 | `service/report/dashboard.py` | 조립 + HTML 출력(얇음). `build_dashboard(end_date=None) -> Path`. `_diagnostics_table(output_dir, curves)`이 overfit_diagnostics.csv 를 분류별 표로 렌더(단일값 colspan, 전 셀 `html.escape`) + `_oos_rows()`로 곡선 기반 OOS 성과(EW/Top50/CEW)를 통합(§7.4) |
 | `main.py` `viz` 서브커맨드 | `python main.py viz [end_date] [--open]` -> `_run_viz()`. **`_run_backtest()`도 종료 시 `build_dashboard()` 자동 호출**(try/except 격리 — viz 실패가 백테스트 산출물을 무효화하지 않음) |
 | `tests/test_unit/test_dashboard_data.py` | 순수 함수 단위 + HTML 스모크 + 진단 표 피벗/escape |
