@@ -11,7 +11,9 @@ def test_style_colors_leaf_is_single_source():
     from service.report.style_colors import STYLE_COLORS, _DEFAULT_COLOR
 
     assert "Volatility" in STYLE_COLORS, "Volatility 스타일이 누락되면 안 됨"
-    assert STYLE_COLORS["Volatility"] == "#9467bd"
+    # 2026-08-25 다크테마 팔레트 통일 (대시보드 3번 섹션 기준색)
+    assert STYLE_COLORS["Valuation"] == "#5B8DEF"
+    assert STYLE_COLORS["Historical Growth"] == "#E8944A"
     assert len(STYLE_COLORS) == 8
     assert _DEFAULT_COLOR == "#7f7f7f"
 
