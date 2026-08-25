@@ -964,8 +964,9 @@ def _factor_clusters_section(output_dir: Path, snap: str) -> tuple[str, str]:
         delta_col = '<col class="c-w">' if has_delta else ''
         delta_th = '<th style="text-align:right">전월 대비</th>' if has_delta else ''
         groups.append(
-            # 접힌 상태 디폴트 (2026-08-28 사용자 지정 — 순위표가 기본 뷰)
-            f'<details class="cluster"><summary>{title}</summary>'
+            # 섹션 자체가 접힘이므로 내부 무리 박스는 펼침 (2026-08-28 사용자 지정
+            # — 섹션을 열면 무리 구성이 바로 보이게)
+            f'<details open class="cluster"><summary>{title}</summary>'
             f'<table class="cl-table">'
             f'<colgroup><col class="c-factor"><col class="c-style">'
             f'{erc_col}<col class="c-w"><col class="c-bar">{delta_col}</colgroup>'
