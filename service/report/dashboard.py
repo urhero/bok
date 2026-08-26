@@ -562,6 +562,8 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
         + '</div>'
         f'{_backtest_stats_card(curves)}</details>',
         f'<div class="card full">{_fig_div(ch.equity_curve_fig(curves), include_js=True)}</div>',
+        # 동일 곡선 + YTD 수익 기준 음영 버전 (2026-08-28 사용자 지정)
+        f'<div class="card full">{_fig_div(ch.equity_curve_fig(curves, shade="ytd"))}</div>',
     ]
     # 월별 수익률 히트맵 (QC 스타일 연x월 그리드)
     mret = dd.monthly_returns_table(curves)

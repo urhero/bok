@@ -149,7 +149,7 @@ def build_vol_regime_chart(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def equity_curve_fig(curves: pd.DataFrame) -> go.Figure:
+def equity_curve_fig(curves: pd.DataFrame, shade: str = "monthly") -> go.Figure:
     """누적 수익 곡선 (2026-08-28 사용자 지정 범례 배치).
 
     범례 1행(legend)  : 본전략 · BM(MXWO, 실선 그린 — 구 BM+MP 오버레이 색 승계)
@@ -183,9 +183,16 @@ def equity_curve_fig(curves: pd.DataFrame) -> go.Figure:
             hovertemplate="%{x|%Y-%m}<br>" + l + " %{y:.4f}<extra></extra>",
         ))
     # 배경 음영 (2026-08-28 사용자 지정): 시장중립 오버레이라 액티브수익 = 본전략
-    # 월수익. 월별로 +5bp 초과 = 아웃퍼폼(녹) / -5bp 미만 = 언더퍼폼(적) /
-    # |r| <= 5bp = 유사(회) 로 분류하고, 인접한 같은 구간은 하나의 띠로 병합.
+    # 수익. +5bp 초과 = 아웃퍼폼(녹) / -5bp 미만 = 언더퍼폼(적) / |r| <= 5bp =
+    # 유사(회). 인접한 같은 구간은 하나의 띠로 병합.
+    # shade="monthly" = 당월 수익 기준, "ytd" = 연초 이후 누적수익 기준 (매년 리셋).
     r_m = curves["cew_return"].astype(float)
+    if shade == "ytd":
+        basis = (1 + r_m).groupby(r_m.index.year).cumprod() - 1.0
+        basis_label = "본전략 YTD 수익 기준"
+    else:
+        basis = r_m
+        basis_label = "본전략 월수익 기준"
     idx = curves.index
     def _cls(v):
         return "out" if v > 0.0005 else ("under" if v < -0.0005 else "flat")
@@ -193,9 +200,9 @@ def equity_curve_fig(curves: pd.DataFrame) -> go.Figure:
               "flat": "rgba(139,149,165,0.07)"}
     i = 0
     while i < len(idx):
-        c = _cls(r_m.iloc[i])
+        c = _cls(basis.iloc[i])
         j = i
-        while j + 1 < len(idx) and _cls(r_m.iloc[j + 1]) == c:
+        while j + 1 < len(idx) and _cls(basis.iloc[j + 1]) == c:
             j += 1
         x0 = idx[i - 1] if i > 0 else idx[i] - pd.DateOffset(months=1)
         fig.add_vrect(x0=x0, x1=idx[j], fillcolor=_SHADE[c],
@@ -205,12 +212,13 @@ def equity_curve_fig(curves: pd.DataFrame) -> go.Figure:
         xref="paper", yref="paper", x=0, y=1.08, showarrow=False,
         text="음영: <span style='color:#0ecb81'>아웃퍼폼(&gt;+5bp)</span> · "
              "<span style='color:#f6465d'>언더퍼폼(&lt;-5bp)</span> · "
-             "<span style='color:#8b95a5'>유사(±5bp 이내)</span> — 본전략 월수익 기준",
+             f"<span style='color:#8b95a5'>유사(±5bp 이내)</span> — {basis_label}",
         font=dict(size=11), align="left",
     )
 
+    title = "누적 수익 곡선" if shade == "monthly" else "누적 수익 곡선 (YTD 음영)"
     layout = dict(
-        title="누적 수익 곡선", height=410,
+        title=title, height=410,
         legend=dict(orientation="h", yanchor="bottom", y=-0.24, x=0),
         legend2=dict(orientation="h", yanchor="bottom", y=-0.36, x=0),
         yaxis_title="전략 누적 (시작=1)", **_BASE_LAYOUT,
