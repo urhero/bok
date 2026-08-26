@@ -182,6 +182,33 @@ def equity_curve_fig(curves: pd.DataFrame) -> go.Figure:
             line=dict(color=c, width=w), visible="legendonly",
             hovertemplate="%{x|%Y-%m}<br>" + l + " %{y:.4f}<extra></extra>",
         ))
+    # 배경 음영 (2026-08-28 사용자 지정): 시장중립 오버레이라 액티브수익 = 본전략
+    # 월수익. 월별로 +5bp 초과 = 아웃퍼폼(녹) / -5bp 미만 = 언더퍼폼(적) /
+    # |r| <= 5bp = 유사(회) 로 분류하고, 인접한 같은 구간은 하나의 띠로 병합.
+    r_m = curves["cew_return"].astype(float)
+    idx = curves.index
+    def _cls(v):
+        return "out" if v > 0.0005 else ("under" if v < -0.0005 else "flat")
+    _SHADE = {"out": "rgba(14,203,129,0.10)", "under": "rgba(246,70,93,0.10)",
+              "flat": "rgba(139,149,165,0.07)"}
+    i = 0
+    while i < len(idx):
+        c = _cls(r_m.iloc[i])
+        j = i
+        while j + 1 < len(idx) and _cls(r_m.iloc[j + 1]) == c:
+            j += 1
+        x0 = idx[i - 1] if i > 0 else idx[i] - pd.DateOffset(months=1)
+        fig.add_vrect(x0=x0, x1=idx[j], fillcolor=_SHADE[c],
+                      layer="below", line_width=0)
+        i = j + 1
+    fig.add_annotation(
+        xref="paper", yref="paper", x=0, y=1.08, showarrow=False,
+        text="음영: <span style='color:#0ecb81'>아웃퍼폼(&gt;+5bp)</span> · "
+             "<span style='color:#f6465d'>언더퍼폼(&lt;-5bp)</span> · "
+             "<span style='color:#8b95a5'>유사(±5bp 이내)</span> — 본전략 월수익 기준",
+        font=dict(size=11), align="left",
+    )
+
     layout = dict(
         title="누적 수익 곡선", height=410,
         legend=dict(orientation="h", yanchor="bottom", y=-0.24, x=0),
@@ -211,10 +238,13 @@ def drawdown_fig(curves: pd.DataFrame) -> go.Figure:
 
 def monthly_dist_fig(curves: pd.DataFrame) -> go.Figure:
     r = curves["cew_return"].astype(float)
-    fig = go.Figure(go.Histogram(x=r, nbinsx=40, marker_color="#3b82f6"))
+    fig = go.Figure(go.Histogram(
+        x=r, nbinsx=40, marker_color="#3b82f6",
+        hovertemplate="%{x:.2%} 구간<br>%{y}개월<extra></extra>",
+    ))
     fig.add_vline(x=0, line_dash="dash", line_color=_MUTED)
     fig.update_layout(title=f"월별 수익 분포 ({_STRAT_LABEL})", height=320,
-                      xaxis_tickformat=".1%", bargap=0.03,
+                      xaxis_tickformat=".2%", bargap=0.03,
                       yaxis_title="개월 수", **_BASE_LAYOUT)
     return fig
 
