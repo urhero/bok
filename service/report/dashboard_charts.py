@@ -442,7 +442,7 @@ def style_weight_evolution_fig(style_hist: pd.DataFrame) -> go.Figure:
             hovertemplate="%{x|%Y-%m}<br>" + str(st) + " %{y:.1%}<extra></extra>",
         ))
     fig.update_layout(
-        title="스타일 비중 추이 (백테스트)", height=430,
+        title="스타일 비중 추이", height=430,
         margin=dict(l=60, r=20, t=50, b=95), **_DARK,
         yaxis_tickformat=".0%",
         legend=dict(orientation="h", yanchor="top", y=-0.13, x=0, font=dict(size=11)),

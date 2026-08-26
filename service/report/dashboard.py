@@ -568,8 +568,8 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
     if not mret.empty:
         parts.append(f'<div class="card full">{_fig_div(ch.monthly_returns_heatmap_fig(mret))}</div>')
 
-    # 차트 순서 (2026-08-28 사용자 지정): 히트맵 다음 = 스타일 비중 추이(구 낙폭
-    # 자리와 맞교환), 낙폭은 팩터 회전율 '아래' 로 이동.
+    # 차트 순서 (2026-08-28 사용자 지정 2차): 스타일 비중 추이는 롤링 Sharpe
+    # 아래, 낙폭은 팩터 회전율 아래.
     wh_path = latest(output_dir / "walk_forward_weight_history.csv", end_date)
     wh_charts = None
     if wh_path.exists():
@@ -580,7 +580,6 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
         turnover = dd.compute_turnover(wh)
         churn_split = dd.selection_churn_split(wh)
         wh_charts = (style_hist, turnover, churn_split)
-        parts.append(f'<div class="card full">{_fig_div(ch.style_weight_evolution_fig(style_hist))}</div>')
 
     parts.append(_grid2([
         f'<div class="card">{_fig_div(ch.monthly_dist_fig(curves))}</div>',
@@ -594,7 +593,8 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
         parts.append(f'<div class="card full">{_fig_div(ch.rolling_sharpe_fig(r))}</div>')
 
     if wh_charts is not None:
-        _, turnover, churn_split = wh_charts
+        style_hist, turnover, churn_split = wh_charts
+        parts.append(f'<div class="card full">{_fig_div(ch.style_weight_evolution_fig(style_hist))}</div>')
         parts.append(f'<div class="card full">{_fig_div(ch.turnover_fig(turnover, churn_split))}</div>')
     # 낙폭 차트 — 팩터 회전율 아래 (2026-08-28 사용자 지정)
     parts.append(f'<div class="card full">{_fig_div(ch.drawdown_fig(curves))}</div>')
