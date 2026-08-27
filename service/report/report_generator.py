@@ -115,6 +115,22 @@ def _callout(fig, xpx, ypx, n, r=8.0):
     _text(fig, xpx, ypx - 5.5, str(n), 10, "#ffffff", weight="bold", ha="center")
 
 
+def _guide_box(fig, xpx, ypx, wpx, hpx, n, corner="tl"):
+    """읽는 법 가이드: 해당 영역을 점선 라운드 박스로 감싸고 모서리에 번호 원.
+
+    corner="tl"(좌상단, 기본) / "tr"(우상단 — 왼쪽에 긴 텍스트가 있을 때).
+    """
+    from matplotlib.patches import FancyBboxPatch
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
+    ax.set_xlim(0, PAGE_W); ax.set_ylim(PAGE_H, 0)
+    ax.add_patch(FancyBboxPatch(
+        (xpx, ypx), wpx, hpx, boxstyle="round,pad=0,rounding_size=5",
+        facecolor="none", edgecolor=INK, linewidth=1.0,
+        linestyle=(0, (3, 2)), alpha=0.55, zorder=5))
+    cx = xpx if corner == "tl" else xpx + wpx
+    _callout(fig, cx, ypx, n)
+
+
 def _example_notes(fig, x, y, notes, line_h=17.0, wrap_x=None):
     """번호별 설명 리스트. notes = [(번호, [줄들])]."""
     for num, lines in notes:
@@ -554,10 +570,12 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
         _text(fig, x0 + 39, y0 - 1, nm, 10.5, INK, weight="bold")
         _text(fig, x0 + 20, y0 + 15, _ex["style"], 9, MUTE)
         _text(fig, x0 + w, y0 + 15, f"L-S CAGR {_pct(_ex['cagr'])}", 9, SUB, ha="right")
-        # ① 배지 왼쪽 / ② 스타일 행 왼쪽(긴 팩터명과 겹치지 않게) / ③ CAGR 오른쪽
-        _callout(fig, x0 - 12, y0 + 6, 1)
-        _callout(fig, x0 - 12, y0 + 22, 2)
-        _callout(fig, x0 + w + 12, y0 + 20, 3)
+        # 영역 박스: ① 순위 배지 / ② 팩터명+스타일 / ③ CAGR 라벨 (2026-08-27
+        # 사용자 지정 — 번호가 가리키는 범위를 점선 박스로 명시)
+        _guide_box(fig, x0 - 6, y0 - 6, 36, 23, 1)
+        name_w = min(24 + _pt(len(nm)) * 5.6, w - 130)
+        _guide_box(fig, x0 + 34, y0 - 7, name_w, 34, 2)
+        _guide_box(fig, x0 + w - 92, y0 + 8, 100, 17, 3, corner="tr")
 
     def _make_example(chart_kind, note4_lines):
         if _ex is None:
@@ -575,7 +593,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                 _chart_ls_series(ax, _ex["series"], _ex["color"], svg_h)
             else:
                 _chart_quintile(ax, _ex["quint_vals"], _ex["quint_labels"], svg_h)
-            _callout(fig, x, y + 30 + ch / 2, 4)
+            _guide_box(fig, x + 6, y + 27, w + 12, ch + 10, 4)
             notes = _NOTE_COMMON + [(4, note4_lines)]
             _example_notes(fig, x + w + 40, y - 2, notes)
         return draw
