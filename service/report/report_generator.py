@@ -106,8 +106,27 @@ def _fmt_tick(t):
 
 
 # ── 커버 페이지 ──────────────────────────────────────────────────────────────
+def _callout(fig, xpx, ypx, n, r=8.0):
+    """동그라미 번호 주석 (읽는 법 가이드용)."""
+    from matplotlib.patches import Circle
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
+    ax.set_xlim(0, PAGE_W); ax.set_ylim(PAGE_H, 0)
+    ax.add_patch(Circle((xpx, ypx), r, facecolor=INK, edgecolor="none", zorder=6))
+    _text(fig, xpx, ypx - 5.5, str(n), 10, "#ffffff", weight="bold", ha="center")
+
+
+def _example_notes(fig, x, y, notes, line_h=17.0, wrap_x=None):
+    """번호별 설명 리스트. notes = [(번호, [줄들])]."""
+    for num, lines in notes:
+        _callout(fig, x + 8, y + 7, num)
+        for j, ln in enumerate(lines):
+            _text(fig, x + 24, y + j * line_h, ln, 10.5, SUB)
+        y += len(lines) * line_h + 8
+    return y
+
+
 def _cover_page(pp, appendix_no, title_lines, desc, style_counts, cover_date,
-                howto_draw, n_inport=0):
+                howto_draw, n_inport=0, example_draw=None):
     fig = plt.figure(figsize=(8.27, 11.69))
     L, R, T = 64.0, PAGE_W - 64.0, 72.0
     _text(fig, L, T, f"APPENDIX {appendix_no} · {_BM} UNIVERSE", 12, MUTE)
@@ -143,6 +162,12 @@ def _cover_page(pp, appendix_no, title_lines, desc, style_counts, cover_date,
         _rank_badge(fig, col2 + 4, cy, 1, True)
         _text(fig, col2 + 34, cy, f"In current model portfolio ({n_inport} factors)",
               11.5, SUB)
+    # 읽는 법 가이드: 첫 팩터 카드 예시 + 동그라미 주석 (2026-08-27 사용자 지정)
+    if example_draw is not None:
+        y_ex = y_body + ((len(items) + 1) // 2) * 22 + (34 if n_inport else 22) + 26
+        _hline(fig, L, R, y_ex - 16, INK, lw=0.9)
+        _text(fig, L, y_ex, "READING GUIDE — FIRST FACTOR AS EXAMPLE", 11, MUTE)
+        example_draw(fig, L, y_ex + 26)
     _text(fig, L, PAGE_H - 56, _BM, 11, MUTE, va="bottom")
     _text(fig, R, PAGE_H - 56, cover_date, 11, MUTE, ha="right", va="bottom")
     pp.savefig(fig)
@@ -508,6 +533,53 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
     cost_bps = int(PIPELINE_PARAMS["transaction_cost_bps"])  # 폴백 금지 (2026-08-25 P3 동일 조치)
 
     # ── 별첨02 ──
+    # ── 커버 "읽는 법" 예시 (첫 팩터 카드 + 동그라미 주석) ──────────────────
+    # 세 북이 같은 ①~④ 틀을 공유하고, ④(차트)의 기간·비용 기준만 북별로 다르다
+    # (2026-08-27 사용자 지정 — 막대와 L-S CAGR 의 기간 차이를 명시해 오해 방지).
+    _ex = records[0] if records else None
+    _hist_label = f"Jul 2015 - {pd.Timestamp(as_of).strftime('%b %Y')}"
+    _NOTE_COMMON = [
+        (1, ["Rank - ordered by (3) L-S CAGR, descending.",
+             "Filled dark badge = in the current Top-50 portfolio."]),
+        (2, ["Factor name - colour dot = style (legend above)."]),
+        (3, [f"L-S CAGR - LAST 48 MONTHS only (rolling IS window),",
+             f"net of {cost_bps} bp cost. Selection / sort basis -",
+             "NOT the chart period."]),
+    ]
+
+    def _ex_header(fig, x0, y0, w):
+        _rank_badge(fig, x0, y0, _ex["rank"], _ex["in_port"])
+        _swatch(fig, x0 + 26, y0 + 1, 8, 8, _ex["color"], circle=True)
+        nm = _ex["name"] if len(_ex["name"]) <= 58 else _ex["name"][:55] + "..."
+        _text(fig, x0 + 39, y0 - 1, nm, 10.5, INK, weight="bold")
+        _text(fig, x0 + 20, y0 + 15, _ex["style"], 9, MUTE)
+        _text(fig, x0 + w, y0 + 15, f"L-S CAGR {_pct(_ex['cagr'])}", 9, SUB, ha="right")
+        # ① 배지 왼쪽 / ② 스타일 행 왼쪽(긴 팩터명과 겹치지 않게) / ③ CAGR 오른쪽
+        _callout(fig, x0 - 12, y0 + 6, 1)
+        _callout(fig, x0 - 12, y0 + 22, 2)
+        _callout(fig, x0 + w + 12, y0 + 20, 3)
+
+    def _make_example(chart_kind, note4_lines):
+        if _ex is None:
+            return None
+        def draw(fig, x, y):
+            w = 327.0
+            _ex_header(fig, x + 12, y, w)
+            svg_h = 110.0
+            ch = svg_h * w / 320.0
+            ax = _svg_axes(fig, x + 12, y + 30, w, ch, 320.0 if chart_kind != "sector"
+                           and chart_kind != "series" else 682.0, svg_h)
+            if chart_kind == "sector":
+                _chart_sector(ax, _ex["sector_vals"], _ex["sectors"], _ex["dropped_idx"], svg_h)
+            elif chart_kind == "series":
+                _chart_ls_series(ax, _ex["series"], _ex["color"], svg_h)
+            else:
+                _chart_quintile(ax, _ex["quint_vals"], _ex["quint_labels"], svg_h)
+            _callout(fig, x, y + 30 + ch / 2, 4)
+            notes = _NOTE_COMMON + [(4, note4_lines)]
+            _example_notes(fig, x + w + 40, y - 2, notes)
+        return draw
+
     def cover02(pp):
         def howto(fig, x, y):
             for i, c in enumerate(RAMP):
@@ -521,8 +593,12 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
         _cover_page(pp, "02", ["Sector × Quintile", "Return Book"],
                     ["Average monthly returns of each factor's quintile",
                      f"portfolios, by GICS sector. {len(records)} factors,",
-                     "ordered by in-sample L–S CAGR."],
-                    style_counts, cover_date, howto, n_inport=n_inport)
+                     "ordered by in-sample L–S CAGR (last 48 months, net of cost)."],
+                    style_counts, cover_date, howto, n_inport=n_inport,
+                    example_draw=_make_example("sector", [
+                        f"Chart - FULL HISTORY ({_hist_label}): avg monthly",
+                        "return of each sector x quintile portfolio,",
+                        "BEFORE costs. Period differs from (3) by design."]))
 
     def hdr_legend02(fig, right_px):
         x = right_px - 60
@@ -552,8 +628,14 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
         _cover_page(pp, "03", ["Quintile", "Return Book"],
                     ["Average monthly return of each factor's quintile",
                      "portfolios and the long / short quintiles selected",
-                     f"from them. {len(records)} factors, ordered by in-sample L–S CAGR."],
-                    style_counts, cover_date, howto, n_inport=n_inport)
+                     f"from them. {len(records)} factors, ordered by",
+                     "in-sample L–S CAGR (last 48 months, net of cost)."],
+                    style_counts, cover_date, howto, n_inport=n_inport,
+                    example_draw=_make_example("quintile", [
+                        f"Bars - FULL HISTORY ({_hist_label}): avg monthly",
+                        "return of the five quintiles, BEFORE costs.",
+                        "So bars can look strong while (3) is negative",
+                        "(weak recent signal / high turnover), and vice versa."]))
 
     _render_grid_book03(OUTPUT_DIR / f"별첨03_{_BM}_Quintile_Return_Book_{as_of}.pdf",
                         records, cover03)
@@ -568,8 +650,13 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
         _cover_page(pp, "04", ["Long–Short Portfolio", "Return Book"],
                     ["Cumulative return of each factor's long–short",
                      f"portfolio, net of {cost_bps} bp transaction cost.",
-                     f"{len(records)} factors over {n_months} months, ordered by in-sample CAGR."],
-                    style_counts, cover_date, howto, n_inport=n_inport)
+                     f"{len(records)} factors over {n_months} months, ordered by",
+                     "in-sample L–S CAGR (last 48 months, net of cost)."],
+                    style_counts, cover_date, howto, n_inport=n_inport,
+                    example_draw=_make_example("series", [
+                        f"Curve - FULL HISTORY ({_hist_label}): cumulative",
+                        f"L-S return, net of {cost_bps} bp cost. Full-period",
+                        "curve vs 48-month (3): periods differ by design."]))
 
     _render_stacked_book(
         OUTPUT_DIR / f"별첨04_{_BM}_LongShort_Port_Return_Book_{as_of}.pdf", records,
