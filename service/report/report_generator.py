@@ -434,13 +434,45 @@ def _render_grid_book03(pdf_path, records, cover_fn):
 
 # ── 메인 엔트리 ──────────────────────────────────────────────────────────────
 def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
-                    end_date: str | None = None):
-    """별첨 01~04 생성. end_date = 기준일(파일명 접미사). None 이면 최신 스냅샷일."""
+                    end_date: str | None = None, live_rules: dict | None = None):
+    """별첨 01~04 생성. end_date = 기준일(파일명 접미사). None 이면 최신 스냅샷일.
+
+    live_rules: 운용(48M rolling IS)에서 fit 한 규칙 번들
+        {kept_abbrs, dropped_sectors, label_rules}. 제공되면 북의 팩터 집합·
+        섹터 제외·L/S 라벨이 실제 운용과 일치하고, 차트만 전체 이력 수익으로
+        그린다 (2026-08-27 사용자 지정). None 이면 구 방식(전체 이력 fit) 폴백.
+    """
     logger.info("Starting generate_report (A4 book redesign)...")
     plt.ioff()
 
-    (kept_abbr, _kept_name, _kept_style, kept_idx, dropped_sec, cleaned_raw,
-     ) = filter_and_label_factors(factor_abbrs, factor_names, style_names, factor_stats)
+    if live_rules:
+        # 운용 규칙을 전체 이력 5분위 통계에 직접 매핑 — 재학습 금지
+        # (walk_forward._apply_rules_and_aggregate 와 동일 원칙)
+        abbr_to_idx = {a: i for i, a in enumerate(factor_abbrs)}
+        kept_abbr, kept_idx, dropped_sec, cleaned_raw = [], [], [], []
+        for abbr in live_rules["kept_abbrs"]:
+            idx = abbr_to_idx.get(abbr)
+            if idx is None or factor_stats[idx][0] is None:
+                continue
+            raw_df = factor_stats[idx][3]
+            dropped = live_rules["dropped_sectors"].get(abbr, [])
+            raw_clean = raw_df[~raw_df["sec"].isin(dropped)] if dropped else raw_df
+            labels = live_rules["label_rules"].get(abbr, {})
+            merged = raw_clean.copy()
+            merged["label"] = merged["quantile"].map(labels)
+            merged = merged.dropna(subset=["label"])
+            if merged.empty or not ((merged["label"] == 1).any()
+                                    and (merged["label"] == -1).any()):
+                continue
+            kept_abbr.append(abbr)
+            kept_idx.append(idx)
+            dropped_sec.append(dropped)
+            cleaned_raw.append(merged)
+        logger.info("Live-rule mapping retained %d / %d operational factors",
+                    len(kept_abbr), len(live_rules["kept_abbrs"]))
+    else:
+        (kept_abbr, _kept_name, _kept_style, kept_idx, dropped_sec, cleaned_raw,
+         ) = filter_and_label_factors(factor_abbrs, factor_names, style_names, factor_stats)
     # 별첨은 전체 이력 표시 (backtest_start 기본값 2017-12 절단 우회; 2026-08-06)
     factor_rets = aggregate_factor_returns(
         cleaned_raw, kept_abbr, backtest_start="1900-01-01",
@@ -550,8 +582,9 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
 
     # ── 별첨02 ──
     # ── 커버 "읽는 법" 예시 (첫 팩터 카드 + 동그라미 주석) ──────────────────
-    # 세 북이 같은 ①~④ 틀을 공유하고, ④(차트)의 기간·비용 기준만 북별로 다르다
-    # (2026-08-27 사용자 지정 — 막대와 L-S CAGR 의 기간 차이를 명시해 오해 방지).
+    # 세 북이 같은 ①~④ 틀을 공유한다. 규칙(섹터 제외·L/S 라벨)은 운용 48M과
+    # 동일하고, 차트의 수익 측정 기간만 전체 이력이다 (2026-08-27 사용자 지정 —
+    # 별첨과 운용의 팩터 집합·규칙 일치, 기간 차이만 명시해 오해 방지).
     _ex = records[0] if records else None
     _hist_label = f"Jul 2015 - {pd.Timestamp(as_of).strftime('%b %Y')}"
     _NOTE_COMMON = [
@@ -559,9 +592,9 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
              "Filled dark badge = in the current Top-50 portfolio."]),
         (2, ["Factor name - colour dot = style (legend above)."]),
         (3, ["L-S CAGR - LAST 48 MONTHS only (rolling IS),",
-             f"net of {cost_bps} bp cost. This 48M window is the LIVE",
-             "operating basis: sector exclusion, L/S labels",
-             "and Top-50 selection all use it."]),
+             f"net of {cost_bps} bp cost. The live selection / sort",
+             "basis. The L/S labels and sector exclusions",
+             "shown are these same live 48M rules."]),
     ]
 
     def _make_example(chart_kind, note4_lines, layout="stacked", note3_lines=None):
@@ -634,8 +667,8 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
             _text(fig, x, y + 30, "Each cluster of five bars is one sector; bars run", 12, SUB)
             _text(fig, x, y + 48, "Q1 (highest factor score) to Q5 (lowest), dark to light.", 12, SUB)
             _swatch(fig, x, y + 74, 10, 10, DROP)
-            _text(fig, x + 16, y + 73, "Grey clusters mark sectors excluded from the", 12, SUB)
-            _text(fig, x, y + 91, "factor — the Q1–Q5 spread is negative there.", 12, SUB)
+            _text(fig, x + 16, y + 73, "Grey clusters mark sectors the live 48-month", 12, SUB)
+            _text(fig, x, y + 91, "rules exclude from the factor.", 12, SUB)
         _cover_page(pp, "02", ["Sector × Quintile", "Return Book"],
                     ["Average monthly returns of each factor's quintile",
                      f"portfolios, by GICS sector. {len(records)} factors,",
@@ -643,15 +676,14 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                     style_counts, cover_date, howto, n_inport=n_inport,
                     example_draw=_make_example("sector", note3_lines=[
                         "Style name / L-S CAGR - the LAST 48 MONTHS",
-                        f"only (rolling IS), net of {cost_bps} bp cost. This 48M",
-                        "window is the LIVE operating basis: sector",
-                        "exclusion, L/S labels and Top-50 selection",
-                        "all use it."],
+                        f"only (rolling IS), net of {cost_bps} bp cost. The live",
+                        "selection / sort basis. Grey exclusions in the",
+                        "chart are these same live 48M rules."],
                         note4_lines=[
                         f"Chart - FULL HISTORY ({_hist_label}): avg monthly",
                         "return of each sector x quintile portfolio, BEFORE",
-                        "costs. Grey (excluded) sectors follow this full",
-                        "window too - live 48M exclusions can differ."]))
+                        "costs. Only the return window differs from ③ -",
+                        "the sector exclusions applied are the live rules."]))
 
     def hdr_legend02(fig, right_px):
         x = right_px - 60
@@ -675,8 +707,8 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                                           ("Neutral", NEUT_C))):
                 _swatch(fig, x + i * 92, y, 14, 14, c)
                 _text(fig, x + i * 92 + 19, y + 1, lab, 11, SUB)
-            _text(fig, x, y + 30, "Quintiles are selected as long or short by performance", 12, SUB)
-            _text(fig, x, y + 48, "against a spread-based threshold — not fixed to Q1 / Q5.", 12, SUB)
+            _text(fig, x, y + 30, "Long / short quintiles follow the live 48-month rules —", 12, SUB)
+            _text(fig, x, y + 48, "spread-threshold based, not fixed to Q1 / Q5.", 12, SUB)
             _text(fig, x, y + 66, "Grey quintiles are left out of the portfolio.", 12, SUB)
         _cover_page(pp, "03", ["Quintile", "Return Book"],
                     ["Average monthly return of each factor's quintile",
@@ -686,9 +718,9 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                     style_counts, cover_date, howto, n_inport=n_inport,
                     example_draw=_make_example("quintile", layout="grid", note4_lines=[
                         f"Bars - FULL HISTORY ({_hist_label}): avg monthly",
-                        "return of the five quintiles, BEFORE costs. L/S tags",
-                        "follow the same full window - bars can look strong",
-                        "while the operating ③ is negative, and vice versa."]))
+                        "return of the five quintiles, BEFORE costs. L/S",
+                        "tags are the live 48M rules; only the return",
+                        "window differs from ③ (so signs can disagree)."]))
 
     _render_grid_book03(OUTPUT_DIR / f"별첨03_{_BM}_Quintile_Return_Book_{as_of}.pdf",
                         records, cover03)
@@ -708,16 +740,15 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                     style_counts, cover_date, howto, n_inport=n_inport,
                     example_draw=_make_example("series", note3_lines=[
                         "Style name / L-S CAGR - the LAST 48 MONTHS",
-                        f"only (rolling IS), net of {cost_bps} bp cost. This 48M",
-                        "window is the LIVE operating basis: sector",
-                        "exclusion, L/S labels and Top-50 selection",
-                        "all use it."],
+                        f"only (rolling IS), net of {cost_bps} bp cost. The live",
+                        "selection / sort basis. The curve below uses",
+                        "these same live 48M L/S rules."],
                         note4_lines=[
-                        f"Curve - FULL HISTORY ({_hist_label}): cumulative",
-                        f"L-S return, net of {cost_bps} bp cost, with L/S rules",
-                        "fit on the full window. The live basis is ③ - a",
-                        "factor can trend up over 11 years yet have a",
-                        "negative recent 48M CAGR (and vice versa)."]))
+                        f"Curve - the live 48M L/S rules applied over FULL",
+                        f"HISTORY ({_hist_label}), net of {cost_bps} bp cost.",
+                        "Rules are fit on recent data, so the long-run",
+                        "curve is context, not a live track record -",
+                        "it can rise while the recent ③ is negative."]))
 
     _render_stacked_book(
         OUTPUT_DIR / f"별첨04_{_BM}_LongShort_Port_Return_Book_{as_of}.pdf", records,

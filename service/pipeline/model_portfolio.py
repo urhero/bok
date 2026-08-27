@@ -114,8 +114,9 @@ class ModelPortfolioPipeline:
         # [2.3] 롤링 IS 윈도우 (2026-07-28 채택, w48): 규칙 학습·선정·가중을
         # 최근 N개월로 제한해 레짐 적응. walk-forward 엔진의 is_window_months 와
         # 동일 의미 (production parity). 미지정/이력 부족 시 no-op (expanding).
-        # 리포트 모드는 슬라이스 제외 — 별첨 북은 전체 이력을 표시한다 (2026-08-06
-        # 사용자 지정: 정렬은 IS 기준(meta_data.csv) 유지, 차트만 전체).
+        # 리포트 모드는 슬라이스 제외 — 별첨 북의 차트 데이터는 전체 이력이되,
+        # 섹터 제거·L/S 라벨은 아래 [2.5]에서 운용(48M) 규칙을 별도 fit 해 매핑한다
+        # (2026-08-27 사용자 지정: 북과 운용의 팩터 집합·규칙 일치).
         from service.pipeline.factor_analysis import slice_recent_months
         window = None if report else self.pipeline_params.get("is_window_months")
         if window:
@@ -127,7 +128,28 @@ class ModelPortfolioPipeline:
         self.factor_stats = self._analyze_factors(slim_data, factor_abbr_list, orders, test_file)
 
         if report:
-            self._generate_report(factor_abbr_list, factor_metadata, end_date)
+            # [2.5] 별첨 규칙 = 실제 운용 규칙 (2026-08-27 사용자 지정): 48M 창으로
+            # 섹터 제거·라벨을 fit 하고, 북 차트는 그 규칙을 전체 이력에 적용한다.
+            # 재학습 금지 원칙은 walk-forward 와 동일 (dropped_sectors/label_rules
+            # 직접 매핑 — CLAUDE.md OOS 오염 주의 참조).
+            live_rules = None
+            win = self.pipeline_params.get("is_window_months")
+            if win:
+                is_slim = slice_recent_months(slim_data, int(win))
+                stats_is = self._analyze_factors(is_slim, factor_abbr_list, orders, test_file)
+                k_abbr, _, _, _, d_sec, f_data = filter_and_label_factors(
+                    factor_abbr_list, factor_metadata.factorName.tolist(),
+                    factor_metadata.styleName.tolist(), stats_is,
+                    spread_threshold_pct=self.pipeline_params["spread_threshold_pct"],
+                    sector_drop_tstat=self.pipeline_params.get("sector_drop_tstat"),
+                )
+                live_rules = {
+                    "kept_abbrs": k_abbr,
+                    "dropped_sectors": dict(zip(k_abbr, d_sec)),
+                    "label_rules": {a: fd.groupby("quantile")["label"].first().to_dict()
+                                    for a, fd in zip(k_abbr, f_data)},
+                }
+            self._generate_report(factor_abbr_list, factor_metadata, end_date, live_rules)
             return
 
         # [3] 섹터 필터링 + L/N/S 라벨링 — README [3]
@@ -386,7 +408,8 @@ class ModelPortfolioPipeline:
         logger.info("Factors assigned in %.2fs", time.time() - t1)
         return result
 
-    def _generate_report(self, factor_abbr_list, factor_metadata, end_date=None):
+    def _generate_report(self, factor_abbr_list, factor_metadata, end_date=None,
+                         live_rules=None):
         """리포트를 생성한다. run()에서 early return으로 이후 단계 스킵."""
         from service.report.report_generator import generate_report
 
@@ -394,7 +417,7 @@ class ModelPortfolioPipeline:
         style_name_list = factor_metadata.styleName.tolist()
         logger.info("Report generation requested.")
         generate_report(factor_abbr_list, factor_name_list, style_name_list,
-                        self.factor_stats, end_date)
+                        self.factor_stats, end_date, live_rules)
         logger.info("Report generated.")
 
     def _construct_and_export(self, sim_result, kept_abbrs, filtered_data, end_date, test_file):
