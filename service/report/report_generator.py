@@ -558,9 +558,10 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
         (1, ["Rank - ordered by ③ L-S CAGR, descending.",
              "Filled dark badge = in the current Top-50 portfolio."]),
         (2, ["Factor name - colour dot = style (legend above)."]),
-        (3, [f"L-S CAGR - LAST 48 MONTHS only (rolling IS window),",
-             f"net of {cost_bps} bp cost. Selection / sort basis -",
-             "NOT the chart period."]),
+        (3, ["L-S CAGR - LAST 48 MONTHS only (rolling IS),",
+             f"net of {cost_bps} bp cost. This 48M window is the LIVE",
+             "operating basis: sector exclusion, L/S labels",
+             "and Top-50 selection all use it."]),
     ]
 
     def _make_example(chart_kind, note4_lines, layout="stacked", note3_lines=None):
@@ -641,14 +642,16 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                      "ordered by in-sample L–S CAGR (last 48 months, net of cost)."],
                     style_counts, cover_date, howto, n_inport=n_inport,
                     example_draw=_make_example("sector", note3_lines=[
-                        "Style name / L-S CAGR - CAGR uses the LAST 48",
-                        f"MONTHS only (rolling IS), net of {cost_bps} bp cost.",
-                        "Selection / sort basis - NOT the chart period."],
+                        "Style name / L-S CAGR - the LAST 48 MONTHS",
+                        f"only (rolling IS), net of {cost_bps} bp cost. This 48M",
+                        "window is the LIVE operating basis: sector",
+                        "exclusion, L/S labels and Top-50 selection",
+                        "all use it."],
                         note4_lines=[
                         f"Chart - FULL HISTORY ({_hist_label}): avg monthly",
                         "return of each sector x quintile portfolio, BEFORE",
-                        "costs. The chart and ③ use different periods",
-                        "on purpose."]))
+                        "costs. Grey (excluded) sectors follow this full",
+                        "window too - live 48M exclusions can differ."]))
 
     def hdr_legend02(fig, right_px):
         x = right_px - 60
@@ -683,9 +686,9 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                     style_counts, cover_date, howto, n_inport=n_inport,
                     example_draw=_make_example("quintile", layout="grid", note4_lines=[
                         f"Bars - FULL HISTORY ({_hist_label}): avg monthly",
-                        "return of the five quintiles, BEFORE costs.",
-                        "So bars can look strong while ③ is negative",
-                        "(weak recent signal / high turnover), and vice versa."]))
+                        "return of the five quintiles, BEFORE costs. L/S tags",
+                        "follow the same full window - bars can look strong",
+                        "while the operating ③ is negative, and vice versa."]))
 
     _render_grid_book03(OUTPUT_DIR / f"별첨03_{_BM}_Quintile_Return_Book_{as_of}.pdf",
                         records, cover03)
@@ -704,15 +707,17 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                      "in-sample L–S CAGR (last 48 months, net of cost)."],
                     style_counts, cover_date, howto, n_inport=n_inport,
                     example_draw=_make_example("series", note3_lines=[
-                        "Style name / L-S CAGR - CAGR uses the LAST 48",
-                        f"MONTHS only (rolling IS), net of {cost_bps} bp cost.",
-                        "Selection / sort basis - NOT the chart period."],
+                        "Style name / L-S CAGR - the LAST 48 MONTHS",
+                        f"only (rolling IS), net of {cost_bps} bp cost. This 48M",
+                        "window is the LIVE operating basis: sector",
+                        "exclusion, L/S labels and Top-50 selection",
+                        "all use it."],
                         note4_lines=[
                         f"Curve - FULL HISTORY ({_hist_label}): cumulative",
-                        f"L-S return, net of {cost_bps} bp cost.",
-                        "The curve and ③ use different windows on purpose -",
-                        "a factor can trend up over 11 years yet have a",
-                        "negative recent CAGR (and vice versa)."]))
+                        f"L-S return, net of {cost_bps} bp cost, with L/S rules",
+                        "fit on the full window. The live basis is ③ - a",
+                        "factor can trend up over 11 years yet have a",
+                        "negative recent 48M CAGR (and vice versa)."]))
 
     _render_stacked_book(
         OUTPUT_DIR / f"별첨04_{_BM}_LongShort_Port_Return_Book_{as_of}.pdf", records,
