@@ -10,6 +10,7 @@ plotly.js 를 인라인으로 임베드해 오프라인에서도 단독으로 �
 from __future__ import annotations
 
 import logging
+import re
 from html import escape
 from pathlib import Path
 
@@ -159,7 +160,7 @@ def _kpi_cards(kpis: dict) -> str:
 
     items = [
         ("CAGR", fnum(kpis["cagr"], ".2%")),
-        ("MDD", fnum(kpis["mdd"], ".2%")),
+        ("최대 낙폭 (Maximum Drawdown)", fnum(kpis["mdd"], ".2%")),
         ("Sharpe", fnum(kpis["sharpe"], ".2f")),
         ("Calmar", fnum(kpis["calmar"], ".2f")),
     ]
@@ -206,7 +207,7 @@ def _oos_rows(curves) -> list[dict]:
             return []
         perf[key] = dd.compute_series_perf(curves, rc, cc)
 
-    metrics = [("CAGR", "cagr", True), ("MDD", "mdd", True),
+    metrics = [("CAGR", "cagr", True), ("최대 낙폭 (Maximum Drawdown)", "mdd", True),
                ("Sharpe", "sharpe", False), ("Calmar", "calmar", False)]
     return [
         {"cat": f"OOS 성과 (EW/Top50/{_strategy_label()})", "metric": label, "single": None, "interp": "",
@@ -290,7 +291,7 @@ def _diagnostics_table(output_dir: Path, curves=None, end_date=None) -> str:
             )
         trs.append(
             f'<tr><td class="diag-cat">{cat_cell}</td>'
-            f'<td>{escape(row["metric"])}</td>'
+            f'<td>{escape(_expand_dd(row["metric"]))}</td>'
             f'{val_cells}'
             f'<td class="diag-interp">{escape(row["interp"])}</td></tr>'
         )
@@ -299,6 +300,11 @@ def _diagnostics_table(output_dir: Path, curves=None, end_date=None) -> str:
         f'<thead><tr><th>분류</th><th>지표</th><th>EW</th><th>Top50</th><th>{_strategy_label()}</th><th>해석</th></tr></thead>'
         f'<tbody>{"".join(trs)}</tbody></table></div>'
     )
+
+
+def _expand_dd(s: str) -> str:
+    """지표 표기의 DD 약어를 전체 표기로 (2026-08-28 사용자 지정 — 대시보드 표시 전용)."""
+    return re.sub(r"\bMDD\b", "최대 낙폭 (Maximum Drawdown)", s)
 
 
 _DD_CURVE_SPECS = [("EW(전체)", "ew_all_cumulative"),
@@ -340,9 +346,10 @@ def _drawdown_episodes_section(curves) -> tuple[str, str]:
         rows = "".join(_dd_episode_row(e) for e in eps)
         block = (
             '<div class="card full">'
-            f'<div class="dd-cap">{escape(label)} - {len(eps)} episodes, MDD {mdd:.2%}</div>'
+            f'<div class="dd-cap">{escape(label)} - {len(eps)} episodes, '
+            f'최대 낙폭 (Maximum Drawdown) {mdd:.2%}</div>'
             '<table class="diag-table"><thead><tr>'
-            '<th>DD</th><th>peak</th><th>trough</th><th>peak→trough</th>'
+            '<th>낙폭 (drawdown)</th><th>peak</th><th>trough</th><th>peak→trough</th>'
             '<th>recovery</th><th>trough→recovery</th><th>total</th>'
             '</tr></thead><tbody>'
             f'{rows}</tbody></table></div>'
