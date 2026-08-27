@@ -563,45 +563,62 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
              "NOT the chart period."]),
     ]
 
-    def _make_example(chart_kind, note4_lines):
-        """커버 읽는 법 예시: 실제 폭(682px) 카드 + ①~④ 점선 영역 박스 + 아래 2열 설명.
+    def _make_example(chart_kind, note4_lines, layout="stacked", note3_lines=None):
+        """커버 읽는 법 예시: 각 북의 '실제 카드 레이아웃 그대로' + ①~④ 점선 박스.
 
-        폭을 실제 페이지와 동일하게 유지해 차트가 눌리지 않고, 박스는 텍스트를
-        온전히 감싼다 (2026-08-27 사용자 지정 — 절반 폭/글자 잘림 교정).
+        layout="stacked"(별첨02/04): 한 줄 헤더 — 이름 왼쪽, 스타일·CAGR 오른쪽.
+        layout="grid"(별첨03): 이름 첫 줄, 스타일 둘째 줄 왼쪽 + CAGR 둘째 줄 오른쪽.
+        실제 페이지와 예시가 다르면 가이드가 아니라 혼란이므로, 헤더 렌더는
+        본문과 동일 함수/좌표를 쓴다 (2026-08-27 사용자 지정).
         """
         if _ex is None:
             return None
 
         def draw(fig, x, y):
-            w = PAGE_W - 128.0                      # 682 = 실제 카드 폭
+            w = PAGE_W - 128.0                      # 682 = stacked 실제 카드 폭
             x0 = x + 8
-            # ── 카드 헤더 (실제 카드와 동일 배치) ──
-            _rank_badge(fig, x0, y, _ex["rank"], _ex["in_port"])
-            _swatch(fig, x0 + 26, y + 1, 8, 8, _ex["color"], circle=True)
-            nm = _ex["name"] if len(_ex["name"]) <= 90 else _ex["name"][:87] + "..."
-            _text(fig, x0 + 39, y - 1, nm, 10.5, INK, weight="bold")
-            _text(fig, x0 + 20, y + 15, _ex["style"], 9, MUTE)
-            _text(fig, x0 + w, y + 15, f"L-S CAGR {_pct(_ex['cagr'])}", 9, SUB, ha="right")
-            # ── 영역 박스 (텍스트 전체 포함, 여유 패딩) ──
-            _guide_box(fig, x0 - 6, y - 6, 38, 24, 1)
-            name_px = min(39.0 + len(nm) * 6.5 + 10.0, w - 140.0)
-            style_px = 20.0 + len(_ex["style"]) * 5.6 + 12.0
-            _guide_box(fig, x0 + 14, y - 8, max(name_px, style_px), 40, 2)
-            _guide_box(fig, x0 + w - 104, y + 6, 112, 22, 3, corner="tr")
-            # ── 차트 (북별 실제 차트, 실제 폭) ──
             svg_h = 110.0
-            ax = _svg_axes(fig, x0, y + 36, w, svg_h, 682.0, svg_h)
+            if layout == "stacked":
+                # 실제 _card_header 그대로 (별첨02/04 본문과 동일)
+                _card_header(fig, x0, y, _ex["rank"], _ex["color"], _ex["name"],
+                             _ex["style"], f"L-S CAGR {_pct(_ex['cagr'])}",
+                             wpx=w, in_port=_ex["in_port"])
+                # 박스: ① 배지 / ② 점+이름 / ③ 스타일+CAGR(우측 블록)
+                _guide_box(fig, x0 - 6, y - 6, 40, 22, 1)
+                name_px = min(41.0 + len(_ex["name"]) * 7.2 + 10.0, w - 340.0)
+                _guide_box(fig, x0 + 20, y - 8, name_px - 20.0, 26, 2)
+                style_px = len(_ex["style"]) * 6.2
+                blk_l = x0 + w - 96.0 - style_px - 12.0
+                _guide_box(fig, blk_l, y - 7, (x0 + w + 8) - blk_l, 24, 3, corner="tr")
+                chart_y = y + 18.0
+            else:
+                # 별첨03 그리드 헤더 (본문과 동일 배치, 폭만 전폭)
+                _rank_badge(fig, x0, y, _ex["rank"], _ex["in_port"])
+                _swatch(fig, x0 + 26, y + 1, 8, 8, _ex["color"], circle=True)
+                nm = _ex["name"] if len(_ex["name"]) <= 90 else _ex["name"][:87] + "..."
+                _text(fig, x0 + 39, y - 1, nm, 10.5, INK, weight="bold")
+                _text(fig, x0 + 20, y + 15, _ex["style"], 9, MUTE)
+                _text(fig, x0 + w, y + 15, f"L-S CAGR {_pct(_ex['cagr'])}", 9, SUB, ha="right")
+                _guide_box(fig, x0 - 6, y - 6, 38, 24, 1)
+                name_px = min(39.0 + len(nm) * 6.5 + 10.0, w - 140.0)
+                style_px = 20.0 + len(_ex["style"]) * 5.6 + 12.0
+                _guide_box(fig, x0 + 14, y - 8, max(name_px, style_px), 40, 2)
+                _guide_box(fig, x0 + w - 104, y + 6, 112, 22, 3, corner="tr")
+                chart_y = y + 36.0
+            # ── 차트 (북별 실제 차트, 실제 폭) ──
+            ax = _svg_axes(fig, x0, chart_y, w, svg_h, 682.0, svg_h)
             if chart_kind == "sector":
                 _chart_sector(ax, _ex["sector_vals"], _ex["sectors"], _ex["dropped_idx"], svg_h)
             elif chart_kind == "series":
                 _chart_ls_series(ax, _ex["series"], _ex["color"], svg_h)
             else:
                 _chart_quintile(ax, _ex["quint_vals"], _ex["quint_labels"], svg_h, svg_w=682.0)
-            _guide_box(fig, x0 - 6, y + 33, w + 12, svg_h + 8, 4)
+            _guide_box(fig, x0 - 6, chart_y - 3, w + 12, svg_h + 8, 4)
             # ── 설명: 카드 아래 2열 (①② 왼쪽 / ③④ 오른쪽) ──
-            ny = y + 36 + svg_h + 26
+            ny = chart_y + svg_h + 26
             _example_notes(fig, x0, ny, _NOTE_COMMON[:2])
-            _example_notes(fig, x0 + w / 2 + 14, ny, [_NOTE_COMMON[2], (4, note4_lines)])
+            n3 = (3, note3_lines) if note3_lines else _NOTE_COMMON[2]
+            _example_notes(fig, x0 + w / 2 + 14, ny, [n3, (4, note4_lines)])
         return draw
 
     def cover02(pp):
@@ -619,7 +636,11 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                      f"portfolios, by GICS sector. {len(records)} factors,",
                      "ordered by in-sample L–S CAGR (last 48 months, net of cost)."],
                     style_counts, cover_date, howto, n_inport=n_inport,
-                    example_draw=_make_example("sector", [
+                    example_draw=_make_example("sector", note3_lines=[
+                        "Style name / L-S CAGR - CAGR uses the LAST 48",
+                        f"MONTHS only (rolling IS), net of {cost_bps} bp cost.",
+                        "Selection / sort basis - NOT the chart period."],
+                        note4_lines=[
                         f"Chart - FULL HISTORY ({_hist_label}): avg monthly",
                         "return of each sector x quintile portfolio,",
                         "BEFORE costs. Period differs from (3) by design."]))
@@ -655,7 +676,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                      f"from them. {len(records)} factors, ordered by",
                      "in-sample L–S CAGR (last 48 months, net of cost)."],
                     style_counts, cover_date, howto, n_inport=n_inport,
-                    example_draw=_make_example("quintile", [
+                    example_draw=_make_example("quintile", layout="grid", note4_lines=[
                         f"Bars - FULL HISTORY ({_hist_label}): avg monthly",
                         "return of the five quintiles, BEFORE costs.",
                         "So bars can look strong while (3) is negative",
@@ -677,7 +698,11 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                      f"{len(records)} factors over {n_months} months, ordered by",
                      "in-sample L–S CAGR (last 48 months, net of cost)."],
                     style_counts, cover_date, howto, n_inport=n_inport,
-                    example_draw=_make_example("series", [
+                    example_draw=_make_example("series", note3_lines=[
+                        "Style name / L-S CAGR - CAGR uses the LAST 48",
+                        f"MONTHS only (rolling IS), net of {cost_bps} bp cost.",
+                        "Selection / sort basis - NOT the chart period."],
+                        note4_lines=[
                         f"Curve - FULL HISTORY ({_hist_label}): cumulative",
                         f"L-S return, net of {cost_bps} bp cost. Full-period",
                         "curve vs 48-month (3): periods differ by design."]))
