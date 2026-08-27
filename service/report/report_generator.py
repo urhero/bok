@@ -563,39 +563,45 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
              "NOT the chart period."]),
     ]
 
-    def _ex_header(fig, x0, y0, w):
-        _rank_badge(fig, x0, y0, _ex["rank"], _ex["in_port"])
-        _swatch(fig, x0 + 26, y0 + 1, 8, 8, _ex["color"], circle=True)
-        nm = _ex["name"] if len(_ex["name"]) <= 58 else _ex["name"][:55] + "..."
-        _text(fig, x0 + 39, y0 - 1, nm, 10.5, INK, weight="bold")
-        _text(fig, x0 + 20, y0 + 15, _ex["style"], 9, MUTE)
-        _text(fig, x0 + w, y0 + 15, f"L-S CAGR {_pct(_ex['cagr'])}", 9, SUB, ha="right")
-        # 영역 박스: ① 순위 배지 / ② 팩터명+스타일 / ③ CAGR 라벨 (2026-08-27
-        # 사용자 지정 — 번호가 가리키는 범위를 점선 박스로 명시)
-        _guide_box(fig, x0 - 6, y0 - 6, 36, 23, 1)
-        name_w = min(24 + _pt(len(nm)) * 5.6, w - 130)
-        _guide_box(fig, x0 + 34, y0 - 7, name_w, 34, 2)
-        _guide_box(fig, x0 + w - 92, y0 + 8, 100, 17, 3, corner="tr")
-
     def _make_example(chart_kind, note4_lines):
+        """커버 읽는 법 예시: 실제 폭(682px) 카드 + ①~④ 점선 영역 박스 + 아래 2열 설명.
+
+        폭을 실제 페이지와 동일하게 유지해 차트가 눌리지 않고, 박스는 텍스트를
+        온전히 감싼다 (2026-08-27 사용자 지정 — 절반 폭/글자 잘림 교정).
+        """
         if _ex is None:
             return None
+
         def draw(fig, x, y):
-            w = 327.0
-            _ex_header(fig, x + 12, y, w)
+            w = PAGE_W - 128.0                      # 682 = 실제 카드 폭
+            x0 = x + 8
+            # ── 카드 헤더 (실제 카드와 동일 배치) ──
+            _rank_badge(fig, x0, y, _ex["rank"], _ex["in_port"])
+            _swatch(fig, x0 + 26, y + 1, 8, 8, _ex["color"], circle=True)
+            nm = _ex["name"] if len(_ex["name"]) <= 90 else _ex["name"][:87] + "..."
+            _text(fig, x0 + 39, y - 1, nm, 10.5, INK, weight="bold")
+            _text(fig, x0 + 20, y + 15, _ex["style"], 9, MUTE)
+            _text(fig, x0 + w, y + 15, f"L-S CAGR {_pct(_ex['cagr'])}", 9, SUB, ha="right")
+            # ── 영역 박스 (텍스트 전체 포함, 여유 패딩) ──
+            _guide_box(fig, x0 - 6, y - 6, 38, 24, 1)
+            name_px = min(39.0 + len(nm) * 6.5 + 10.0, w - 140.0)
+            style_px = 20.0 + len(_ex["style"]) * 5.6 + 12.0
+            _guide_box(fig, x0 + 14, y - 8, max(name_px, style_px), 40, 2)
+            _guide_box(fig, x0 + w - 104, y + 6, 112, 22, 3, corner="tr")
+            # ── 차트 (북별 실제 차트, 실제 폭) ──
             svg_h = 110.0
-            ch = svg_h * w / 320.0
-            ax = _svg_axes(fig, x + 12, y + 30, w, ch, 320.0 if chart_kind != "sector"
-                           and chart_kind != "series" else 682.0, svg_h)
+            ax = _svg_axes(fig, x0, y + 36, w, svg_h, 682.0, svg_h)
             if chart_kind == "sector":
                 _chart_sector(ax, _ex["sector_vals"], _ex["sectors"], _ex["dropped_idx"], svg_h)
             elif chart_kind == "series":
                 _chart_ls_series(ax, _ex["series"], _ex["color"], svg_h)
             else:
-                _chart_quintile(ax, _ex["quint_vals"], _ex["quint_labels"], svg_h)
-            _guide_box(fig, x + 6, y + 27, w + 12, ch + 10, 4)
-            notes = _NOTE_COMMON + [(4, note4_lines)]
-            _example_notes(fig, x + w + 40, y - 2, notes)
+                _chart_quintile(ax, _ex["quint_vals"], _ex["quint_labels"], svg_h, svg_w=682.0)
+            _guide_box(fig, x0 - 6, y + 33, w + 12, svg_h + 8, 4)
+            # ── 설명: 카드 아래 2열 (①② 왼쪽 / ③④ 오른쪽) ──
+            ny = y + 36 + svg_h + 26
+            _example_notes(fig, x0, ny, _NOTE_COMMON[:2])
+            _example_notes(fig, x0 + w / 2 + 14, ny, [_NOTE_COMMON[2], (4, note4_lines)])
         return draw
 
     def cover02(pp):
