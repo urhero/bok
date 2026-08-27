@@ -513,6 +513,11 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
     # ── 별첨01 xlsx ──
     xlsx_path = OUTPUT_DIR / f"별첨01_{_BM}_Factor_Return_Info_{as_of}.xlsx"
     info_df = meta_df[["factorAbbreviation", "factorName", "styleName", "cagr"]].copy()
+    # 별첨 4종 팩터 집합 통일 (2026-08-27 사용자 지정): Factor_Info 도 북(02~04)과
+    # 동일한 집합만 수록 — 북 수록 조건(라벨 규칙 존재 & 전 기간 수익 시계열 유효)과
+    # 같은 술어라 4종 모두 271개·동일 순서가 보장된다.
+    _book_set = set(kept_abbr) & set(factor_rets.columns)
+    info_df = info_df[info_df["factorAbbreviation"].isin(_book_set)].reset_index(drop=True)
     info_df["in_portfolio"] = info_df["factorAbbreviation"].map(
         lambda a: "Y" if a in port_weights else "")
     info_df["port_weight"] = info_df["factorAbbreviation"].map(
