@@ -555,7 +555,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
     _ex = records[0] if records else None
     _hist_label = f"Jul 2015 - {pd.Timestamp(as_of).strftime('%b %Y')}"
     _NOTE_COMMON = [
-        (1, ["Rank - ordered by (3) L-S CAGR, descending.",
+        (1, ["Rank - ordered by ③ L-S CAGR, descending.",
              "Filled dark badge = in the current Top-50 portfolio."]),
         (2, ["Factor name - colour dot = style (legend above)."]),
         (3, [f"L-S CAGR - LAST 48 MONTHS only (rolling IS window),",
@@ -646,8 +646,9 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                         "Selection / sort basis - NOT the chart period."],
                         note4_lines=[
                         f"Chart - FULL HISTORY ({_hist_label}): avg monthly",
-                        "return of each sector x quintile portfolio,",
-                        "BEFORE costs. Period differs from (3) by design."]))
+                        "return of each sector x quintile portfolio, BEFORE",
+                        "costs. The chart and ③ use different periods",
+                        "on purpose."]))
 
     def hdr_legend02(fig, right_px):
         x = right_px - 60
@@ -683,7 +684,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                     example_draw=_make_example("quintile", layout="grid", note4_lines=[
                         f"Bars - FULL HISTORY ({_hist_label}): avg monthly",
                         "return of the five quintiles, BEFORE costs.",
-                        "So bars can look strong while (3) is negative",
+                        "So bars can look strong while ③ is negative",
                         "(weak recent signal / high turnover), and vice versa."]))
 
     _render_grid_book03(OUTPUT_DIR / f"별첨03_{_BM}_Quintile_Return_Book_{as_of}.pdf",
@@ -708,8 +709,10 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                         "Selection / sort basis - NOT the chart period."],
                         note4_lines=[
                         f"Curve - FULL HISTORY ({_hist_label}): cumulative",
-                        f"L-S return, net of {cost_bps} bp cost. Full-period",
-                        "curve vs 48-month (3): periods differ by design."]))
+                        f"L-S return, net of {cost_bps} bp cost.",
+                        "The curve and ③ use different windows on purpose -",
+                        "a factor can trend up over 11 years yet have a",
+                        "negative recent CAGR (and vice versa)."]))
 
     _render_stacked_book(
         OUTPUT_DIR / f"별첨04_{_BM}_LongShort_Port_Return_Book_{as_of}.pdf", records,
