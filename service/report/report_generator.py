@@ -584,9 +584,10 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                              _ex["style"], f"L-S CAGR {_pct(_ex['cagr'])}",
                              wpx=w, in_port=_ex["in_port"])
                 # 박스: ① 배지 / ② 점+이름 / ③ 스타일+CAGR(우측 블록)
-                _guide_box(fig, x0 - 6, y - 6, 40, 22, 1)
-                name_px = min(41.0 + len(_ex["name"]) * 7.2 + 10.0, w - 340.0)
-                _guide_box(fig, x0 + 20, y - 8, name_px - 20.0, 26, 2)
+                # — 서로 겹치지 않게 분리, ② 우변은 이름 폭 실측+여유 (2026-08-27 교정)
+                _guide_box(fig, x0 - 6, y - 5, 31, 19, 1)
+                name_end = min(41.0 + len(_ex["name"]) * 6.8 + 14.0, w - 250.0)
+                _guide_box(fig, x0 + 24, y - 8, name_end - 24.0, 25, 2)
                 style_px = len(_ex["style"]) * 6.2
                 blk_l = x0 + w - 96.0 - style_px - 12.0
                 _guide_box(fig, blk_l, y - 7, (x0 + w + 8) - blk_l, 24, 3, corner="tr")
@@ -597,12 +598,14 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                 _swatch(fig, x0 + 26, y + 1, 8, 8, _ex["color"], circle=True)
                 nm = _ex["name"] if len(_ex["name"]) <= 90 else _ex["name"][:87] + "..."
                 _text(fig, x0 + 39, y - 1, nm, 10.5, INK, weight="bold")
-                _text(fig, x0 + 20, y + 15, _ex["style"], 9, MUTE)
+                # 스타일 텍스트는 예시에서만 점(dot) 라인에 맞춰 시작 — ② 박스가
+                # 첫 글자를 자르지 않게 (실제 카드와 7px 차이, 인지 불가)
+                _text(fig, x0 + 30, y + 15, _ex["style"], 9, MUTE)
                 _text(fig, x0 + w, y + 15, f"L-S CAGR {_pct(_ex['cagr'])}", 9, SUB, ha="right")
-                _guide_box(fig, x0 - 6, y - 6, 38, 24, 1)
-                name_px = min(39.0 + len(nm) * 6.5 + 10.0, w - 140.0)
-                style_px = 20.0 + len(_ex["style"]) * 5.6 + 12.0
-                _guide_box(fig, x0 + 14, y - 8, max(name_px, style_px), 40, 2)
+                _guide_box(fig, x0 - 6, y - 5, 30, 19, 1)
+                name_px = min(39.0 + len(nm) * 6.5 + 12.0, w - 140.0)
+                style_px = 27.0 + len(_ex["style"]) * 5.6 + 12.0
+                _guide_box(fig, x0 + 25, y - 8, max(name_px, style_px) - 25.0, 38, 2)
                 _guide_box(fig, x0 + w - 104, y + 6, 112, 22, 3, corner="tr")
                 chart_y = y + 36.0
             # ── 차트 (북별 실제 차트, 실제 폭) ──
@@ -613,7 +616,8 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
                 _chart_ls_series(ax, _ex["series"], _ex["color"], svg_h)
             else:
                 _chart_quintile(ax, _ex["quint_vals"], _ex["quint_labels"], svg_h, svg_w=682.0)
-            _guide_box(fig, x0 - 6, chart_y - 3, w + 12, svg_h + 8, 4)
+            # ④ 는 ② 하단과 겹치지 않게 차트 상단선에 맞춤
+            _guide_box(fig, x0 - 6, chart_y + 2, w + 12, svg_h + 4, 4)
             # ── 설명: 카드 아래 2열 (①② 왼쪽 / ③④ 오른쪽) ──
             ny = chart_y + svg_h + 26
             _example_notes(fig, x0, ny, _NOTE_COMMON[:2])
