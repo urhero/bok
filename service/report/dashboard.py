@@ -331,6 +331,24 @@ def _dd_episode_row(e: dict) -> str:
     )
 
 
+def _contrib_table(rows: list[dict]) -> str:
+    """연도별 상위/하위 기여 팩터 표 (성과 원천 섹션, %p)."""
+    trs = []
+    for r in rows:
+        top = ", ".join(f"{escape(f)} +{v:.2f}" for f, v in r["top"])
+        bot = ", ".join(f"{escape(f)} {v:.2f}" for f, v in r["bottom"])
+        trs.append(
+            f'<tr><td class="diag-cat">{r["year"]}</td>'
+            f'<td class="dd-num">{r["total"]:+.2f}</td>'
+            f'<td>{top}</td><td>{bot}</td></tr>'
+        )
+    return (
+        '<div class="card full"><table class="diag-table"><thead><tr>'
+        '<th>연도</th><th>합 (%p)</th><th>상위 기여 팩터</th><th>하위 기여 팩터</th>'
+        '</tr></thead><tbody>' + "".join(trs) + '</tbody></table></div>'
+    )
+
+
 def _drawdown_episodes_section(curves) -> tuple[str, str]:
     """곡선별 낙폭 episode(0.5% 이상) 표. (본전략 HTML, 비교곡선 HTML) 튜플 —
     본전략만 기본 표시하고 EW 계열은 접힘용으로 분리 (2026-08-28 사용자 지정)."""
@@ -612,6 +630,20 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
     if dd_main:
         parts.append('<h2>낙폭 구간 분석 (0.5% 이상 episode, 깊은 순)</h2>')
         parts.append(dd_main)
+
+    # 연도별 성과 원천 (팩터 기여) — 2026-08-28 사용자 지정 상설화.
+    # 엔진이 '당시 규칙' 기준으로 기록한 정확 분해 (행합 = cew_return, 팩터단).
+    contrib_path = latest(output_dir / "factor_contrib.csv", end_date)
+    if contrib_path.exists():
+        contrib = dd.load_factor_contrib(contrib_path)
+        fi_path = dd.DATA_DIR / "factor_info.csv"
+        fmap = dd.factor_style_map(fi_path) if fi_path.exists() else {}
+        parts.append('<h2>연도별 성과 원천 (팩터 기여)</h2>')
+        parts.append('<div class="note">비중 × 당월 팩터수익의 정확 분해 (각 달의 실제 운용 규칙 기준, '
+                     '월합 = 전략 월수익) · 팩터단 — 배포 배수 적용 전 규모</div>')
+        parts.append(f'<div class="card full">'
+                     f'{_fig_div(ch.contrib_style_heatmap_fig(dd.contrib_style_yearly(contrib, fmap)))}</div>')
+        parts.append(_contrib_table(dd.contrib_top_factors_yearly(contrib)))
 
     # 접힌 항목은 페이지 맨 아래로 모은다 (2026-08-28 사용자 지정)
     folded: list[str] = []

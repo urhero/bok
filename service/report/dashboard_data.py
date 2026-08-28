@@ -551,6 +551,42 @@ def load_weight_history(path: Path) -> pd.DataFrame:
     return df.set_index("date").sort_index()
 
 
+def load_factor_contrib(path: Path) -> pd.DataFrame:
+    """factor_contrib.csv -> date 인덱스 DataFrame (비중 x 당월수익, 행합 = cew_return).
+
+    워크포워드 엔진이 각 OOS 월의 '당시 규칙' 기준으로 기록한 정확 기여도
+    (2026-08-28 상설화). 사후 재구성은 최종 규칙 look-ahead 로 왜곡되므로 금지.
+    """
+    df = pd.read_csv(path, parse_dates=["date"])
+    return df.set_index("date").sort_index()
+
+
+def contrib_style_yearly(contrib: pd.DataFrame, style_map: dict) -> pd.DataFrame:
+    """연도 x 스타일 기여 합 (%p). 스타일 미등록 팩터는 '기타'.
+
+    컬럼은 전 기간 기여 합 내림차순 정렬 (읽는 순서 = 중요도).
+    """
+    c = contrib.apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    sty = c.T.groupby(c.columns.map(lambda f: style_map.get(f, "기타"))).sum().T
+    yr = sty.groupby(sty.index.year).sum() * 100.0
+    return yr[yr.sum().sort_values(ascending=False).index]
+
+
+def contrib_top_factors_yearly(contrib: pd.DataFrame, n_top: int = 3,
+                               n_bottom: int = 2) -> list[dict]:
+    """연도별 상/하위 기여 팩터. [{year, total, top: [(f, %p)], bottom: [(f, %p)]}]"""
+    c = contrib.apply(pd.to_numeric, errors="coerce")
+    yearly = c.groupby(c.index.year).sum() * 100.0
+    out = []
+    for y, row in yearly.iterrows():
+        r = row.dropna()
+        r = r[r != 0.0]
+        out.append({"year": int(y), "total": float(r.sum()),
+                    "top": list(r.nlargest(n_top).items()),
+                    "bottom": list(r.nsmallest(n_bottom).items())})
+    return out
+
+
 def compute_turnover(weight_history: pd.DataFrame) -> pd.Series:
     """월별 one-way 회전율 = 0.5 * sum(|w_t - w_{t-1}|). 첫 기간은 0."""
     wh = weight_history.apply(pd.to_numeric, errors="coerce").fillna(0.0).sort_index()

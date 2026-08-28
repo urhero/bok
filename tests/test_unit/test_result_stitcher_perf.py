@@ -35,3 +35,25 @@ def test_calc_perf_normal_path_unchanged():
     perf = WalkForwardResult._calc_perf(returns, cumulative)
 
     assert perf["cagr"] == expected_cagr
+
+
+def test_contribution_history_built_and_sums_to_oos_return():
+    """contributions 키가 있으면 결정적(알파벳 컬럼) 이력이 만들어지고 행합=oos_return."""
+    records = [
+        {"date": pd.Timestamp("2024-01-31"), "oos_return": 0.012, "oos_ew_return": 0.01,
+         "contributions": {"B": 0.004, "A": 0.008}},
+        {"date": pd.Timestamp("2024-02-29"), "oos_return": -0.002, "oos_ew_return": 0.0,
+         "contributions": {"A": -0.002}},
+    ]
+    res = WalkForwardResult(records)
+    ch = res.contribution_history
+    assert list(ch.columns) == ["A", "B"]
+    sums = ch.sum(axis=1).tolist()
+    assert math.isclose(sums[0], 0.012) and math.isclose(sums[1], -0.002)
+
+
+def test_contribution_history_empty_without_key():
+    """구버전 레코드(contributions 없음)와 빈 결과 모두 빈 DataFrame (하위 호환)."""
+    records = [{"date": pd.Timestamp("2024-01-31"), "oos_return": 0.0, "oos_ew_return": 0.0}]
+    assert WalkForwardResult(records).contribution_history.empty
+    assert WalkForwardResult([]).contribution_history.empty

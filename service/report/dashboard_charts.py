@@ -92,6 +92,25 @@ def monthly_returns_heatmap_fig(table: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def contrib_style_heatmap_fig(sty_yr: pd.DataFrame) -> go.Figure:
+    """연도 x 스타일 기여 히트맵 (%p, 팩터단 정확 분해 — 2026-08-28 상설화)."""
+    styles = list(sty_yr.columns)
+    years = [str(y) for y in sty_yr.index]
+    zv = sty_yr.values.astype(float)
+    text = [["" if v != v else f"{v:+.2f}" for v in row] for row in zv]
+    fig = go.Figure(go.Heatmap(
+        z=zv, x=styles, y=years, zmid=0,
+        colorscale=[[0.0, _NEG_COLOR], [0.5, "#2b3139"], [1.0, _POS_COLOR]],
+        text=text, texttemplate="%{text}", textfont=dict(size=10),
+        hovertemplate="%{y} %{x}: %{z:+.2f}%p<extra></extra>",
+        xgap=2, ygap=2, colorbar=dict(title="%p", thickness=10),
+    ))
+    fig.update_layout(title="연도별 스타일 기여 (%p, 팩터단)",
+                      height=max(240, 26 * len(years) + 150), **_BASE_LAYOUT)
+    fig.update_yaxes(autorange="reversed")  # 최근 연도 위로
+    return fig
+
+
 # 롤링 지표(TE/Sharpe) 공통 윈도우 색 — 12/24/36/48개월
 _WINDOW_COLORS = {12: "#56B6C2", 24: "#f97316", 36: "#5B8DEF", 48: "#C77DDA"}
 

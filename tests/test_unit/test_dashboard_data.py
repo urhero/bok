@@ -457,8 +457,8 @@ def test_drawdown_episodes_section_renders():
     pytest.importorskip("plotly")  # dashboard import 가 plotly 끌어옴
     from service.report.dashboard import _drawdown_episodes_section
     main, others = _drawdown_episodes_section(_curves())
-    assert "peak→trough" in main and "episodes, MDD" in main
-    assert "episodes, MDD" in others          # EW 계열은 비교곡선 쪽으로
+    assert "peak→trough" in main and "episodes, 최대 낙폭 (Maximum Drawdown)" in main
+    assert "episodes, 최대 낙폭 (Maximum Drawdown)" in others          # EW 계열은 비교곡선 쪽으로
     bare = _curves().drop(columns=["cew_cumulative", "ew_all_cumulative", "ew_top50_cumulative"])
     assert _drawdown_episodes_section(bare) == ("", "")
 
@@ -567,7 +567,7 @@ def test_oos_rows_three_variants():
     pytest.importorskip("plotly")  # dashboard import 가 plotly 끌어옴
     from service.report.dashboard import _oos_rows
     rows = _oos_rows(_curves())
-    assert [r["metric"] for r in rows] == ["CAGR", "MDD", "Sharpe", "Calmar"]
+    assert [r["metric"] for r in rows] == ["CAGR", "최대 낙폭 (Maximum Drawdown)", "Sharpe", "Calmar"]
     assert all(r["single"] is None and r["ew"] and r["top50"] and r["cew"] for r in rows)
     assert _oos_rows(_curves().drop(columns=["ew_all_return"])) == []
     assert _oos_rows(None) == []
@@ -652,3 +652,17 @@ def test_decomposition_detail_lists_factors_and_rest():
     assert "F1" in aaa_s1["detail"]          # |기여| 최대 팩터
     assert "외 1개" in aaa_s1["detail"]      # F2 는 잔여 합산
     assert abs(aaa_s1["contrib"] - 0.003) < 1e-12
+
+
+def test_contrib_style_yearly_and_top_factors():
+    """연도x스타일 %p 집계(컬럼 = 기여 합 내림차순) + 연도별 상/하위 팩터."""
+    idx = pd.to_datetime(["2024-01-31", "2024-02-29", "2025-01-31"])
+    c = pd.DataFrame({"A": [0.01, 0.01, -0.005], "B": [0.0, -0.002, 0.003]}, index=idx)
+    sty = dd.contrib_style_yearly(c, {"A": "Value", "B": "Growth"})
+    assert sty.loc[2024, "Value"] == pytest.approx(2.0)
+    assert sty.loc[2024, "Growth"] == pytest.approx(-0.2)
+    assert list(sty.columns)[0] == "Value"
+    rows = dd.contrib_top_factors_yearly(c, n_top=1, n_bottom=1)
+    r24 = next(r for r in rows if r["year"] == 2024)
+    assert r24["top"][0][0] == "A" and r24["bottom"][0][0] == "B"
+    assert r24["total"] == pytest.approx(1.8)

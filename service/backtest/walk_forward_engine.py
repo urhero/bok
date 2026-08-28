@@ -764,11 +764,18 @@ class WalkForwardEngine:
         oos_return = sum(oos_factor_returns[f] * avail_weights.get(f, 0) for f in available_factors)
         oos_ew_return = oos_factor_returns.mean()
 
+        # 팩터별 기여도 (비중 x 당월 수익; 합 = oos_return) — 성과 원천 분석의 정식
+        # 산출물. 사후 재구성(최종 윈도우 수익 행렬 x 비중)은 look-ahead 로 왜곡되므로
+        # (corr 0.68, 2025년 2배 과대 실측) 당시 규칙 기준으로 여기서 기록한다 (2026-08-28).
+        contributions = {f: oos_factor_returns[f] * avail_weights.get(f, 0)
+                         for f in available_factors}
+
         return {
             "date": oos_date,
             "oos_return": oos_return,
             "oos_ew_return": oos_ew_return,
             "oos_factor_returns": oos_factor_returns.to_dict(),
+            "contributions": contributions,
             "weights": dict(cached_weights),
             "is_meta": cached_meta.copy() if cached_meta is not None else None,
             "is_rule_rebal": is_rule_rebal,

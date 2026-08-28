@@ -48,6 +48,7 @@ class WalkForwardResult:
             self.oos_ew_all_cumulative = pd.Series(dtype=float)
             self.oos_ew_top50_cumulative = pd.Series(dtype=float)
             self.weight_history = pd.DataFrame()
+            self.contribution_history = pd.DataFrame()
             self.is_meta_history = []
             self.oos_factor_returns_history = []
             self.active_factors_history = []
@@ -101,6 +102,20 @@ class WalkForwardResult:
             self.weight_history = wh.reindex(sorted(wh.columns), axis=1)
         else:
             self.weight_history = pd.DataFrame()
+
+        # 팩터 기여도 이력 (비중 x 당월 수익; 행합 = oos_return) — weight_history 와
+        # 동일한 결정적 직렬화 (2026-08-28 성과 원천 상설화)
+        contrib_records = []
+        for r in results:
+            if r.get("contributions"):
+                row = {"date": r["date"]}
+                row.update(r["contributions"])
+                contrib_records.append(row)
+        if contrib_records:
+            chist = pd.DataFrame(contrib_records).set_index("date")
+            self.contribution_history = chist.reindex(sorted(chist.columns), axis=1)
+        else:
+            self.contribution_history = pd.DataFrame()
 
         # IS meta 이력 (Tier 2 리밸런싱 시점만). None 자리(Tier 2 실패 달)를 보존해
         # overfit_diagnostics 의 weight_rebal_indices 와 위치 정렬을 유지한다

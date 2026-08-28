@@ -249,6 +249,10 @@ def _run_backtest(args):
     if not result.weight_history.empty:
         result.weight_history.to_csv(dated(OUTPUT_DIR / "walk_forward_weight_history.csv", as_of))
 
+    # 팩터 기여도 이력 (비중 x 당월수익, 행합 = cew_return) — viz 성과 원천 섹션용
+    if not result.contribution_history.empty:
+        result.contribution_history.to_csv(dated(OUTPUT_DIR / "factor_contrib.csv", as_of))
+
     # 과적합 진단 (full_period_cagr은 마지막 Tier 2 시점의 IS MP CAGR)
     oos_report = generate_overfit_report(result, full_period_cagr=result.is_full_period_cagr)
     print_overfit_report(oos_report)
