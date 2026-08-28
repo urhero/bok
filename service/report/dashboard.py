@@ -331,20 +331,30 @@ def _dd_episode_row(e: dict) -> str:
     )
 
 
-def _contrib_table(rows: list[dict]) -> str:
-    """연도별 상위/하위 기여 팩터 표 (성과 원천 섹션, %p)."""
+def _contrib_table(rows: list[dict], deployed_yearly: dict | None = None) -> str:
+    """연도별 상위/하위 기여 팩터 표 (성과 원천 섹션, %p).
+
+    deployed_yearly: {연도: 배포 실측 net_return 연 단순합 %p}. 팩터단 합과
+    나란히 실제 계좌 규모를 보여준다 (차이 = 배포 배수 + 실비용/세금).
+    """
+    dep = deployed_yearly or {}
+    dep_th = '<th>배포 실측 (%p)</th>' if dep else ''
     trs = []
     for r in rows:
         top = ", ".join(f"{escape(f)} +{v:.2f}" for f, v in r["top"])
         bot = ", ".join(f"{escape(f)} {v:.2f}" for f, v in r["bottom"])
+        d = dep.get(r["year"])
+        dep_td = (f'<td class="dd-num">{d:+.2f}</td>' if d is not None
+                  else '<td class="dd-num">-</td>') if dep else ''
         trs.append(
             f'<tr><td class="diag-cat">{r["year"]}</td>'
             f'<td class="dd-num">{r["total"]:+.2f}</td>'
+            f'{dep_td}'
             f'<td>{top}</td><td>{bot}</td></tr>'
         )
     return (
         '<div class="card full"><table class="diag-table"><thead><tr>'
-        '<th>연도</th><th>합 (%p)</th><th>상위 기여 팩터</th><th>하위 기여 팩터</th>'
+        f'<th>연도</th><th>팩터단 합 (%p)</th>{dep_th}<th>상위 기여 팩터</th><th>하위 기여 팩터</th>'
         '</tr></thead><tbody>' + "".join(trs) + '</tbody></table></div>'
     )
 
@@ -643,7 +653,12 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
                      '월합 = 전략 월수익) · 팩터단 — 배포 배수 적용 전 규모</div>')
         parts.append(f'<div class="card full">'
                      f'{_fig_div(ch.contrib_style_heatmap_fig(dd.contrib_style_yearly(contrib, fmap)))}</div>')
-        parts.append(_contrib_table(dd.contrib_top_factors_yearly(contrib)))
+        # 배포 실측 열: 종목단 net_return 연 단순합 — 히트맵 Year(복리)와 이어지는
+        # 실제 계좌 규모 (2026-08-28 사용자 지정)
+        dep_yr = None
+        if deploy is not None and "net_return" in deploy.columns:
+            dep_yr = (deploy["net_return"].groupby(deploy.index.year).sum() * 100.0).to_dict()
+        parts.append(_contrib_table(dd.contrib_top_factors_yearly(contrib), dep_yr))
 
     # 접힌 항목은 페이지 맨 아래로 모은다 (2026-08-28 사용자 지정)
     folded: list[str] = []
