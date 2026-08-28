@@ -619,6 +619,12 @@ def factor_style_map(factor_info_path: Path) -> dict:
     return dict(zip(df["factorAbbreviation"].astype(str), df["styleName"].astype(str)))
 
 
+def factor_name_map(factor_info_path: Path) -> dict:
+    """factor_info.csv -> factorAbbreviation -> factorName(전체명) 매핑."""
+    df = pd.read_csv(factor_info_path)
+    return dict(zip(df["factorAbbreviation"].astype(str), df["factorName"].astype(str)))
+
+
 def style_weight_history(weight_history: pd.DataFrame, factor_style: dict) -> pd.DataFrame:
     """팩터 가중치 이력을 스타일별로 합산 -> date x style DataFrame (스택 영역용)."""
     wh = weight_history.apply(pd.to_numeric, errors="coerce").fillna(0.0)

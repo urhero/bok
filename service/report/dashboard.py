@@ -84,6 +84,11 @@ h2 { font-size: 18px; font-weight: 600; color: var(--on-dark); margin: 32px 0 14
 .diag-interp { color: var(--muted-strong); }
 .dd-cap { font-size: 13px; font-weight: 600; color: var(--primary); padding: 2px 10px 10px; }
 .dd-num { font-family: var(--mono); color: var(--on-dark); white-space: nowrap; }
+.contrib-line { padding: 2px 0; line-height: 1.45; }
+.contrib-line + .contrib-line { border-top: 1px solid rgba(255,255,255,0.04); }
+.contrib-name { color: var(--muted); font-size: 12px; }
+.contrib-table { table-layout: fixed; }
+.contrib-table td { vertical-align: top; }
 /* 라이트 테마 (우측 상단 토글, 기본은 다크) */
 html.light {
   --canvas:#f4f5f7; --card:#ffffff; --elev:#eef0f3; --hair:#e3e6ea;
@@ -331,18 +336,33 @@ def _dd_episode_row(e: dict) -> str:
     )
 
 
-def _contrib_table(rows: list[dict], deployed_yearly: dict | None = None) -> str:
+def _contrib_table(rows: list[dict], deployed_yearly: dict | None = None,
+                   name_map: dict | None = None, style_map: dict | None = None) -> str:
     """연도별 상위/하위 기여 팩터 표 (성과 원천 섹션, %p).
 
     deployed_yearly: {연도: 배포 실측 net_return 연 단순합 %p}. 팩터단 합과
     나란히 실제 계좌 규모를 보여준다 (차이 = 배포 배수 + 실비용/세금).
+    팩터는 한 줄씩 — 약어 + 기여 + 스타일 칩 + 전체 팩터명 (2026-08-28 사용자 지정).
     """
+    from service.report.style_colors import STYLE_COLORS, _DEFAULT_COLOR
+    nmap, smap = name_map or {}, style_map or {}
+
+    def fline(f: str, v: float) -> str:
+        sty = smap.get(f, "")
+        c = STYLE_COLORS.get(sty, _DEFAULT_COLOR)
+        chip = (f' <span class="chip" style="background:{c}22;color:{c}">{escape(sty)}</span>'
+                if sty else '')
+        nm = nmap.get(f, "")
+        name = f' <span class="contrib-name">{escape(nm)}</span>' if nm and nm != f else ''
+        return (f'<div class="contrib-line"><b>{escape(f)}</b> '
+                f'<span class="dd-num">{v:+.2f}</span>{chip}{name}</div>')
+
     dep = deployed_yearly or {}
     dep_th = '<th>배포 실측 (%p)</th>' if dep else ''
     trs = []
     for r in rows:
-        top = ", ".join(f"{escape(f)} +{v:.2f}" for f, v in r["top"])
-        bot = ", ".join(f"{escape(f)} {v:.2f}" for f, v in r["bottom"])
+        top = "".join(fline(f, v) for f, v in r["top"])
+        bot = "".join(fline(f, v) for f, v in r["bottom"])
         d = dep.get(r["year"])
         dep_td = (f'<td class="dd-num">{d:+.2f}</td>' if d is not None
                   else '<td class="dd-num">-</td>') if dep else ''
@@ -352,8 +372,12 @@ def _contrib_table(rows: list[dict], deployed_yearly: dict | None = None) -> str
             f'{dep_td}'
             f'<td>{top}</td><td>{bot}</td></tr>'
         )
+    # 고정 레이아웃 + 좁은 수치 열 -> 팩터 열이 폭을 가져가 팩터당 1~2줄 유지
+    dep_col = '<col style="width:9%">' if dep else ''
     return (
-        '<div class="card full"><table class="diag-table"><thead><tr>'
+        '<div class="card full"><table class="diag-table contrib-table">'
+        f'<colgroup><col style="width:6%"><col style="width:9%">{dep_col}<col><col></colgroup>'
+        '<thead><tr>'
         f'<th>연도</th><th>팩터단 합 (%p)</th>{dep_th}<th>상위 기여 팩터</th><th>하위 기여 팩터</th>'
         '</tr></thead><tbody>' + "".join(trs) + '</tbody></table></div>'
     )
@@ -658,7 +682,9 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
         dep_yr = None
         if deploy is not None and "net_return" in deploy.columns:
             dep_yr = (deploy["net_return"].groupby(deploy.index.year).sum() * 100.0).to_dict()
-        parts.append(_contrib_table(dd.contrib_top_factors_yearly(contrib), dep_yr))
+        nmap = dd.factor_name_map(fi_path) if fi_path.exists() else {}
+        parts.append(_contrib_table(dd.contrib_top_factors_yearly(contrib), dep_yr,
+                                    name_map=nmap, style_map=fmap))
 
     # 접힌 항목은 페이지 맨 아래로 모은다 (2026-08-28 사용자 지정)
     folded: list[str] = []
