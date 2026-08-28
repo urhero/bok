@@ -92,8 +92,10 @@ def monthly_returns_heatmap_fig(table: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def contrib_style_heatmap_fig(sty_yr: pd.DataFrame) -> go.Figure:
-    """연도 x 스타일 기여 히트맵 (%p, 팩터단 정확 분해 — 2026-08-28 상설화)."""
+def contrib_style_heatmap_fig(sty_yr: pd.DataFrame, basis: str = "팩터단") -> go.Figure:
+    """연도 x 스타일 기여 히트맵 (%p, 정확 분해 — 2026-08-28 상설화).
+
+    basis: 표시 기준 라벨 ("배포 기준" = 월별 실측 배수 적용 후)."""
     styles = list(sty_yr.columns)
     years = [str(y) for y in sty_yr.index]
     zv = sty_yr.values.astype(float)
@@ -105,7 +107,7 @@ def contrib_style_heatmap_fig(sty_yr: pd.DataFrame) -> go.Figure:
         hovertemplate="%{y} %{x}: %{z:+.2f}%p<extra></extra>",
         xgap=2, ygap=2, colorbar=dict(title="%p", thickness=10),
     ))
-    fig.update_layout(title="연도별 스타일 기여 (%p, 팩터단)",
+    fig.update_layout(title=f"연도별 스타일 기여 (%p, {basis})",
                       height=max(240, 26 * len(years) + 150), **_BASE_LAYOUT)
     fig.update_yaxes(autorange="reversed")  # 최근 연도 위로
     return fig

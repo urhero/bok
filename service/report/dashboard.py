@@ -358,7 +358,7 @@ def _contrib_table(rows: list[dict], deployed_yearly: dict | None = None,
                 f'<span class="dd-num">{v:+.2f}</span>{chip}{name}</div>')
 
     dep = deployed_yearly or {}
-    dep_th = '<th>배포 실측 (%p)</th>' if dep else ''
+    dep_th = '<th>실측 net (%p)</th>' if dep else ''
     trs = []
     for r in rows:
         top = "".join(fline(f, v) for f, v in r["top"])
@@ -378,7 +378,7 @@ def _contrib_table(rows: list[dict], deployed_yearly: dict | None = None,
         '<div class="card full"><table class="diag-table contrib-table">'
         f'<colgroup><col style="width:6%"><col style="width:9%">{dep_col}<col><col></colgroup>'
         '<thead><tr>'
-        f'<th>연도</th><th>팩터단 합 (%p)</th>{dep_th}<th>상위 기여 팩터</th><th>하위 기여 팩터</th>'
+        f'<th>연도</th><th>기여 합 (%p)</th>{dep_th}<th>상위 기여 팩터</th><th>하위 기여 팩터</th>'
         '</tr></thead><tbody>' + "".join(trs) + '</tbody></table></div>'
     )
 
@@ -672,16 +672,24 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
         contrib = dd.load_factor_contrib(contrib_path)
         fi_path = dd.DATA_DIR / "factor_info.csv"
         fmap = dd.factor_style_map(fi_path) if fi_path.exists() else {}
-        parts.append('<h2>연도별 성과 원천 (팩터 기여)</h2>')
-        parts.append('<div class="note">비중 × 당월 팩터수익의 정확 분해 (각 달의 실제 운용 규칙 기준, '
-                     '월합 = 전략 월수익) · 팩터단 — 배포 배수 적용 전 규모</div>')
-        parts.append(f'<div class="card full">'
-                     f'{_fig_div(ch.contrib_style_heatmap_fig(dd.contrib_style_yearly(contrib, fmap)))}</div>')
-        # 배포 실측 열: 종목단 net_return 연 단순합 — 히트맵 Year(복리)와 이어지는
-        # 실제 계좌 규모 (2026-08-28 사용자 지정)
+        # 배포 기준 전환 (2026-08-28 사용자 지정): 월별 실측 배수를 곱해 실제 계좌
+        # 규모로 스케일 (가법성 유지 — 월합 = 배수 x 전략 월수익). 종목단 실비용·
+        # 세금 잔차(연 -0.03~-0.37%p)는 팩터로 배분하지 않고 실측 net 열과의
+        # 차이로 투명하게 남긴다.
+        basis = "팩터단 — 배포 배수 적용 전"
         dep_yr = None
-        if deploy is not None and "net_return" in deploy.columns:
-            dep_yr = (deploy["net_return"].groupby(deploy.index.year).sum() * 100.0).to_dict()
+        if deploy is not None and "multiplier" in deploy.columns:
+            m = deploy["multiplier"].reindex(contrib.index)
+            if m.notna().all():
+                contrib = contrib.mul(m, axis=0)
+                basis = "배포 기준 — 월별 실측 배수 적용"
+                dep_yr = (deploy["net_return"].groupby(deploy.index.year).sum() * 100.0).to_dict()
+        parts.append('<h2>연도별 성과 원천 (팩터 기여)</h2>')
+        parts.append(f'<div class="note">비중 × 당월 팩터수익의 정확 분해 (각 달의 실제 운용 규칙 기준) · '
+                     f'{basis}' + (' · 기여 합과 실측 net의 차이 = 팩터로 배분하지 않은 '
+                                   '종목단 실비용·세금 잔차' if dep_yr else '') + '</div>')
+        parts.append(f'<div class="card full">'
+                     f'{_fig_div(ch.contrib_style_heatmap_fig(dd.contrib_style_yearly(contrib, fmap), basis.split(" — ")[0]))}</div>')
         nmap = dd.factor_name_map(fi_path) if fi_path.exists() else {}
         parts.append(_contrib_table(dd.contrib_top_factors_yearly(contrib), dep_yr,
                                     name_map=nmap, style_map=fmap))
