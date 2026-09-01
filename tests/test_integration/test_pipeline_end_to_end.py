@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 # 프로젝트 루트
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 TEST_DATA_PATH = PROJECT_ROOT / "test_data.csv"
-OUTPUT_DIR = PROJECT_ROOT / "output"
+from service.paths import OUTPUT_DIR  # output/{BENCHMARK}/
 
 
 class TestPipelineEndToEnd:

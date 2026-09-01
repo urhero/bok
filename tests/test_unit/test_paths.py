@@ -48,3 +48,20 @@ def test_latest_as_of_prefers_that_date(tmp_path):
 def test_latest_as_of_earlier_than_all_falls_back(tmp_path):
     (tmp_path / "meta_data_2026-06-30.csv").write_text("x", encoding="utf-8")
     assert latest(tmp_path / "meta_data.csv", "2020-01-01").name == "meta_data_2026-06-30.csv"
+
+
+def test_output_dir_is_always_per_benchmark(monkeypatch):
+    """MXCN1A 도 예외 없이 output/MXCN1A/ (2026-09-02 유니버스 폴더 통일)."""
+    import importlib
+    import config
+    import service.paths as sp
+    monkeypatch.setenv("BENCHMARK", "MXCN1A")
+    try:
+        importlib.reload(config)
+        importlib.reload(sp)
+        assert sp.OUTPUT_DIR.name == "MXCN1A" and sp.OUTPUT_DIR.parent.name == "output"
+        assert sp.HISTORY_DIR == sp.OUTPUT_DIR / "mp_weight_history"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)
+        importlib.reload(sp)

@@ -16,7 +16,8 @@ import pandas as pd
 
 from service.backtest.walk_forward_engine import WalkForwardEngine
 
-OUT = Path("output/MXWO/experiments/param_recheck")
+from service.paths import OUTPUT_DIR
+OUT = OUTPUT_DIR / "experiments" / "param_recheck"
 OUT.mkdir(parents=True, exist_ok=True)
 
 BASE_ENGINE = dict(min_is_months=36, factor_rebal_months=6, weight_rebal_months=1,

@@ -449,16 +449,16 @@ class ModelPortfolioPipeline:
         # 실측은 팩터 비중에서 재구성하므로 이 배수의 영향을 받지 않는다.
         mp_rows = final_weights["style"] == "MP"
         book_gross = float(final_weights.loc[mp_rows, "mp_ls_weight"].abs().sum())
-        # 목표 노출은 시점별 이력(data/mp_target_gross.csv)이 우선 — 운용 중 규모를
+        # 목표 노출은 시점별 이력(data/{BENCHMARK}_mp_target_gross.csv)이 우선 — 운용 중 규모를
         # 바꿔도 과거 시점 재현이 그때 규모로 정확히 나온다 (2026-08-21).
         target = resolve_target_gross(
-            end_date, DATA_DIR / "mp_target_gross.csv",
+            end_date, DATA_DIR / f"{self.config['benchmark']}_mp_target_gross.csv",
             self.pipeline_params.get("mp_target_gross"),
         )
         if target:
             mult, mode = multiplier_for_target(book_gross, float(target)), f"target_gross={target:g}"
         else:
-            mult, mode = resolve_multiplier(end_date, DATA_DIR / "mp_multiplier.csv"), "manual_csv"
+            mult, mode = resolve_multiplier(end_date, DATA_DIR / f"{self.config['benchmark']}_mp_multiplier.csv"), "manual_csv"
         final_weights = apply_multiplier(final_weights, mult)
         logger.info("MP 배포 배수 %.4f (%s): gross %.2f%% -> %.2f%% (롱/숏 각 %.2f%%)",
                     mult, mode, book_gross * 100, book_gross * mult * 100,

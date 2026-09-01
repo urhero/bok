@@ -528,11 +528,12 @@ def _deployed_curves(curves: pd.DataFrame, series: pd.DataFrame) -> pd.DataFrame
 
 
 def _attach_benchmark(curves: pd.DataFrame) -> pd.DataFrame:
-    """BM(MXWO) 월수익을 붙이고 BM / BM+MP 오버레이 누적을 만든다 (2026-08-21).
+    """BM 월수익(data/{BENCHMARK}_bm_returns.csv)을 붙이고 BM / BM+MP 오버레이 누적을 만든다 (2026-08-21).
 
     MP 는 시장중립 오버레이이므로 실제 운용 수익 = BM + MP. 파일이 없으면 무동작.
     """
-    path = dd.DATA_DIR / "MXWO_bm_returns.csv"
+    from config import PARAM as _param
+    path = dd.DATA_DIR / f"{_param['benchmark']}_bm_returns.csv"
     if not path.exists() or "cew_return" not in curves.columns:
         return curves
     bm = pd.read_csv(path, parse_dates=["date"]).set_index("date")["bm_return"]

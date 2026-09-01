@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 TEST_DATA_PATH = PROJECT_ROOT / "test_data.csv"
-OUTPUT_DIR = PROJECT_ROOT / "output"
+from service.paths import OUTPUT_DIR  # output/{BENCHMARK}/
 BASELINE_PATH = PROJECT_ROOT / "tests" / "regression_baseline.json"
 
 

@@ -201,6 +201,8 @@ data/*
 !data/MXWO_country_map.parquet
 !data/factor_info.csv
 !data/hardcoded_weights.csv
+!data/*_mp_target_gross.csv
+!data/*_mp_multiplier.csv
 data_backup/
 #config.py
 .cursorindexingignore
@@ -211,7 +213,7 @@ tmpclaude-*
 nul
 
 # 실험 산출물 (크기 큼, per-run 재현성 있음 — config.json 으로 재현 가능)
-output/experiments/
+output/*/experiments/
 
 # Production mp 의 factor / style 가중치 history 는 회차별 산출물로 추적
 # (factor_weights = 다음 회차 EMA prev 입력, factor_styles / style_totals = 분석용)
@@ -221,7 +223,7 @@ output/experiments/
 # output/dashboard_*.html  # 2026-08-06 트래킹 전환 (사용자 지정)
 
 # benchmark 비교는 mp --benchmark 진단 산출물 (재생성 가능) - 추적 안 함
-output/benchmark_comparison.csv
+output/*/benchmark_comparison.csv
 
 # proposal experiment raw outputs (요약은 docs/experiments 에 커밋)
 research/exp_out_*/

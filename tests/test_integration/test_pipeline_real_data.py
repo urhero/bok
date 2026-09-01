@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 # ═══════════════════════════════════════════════════════════════════════════════
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
-OUTPUT_DIR = PROJECT_ROOT / "output"
+from service.paths import OUTPUT_DIR  # output/{BENCHMARK}/
 FACTOR_INFO_PATH = PROJECT_ROOT / "factor_info.csv"
 
 # 연도별 분할 parquet 탐색 (파일명 = MXCN1A_factor_{YYYY}.parquet, 연도순 정렬)
