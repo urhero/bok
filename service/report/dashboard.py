@@ -114,8 +114,12 @@ _RESIZE_SCRIPT = (
 )
 
 # 다크/라이트 토글: html.light 클래스 + localStorage 유지 + plotly 축/폰트 색 재적용
+# localStorage 는 반드시 try/catch — 샌드박스 뷰어(allow-same-origin 없는 iframe,
+# 앱 내장 미리보기)에서 접근 자체가 SecurityError 를 던져 uncaught 오류가 됨 (2026-08-28)
 _THEME_SCRIPT = (
     "<script>(function(){var KEY='dash-theme';"
+    "function getLS(){try{return localStorage.getItem(KEY);}catch(e){return null;}}"
+    "function setLS(v){try{localStorage.setItem(KEY,v);}catch(e){}}"
     "function themeCharts(light){if(!window.Plotly)return;"
     "var font=light?'#333d47':'#eaecef',grid=light?'#e3e6ea':'#283442';"
     "document.querySelectorAll('.plotly-graph-div').forEach(function(d){"
@@ -128,9 +132,9 @@ _THEME_SCRIPT = (
     "if(b)b.textContent=light?'다크 모드':'라이트 모드';themeCharts(light);}"
     "window.__toggleTheme=function(){"
     "var light=!document.documentElement.classList.contains('light');"
-    "localStorage.setItem(KEY,light?'light':'dark');apply(light);};"
+    "setLS(light?'light':'dark');apply(light);};"
     "window.addEventListener('load',function(){"
-    "if(localStorage.getItem(KEY)==='light')apply(true);});"
+    "if(getLS()==='light')apply(true);});"
     "})();</script>"
 )
 
