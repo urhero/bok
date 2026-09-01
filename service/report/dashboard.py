@@ -1154,7 +1154,13 @@ def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
         # 가르는 용도 — 페이지 동작에는 영향 없음 (2026-08-28)
         '<script>window.addEventListener("error",function(e){try{'
         'console.error("DASH-DIAG",e.message,"@",e.filename||"(no file)",'
-        '(e.lineno||0)+":"+(e.colno||0),e.error&&e.error.stack)}catch(_){}});</script>'
+        '(e.lineno||0)+":"+(e.colno||0),e.error&&e.error.stack)}catch(_){}});'
+        # 내장 뷰어 콘솔 심: console.trace/warn 이 없는 환경에서 plotly Lib.warn 이
+        # undefined.apply 로 crash 하는 것을 차단 (2026-08-28 실측 — 경고는 log 로 강등)
+        'if(window.console){if(!console.trace)console.trace=function(){'
+        '(console.log||function(){}).apply(console,arguments);};'
+        'if(!console.warn)console.warn=function(){'
+        '(console.log||function(){}).apply(console,arguments);};}</script>'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f'<title>{_benchmark()} 유니버스 전략 포트폴리오 대시보드 {snap}</title>'
         '<link rel="preconnect" href="https://fonts.googleapis.com">'

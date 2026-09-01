@@ -103,8 +103,11 @@ def contrib_style_heatmap_fig(sty_yr: pd.DataFrame, basis: str = "팩터단") ->
     fig = go.Figure(go.Heatmap(
         z=zv, x=styles, y=years, zmid=0,
         colorscale=[[0.0, _NEG_COLOR], [0.5, "#2b3139"], [1.0, _POS_COLOR]],
+        # hover 는 z 재포맷 대신 부호 포함 text 재사용 — 히트맵 z-포맷 경로는
+        # d3 '+' 부호 플래그를 'bad format' 경고로 거부한다 (2026-08-28 실측;
+        # bar/scatter 의 '+.2%' 는 무관). 내장 뷰어에선 이 경고가 crash 로 번짐.
         text=text, texttemplate="%{text}", textfont=dict(size=10),
-        hovertemplate="%{y} %{x}: %{z:+.2f}%p<extra></extra>",
+        hovertemplate="%{y} %{x}: %{text}%p<extra></extra>",
         xgap=2, ygap=2, colorbar=dict(title="%p", thickness=10),
     ))
     fig.update_layout(title=f"연도별 스타일 기여 (%p, {basis})",
