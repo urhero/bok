@@ -16,10 +16,44 @@ logger = logging.getLogger(__name__)
 
 # 5분위 분석 입력 컬럼 (calculate_factor_stats_batch 입력 스키마 단일 출처).
 # model_portfolio / walk_forward_engine 가 동일 projection 에 사용한다.
+# region 은 ranking_group="region_sector" 일 때만 존재 (없으면 projection 에서 자연 제외).
 ANALYZE_COLS = [
     "gvkeyiid", "ticker", "isin", "ddt", "sec", "val",
-    "M_RETURN", "factorAbbreviation", "factorOrder",
+    "M_RETURN", "factorAbbreviation", "factorOrder", "region",
 ]
+
+# ── 지역 중립 랭킹용 국가 -> 지역 분류 (2026-07-28 스펙) ─────────────────────
+# 미등재 국가(BMU/CYM 등 역외 등록지, 전체의 ~1%)는 region NaN -> 랭킹 자동 제외.
+REGION_MAP = {
+    # 북미
+    "USA": "NA", "CAN": "NA", "MEX": "NA",
+    # 유럽 (ISR 포함 — MSCI 선진 EMEA 관행)
+    "GBR": "EUR", "DEU": "EUR", "FRA": "EUR", "CHE": "EUR", "SWE": "EUR",
+    "NLD": "EUR", "ITA": "EUR", "ESP": "EUR", "IRL": "EUR", "DNK": "EUR",
+    "ISR": "EUR", "FIN": "EUR", "NOR": "EUR", "BEL": "EUR", "LUX": "EUR",
+    "AUT": "EUR", "PRT": "EUR", "JEY": "EUR", "IMN": "EUR", "GRC": "EUR",
+    # 일본 (규모·특성상 단독 지역)
+    "JPN": "JPN",
+    # 아시아태평양
+    "AUS": "APAC", "HKG": "APAC", "SGP": "APAC", "NZL": "APAC",
+    "MAC": "APAC", "CHN": "APAC", "TWN": "APAC",
+}
+
+
+def attach_region(merged_data: pd.DataFrame, country_map_path) -> pd.DataFrame:
+    """country map parquet(gvkeyiid, country)을 조인해 region 컬럼을 부착한다.
+
+    gvkeyiid -> country 는 정적 속성 (전 이력 복수 국가 종목 0개 확인).
+    REGION_MAP 미등재 국가는 region NaN 으로 남아 지역 랭킹에서 자동 제외된다.
+    """
+    cmap = pd.read_parquet(country_map_path)
+    # 중복 키 방어: gvkeyiid 중복 시 left merge 가 merged_data 행을 배수로 부풀림
+    cmap = cmap.drop_duplicates("gvkeyiid")
+    cmap["region"] = cmap["country"].map(REGION_MAP)
+    unmapped = cmap.loc[cmap["region"].isna(), "country"].unique().tolist()
+    if unmapped:
+        logger.warning("Region unmapped countries (excluded from ranking): %s", sorted(unmapped))
+    return merged_data.merge(cmap[["gvkeyiid", "region"]], on="gvkeyiid", how="left")
 
 
 def prepend_start_zero(series: pd.DataFrame) -> pd.DataFrame:
@@ -86,19 +120,20 @@ def filter_and_label_factors(
             logger.debug("Factor %d skipped - no data", idx)
             continue
 
-        # 음의 스프레드 섹터 식별 및 제거
+        # 음의 스프레드 섹터 식별 및 제거 (양끝 분위 = Q1 vs 마지막 분위; 5분위면 Q5)
+        q_bot = sector_return_df.index[-1]
         if sector_drop_tstat is None:
             tmp = sector_return_df.T.reset_index()
-            tmp["spread"] = tmp["Q1"] - tmp["Q5"]
+            tmp["spread"] = tmp["Q1"] - tmp[q_bot]
             to_drop = tmp.loc[tmp["spread"] < 0, "sec"].tolist()
         else:
-            # 유의성 게이트: 섹터별 월간 Q1-Q5 스프레드 t-stat < -threshold 만 제거.
+            # 유의성 게이트: 섹터별 월간 양끝 스프레드 t-stat < -threshold 만 제거.
             # t 가 NaN(월 2개 미만/무분산)이면 유의성 판단 불가 -> 유지.
             q = (
                 raw_df.groupby(["ddt", "sec", "quantile"], observed=False)["M_RETURN"]
                 .mean().unstack(fill_value=np.nan)
             )
-            sp = (q["Q1"] - q["Q5"]).dropna()
+            sp = (q["Q1"] - q[q_bot]).dropna()
             g = sp.groupby(level="sec")
             mean, std, cnt = g.mean(), g.std(), g.count()
             se = std / np.sqrt(cnt)
@@ -121,7 +156,7 @@ def filter_and_label_factors(
         # degenerate 라벨(예: 2026-06 EPSEstDispFY1C 롱-only)이 나오는 근본 원인.)
         # spread > 0 이면 Q1=롱, Q5=숏이 수학적으로 보장되므로 별도의 한쪽 라벨
         # 검사는 불필요하다.
-        spread = q_mean.loc["Q1", "mean"] - q_mean.loc["Q5", "mean"]
+        spread = q_mean.loc["Q1", "mean"] - q_mean.loc[q_bot, "mean"]
         if not spread > 0:  # NaN 포함 탈락
             logger.info("Factor %s discarded - non-positive Q1-Q5 spread after sector filter (%.5f)",
                         factor_abbr_list[idx], spread)
@@ -132,8 +167,8 @@ def filter_and_label_factors(
 
         # 롱: Q1부터 내려가며 수익률 > (Q1 - threshold)인 분위
         q_mean["long"] = (q_mean["mean"] > q_mean.loc["Q1", "mean"] - thresh).astype(int).cumprod()
-        # 숏: Q5부터 올라가며 수익률 < (Q5 + threshold)인 분위
-        q_mean["short"] = (q_mean["mean"] < q_mean.loc["Q5", "mean"] + thresh).astype(int) * -1
+        # 숏: 마지막 분위부터 올라가며 수익률 < (최하위 + threshold)인 분위
+        q_mean["short"] = (q_mean["mean"] < q_mean.loc[q_bot, "mean"] + thresh).astype(int) * -1
         q_mean["short"] = q_mean["short"].abs()[::-1].cumprod()[::-1] * -1
         q_mean["label"] = q_mean["long"] + q_mean["short"]
 
@@ -153,6 +188,73 @@ def filter_and_label_factors(
     return kept_factor_abbrs, kept_names, kept_styles, kept_idx, dropped_sec, filtered_raw_data_list
 
 
+def inject_country_momentum(
+    merged: pd.DataFrame,
+    country_map_path,
+    horizons: tuple[int, ...] = (6, 12),
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """국가 모멘텀 합성 팩터를 merged 데이터에 주입한다 (2026-07-28 Sharpe 실험).
+
+    각 종목의 val = 소속 국가의 trailing N개월 복리 수익률 (국가 = 동일가중 평균).
+    파이프라인의 shift(1) lag 을 그대로 타므로 look-ahead 없음. 섹터 내 랭킹에서
+    "뜨거운 국가 종목 롱 / 식은 국가 숏"의 통제된 국가 모멘텀 슬리브가 된다.
+
+    Returns:
+        (merged+합성행, 합성 팩터 메타 DataFrame[factorAbbreviation/factorName/styleName/factorOrder])
+    """
+    cmap = pd.read_parquet(country_map_path)
+    # 종목-월 그리드 (팩터 중복 제거) + 국가 부착
+    base = merged[["gvkeyiid", "ticker", "isin", "ddt", "sec", "M_RETURN"]].drop_duplicates(
+        ["gvkeyiid", "ddt"]
+    )
+    base = base.merge(cmap[["gvkeyiid", "country"]], on="gvkeyiid", how="left")
+    base = base.dropna(subset=["country"])
+
+    # 국가별 월간 동일가중 수익률 -> trailing 복리
+    ctry = base.groupby(["ddt", "country"], observed=True)["M_RETURN"].mean().unstack()
+    rows = []
+    meta_rows = []
+    for h in horizons:
+        # min_periods=1: 워밍업 구간은 expanding 모멘텀 (1~h개월). 전 기간 수익률
+        # 행렬 앞부분 NaN -> aggregate_factor_returns 의 NaN 팩터 전역 드롭 방지.
+        mom = (1.0 + ctry).rolling(h, min_periods=1).apply(np.prod, raw=True) - 1.0
+        mom_long = mom.stack().rename("val").reset_index()
+        f = base.merge(mom_long, on=["ddt", "country"], how="inner").dropna(subset=["val"])
+        abbr = f"CtryMom{h}M"
+        f["factorAbbreviation"] = abbr
+        f["factorOrder"] = 0  # 높을수록 좋음
+        rows.append(f[["gvkeyiid", "ticker", "isin", "ddt", "sec", "val",
+                       "factorAbbreviation", "factorOrder", "M_RETURN"]])
+        meta_rows.append({
+            "factorAbbreviation": abbr,
+            "factorName": f"Country Momentum {h}M (synthetic)",
+            "styleName": "Country Momentum",
+            "factorOrder": 0,
+        })
+
+    synth = pd.concat(rows, ignore_index=True)
+    out = pd.concat([merged, synth], ignore_index=True)
+    logger.info("Injected country momentum factors %s (%s rows)",
+                [m["factorAbbreviation"] for m in meta_rows], f"{len(synth):,}")
+    return out, pd.DataFrame(meta_rows)
+
+
+def slice_recent_months(df: pd.DataFrame, window_months: int | None) -> pd.DataFrame:
+    """마지막 window_months개월 + lag 기저 1개월만 남긴다 (롤링 IS, 2026-07-28 채택).
+
+    기저 1개월은 calculate_factor_stats_batch 의 shift(1) lag 원천으로만 쓰이고
+    (자기 자신은 val_lagged NaN 으로 탈락) 윈도우 첫 달의 관측을 보존한다.
+    window 미지정(None/0)이거나 이력이 window 이하면 그대로 반환 (expanding).
+    """
+    if not window_months:
+        return df
+    dates = df["ddt"].drop_duplicates().sort_values()
+    if len(dates) <= window_months + 1:
+        return df
+    cutoff = dates.iloc[-(window_months + 1)]
+    return df[df["ddt"] >= cutoff]
+
+
 def calculate_factor_stats_batch(
     merged_data: pd.DataFrame,
     factor_abbr_list: list[str],
@@ -160,6 +262,9 @@ def calculate_factor_stats_batch(
     test_mode: bool = False,
     min_sector_stocks: int = 10,
     sector_spread_geometric: bool = False,
+    min_coverage_pct: float = 0.0,
+    ranking_group: str = "sector",
+    n_quantiles: int = 5,
 ) -> list[tuple]:
     """모든 팩터의 5분위 분석을 하이브리드 방식으로 처리한다.
 
@@ -181,6 +286,21 @@ def calculate_factor_stats_batch(
     order_map = dict(zip(factor_abbr_list, orders))
     valid_factors = set(merged_data["factorAbbreviation"].unique()) & set(factor_abbr_list)
 
+    # [1.5] 랭킹 그룹 결정 (2026-07-28 지역 중립 랭킹 스펙)
+    # "region_sector": (날짜, 지역, 섹터) 내 랭킹 — 다국가 유니버스에서 팩터
+    # 베팅이 국가 베팅으로 오염되는 것을 방지. 횡단면 연산이라 look-ahead 없음.
+    if ranking_group == "region_sector":
+        if "region" not in merged_data.columns:
+            raise ValueError(
+                "ranking_group='region_sector' requires 'region' column — "
+                "attach_region() 조인 누락"
+            )
+        rank_keys = ["ddt", "region", "sec"]
+    elif ranking_group == "sector":
+        rank_keys = ["ddt", "sec"]
+    else:
+        raise ValueError(f"Unknown ranking_group '{ranking_group}'")
+
     # [2] NaN 제거 + batch lag (전체에서 한번에 — 팩터별보다 빠름)
     df = merged_data.dropna(subset=["val", "M_RETURN"]).copy()
     df["val_lagged"] = df.groupby(["gvkeyiid", "factorAbbreviation"])["val"].shift(1)
@@ -189,6 +309,21 @@ def calculate_factor_stats_batch(
     # [3] History 체크 (배치)
     date_counts = df.groupby("factorAbbreviation")["ddt"].nunique()
     sufficient_factors = set(date_counts[date_counts > 2].index)
+
+    # [3.5] 단면 커버리지 필터: 월별 (유효 관측 종목수 / 유니버스 종목수)의 기간
+    # 평균이 min_coverage_pct 미만인 팩터 제외. 은행 전용 팩터처럼 구조적으로
+    # 희소한 팩터는 L/S 폭이 좁아 노이즈가 큰데도 선정 슬롯·스타일 예산을 차지
+    # 하는 문제 방지 (2026-07-27 MXWO A/B 근거로 채택. IS 데이터로만 계산되어
+    # walk-forward 에서 look-ahead 없음 — full-data 사전계산 경로에는 미적용).
+    if min_coverage_pct > 0:
+        uni = merged_data[["ddt", "gvkeyiid"]].drop_duplicates().groupby("ddt").size()
+        obs = df.groupby(["factorAbbreviation", "ddt"], observed=True).size()
+        cov = obs.div(uni, level="ddt").groupby(level="factorAbbreviation", observed=True).mean()
+        low_cov = {fa for fa in valid_factors if cov.get(fa, 0.0) < min_coverage_pct}
+        if low_cov:
+            logger.info("Coverage filter: %d factor(s) below %.0f%% excluded: %s",
+                        len(low_cov), min_coverage_pct * 100, sorted(low_cov))
+            valid_factors -= low_cov
 
     # [4] Sort order 통일: factorOrder=0(높을수록 좋음) 팩터의 val_lagged 에 -1
     #     -> 전 팩터가 "낮을수록 좋음"이 되어 ascending rank 1 = Q1 = 좋은 종목
@@ -199,7 +334,10 @@ def calculate_factor_stats_batch(
 
     # [5] 팩터별 통합 루프: rank + quantile + 집계
     #     (2키 groupby가 3키보다 2.8x 빠르므로 per-factor 루프가 최적)
-    labels = ["Q1", "Q2", "Q3", "Q4", "Q5"]
+    # n_quantiles=5(기본)면 기존 5분위와 byte 동일. 10이면 상/하위 10% L/S.
+    labels = [f"Q{i}" for i in range(1, n_quantiles + 1)]
+    q_bot = labels[-1]
+    bins = [100.0 * i / n_quantiles for i in range(n_quantiles)] + [105.0]
     grouped = df.groupby("factorAbbreviation")
 
     results = []
@@ -217,7 +355,9 @@ def calculate_factor_stats_batch(
         fdf = grouped.get_group(factor_abbr).copy()
 
         # rank + count (2키 groupby — 팩터당 ~53K행, ~900그룹)
-        grp = fdf.groupby(["ddt", "sec"])["val_lagged"]
+        # region_sector 면 3키 — 그룹 키에 NaN(미분류 지역)인 행은 rank/count 가
+        # NaN 이 되어 분위 배정에서 자동 제외된다.
+        grp = fdf.groupby(rank_keys)["val_lagged"]
         fdf["rank"] = grp.rank(method="average", ascending=True)
         count_series = grp.transform("count")
 
@@ -232,7 +372,7 @@ def calculate_factor_stats_batch(
 
         # quantile
         fdf["quantile"] = pd.cut(
-            fdf["percentile"], bins=[0, 20, 40, 60, 80, 105],
+            fdf["percentile"], bins=bins,
             labels=labels, include_lowest=True, right=True,
         )
         fdf = fdf.dropna(subset=["quantile"])
@@ -252,15 +392,15 @@ def calculate_factor_stats_batch(
         else:
             sector_return_df = _monthly_sec_q.groupby("sec").mean().T
 
-        # Q1-Q5 스프레드 (Q2~Q4는 불필요 — unstack 없이 Q1, Q5만 추출)
+        # 상-하위 분위 스프레드 (중간 분위는 불필요 — unstack 없이 양끝만 추출)
         q_mean = fdf.groupby(["ddt", "quantile"], observed=False)["M_RETURN"].mean()
         quantile_levels = q_mean.index.get_level_values("quantile").unique()
-        if "Q1" not in quantile_levels or "Q5" not in quantile_levels:
+        if "Q1" not in quantile_levels or q_bot not in quantile_levels:
             logger.warning("Skipping %s - insufficient quintile coverage", factor_abbr)
             results.append((None, None, None, None))
             continue
         q1 = q_mean.xs("Q1", level="quantile")
-        q5 = q_mean.xs("Q5", level="quantile")
+        q5 = q_mean.xs(q_bot, level="quantile")
         spread_series = pd.DataFrame({factor_abbr: q1 - q5})
         spread_series = prepend_start_zero(spread_series)
 

@@ -19,6 +19,12 @@ def slice_data_by_date(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """전체 데이터에서 end_date 이하(<=) 데이터만 추출한다.
 
+    주의: 프로덕션 walk_forward_engine.run() 은 이 함수를 호출하지 않고
+    merged_full 을 인라인 슬라이스한다 (재-merge 제거 최적화, 2026-07).
+    이 함수는 테스트 하네스(test_oos_purity 등)에서 IS/OOS 경계 계약
+    (<= inclusive)을 검증하는 용도로 유지된다 — 경계 규칙을 바꾸면
+    엔진 인라인 슬라이스 2곳(run() 의 merged_is/ret_df_is)도 함께 바꿀 것.
+
     Args:
         raw_data: 전체 팩터 데이터.
         mreturn_df: 전체 M_RETURN 데이터.

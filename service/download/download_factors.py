@@ -261,27 +261,48 @@ def run_download_pipeline(
     else:
         # 전체 모드: 기존 파일 이동 백업 (새 파일로 교체)
         _backup_existing_parquets(out_dir, mreturn_path, benchmark, move=True)
-        # ─── 전체 모드: 처음부터 다운로드 ───
-        logger.info("Full download %s → %s", start_date, end_date)
+        # ─── 전체 모드: 연 단위 청크 다운로드 ───
+        # 전체 기간 일괄 fetch는 대형 유니버스(MXWO ~67M행)에서 MemoryError 발생
+        # -> 연도별로 fetch/변환/저장하여 피크 메모리를 1개 연도 수준으로 제한.
+        logger.info("Full download %s -> %s (yearly chunks)", start_date, end_date)
         t0 = time.time()
 
-        raw_df = GenerateQueryStructure(start_date, end_date).fetch_snp()
-        logger.info("Fetched %s rows in %.2fs", f"{len(raw_df):,}", time.time() - t0)
+        start_ts, end_ts = pd.Timestamp(start_date), pd.Timestamp(end_date)
+        saved_paths: list[Path] = []
+        mret_frames: list[pd.DataFrame] = []
+        total_rows = 0
+        for year in range(start_ts.year, end_ts.year + 1):
+            ys = max(start_ts, pd.Timestamp(f"{year}-01-01")).strftime("%Y-%m-%d")
+            ye = min(end_ts, pd.Timestamp(f"{year}-12-31")).strftime("%Y-%m-%d")
+            raw_df = GenerateQueryStructure(ys, ye).fetch_snp()
+            if raw_df.empty:
+                logger.warning("No rows for %d", year)
+                continue
+            total_rows += len(raw_df)
+            factor_df, mret_df = _build_pipeline_ready(raw_df, factor_info_path)
+            del raw_df
+            saved_paths += save_factor_parquet_by_year(factor_df, out_dir, benchmark, years={year})
+            mret_frames.append(mret_df)
+            del factor_df
 
-        if raw_df.empty:
+        if not saved_paths:
             logger.warning("No rows returned")
             return
 
-        t0 = time.time()
-        factor_df, mreturn_df = _build_pipeline_ready(raw_df, factor_info_path)
-
-        saved_paths = save_factor_parquet_by_year(factor_df, out_dir, benchmark)
+        mreturn_df = pd.concat(mret_frames, ignore_index=True)
+        mreturn_df["gvkeyiid"] = mreturn_df["gvkeyiid"].astype("category")
         mreturn_df.to_parquet(mreturn_path, index=False, compression="zstd")
 
         total_mb = sum(p.stat().st_size for p in saved_paths) / 1024**2
-        logger.info("Saved in %.2fs — factor: %.1f MB (%d files), mreturn: %.1f MB",
-                     time.time() - t0, total_mb, len(saved_paths),
+        logger.info("Fetched %s rows, saved in %.2fs - factor: %.1f MB (%d files), mreturn: %.1f MB",
+                     f"{total_rows:,}", time.time() - t0, total_mb, len(saved_paths),
                      mreturn_path.stat().st_size / 1024**2)
+
+    # ─── 국가 매핑 재생성 (지역 중립 랭킹용 — 증분 신규 종목 자동 반영) ───
+    from db.factor_query import fetch_country_map
+    cmap = fetch_country_map()
+    cmap.to_parquet(out_dir / f"{benchmark}_country_map.parquet", index=False, compression="zstd")
+    logger.info("Country map refreshed (%d stocks)", len(cmap))
 
     # ─── 검증 ───
     if validate:

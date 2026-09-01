@@ -310,3 +310,24 @@ def save_style_totals(
     return out_path
 
 
+
+
+def save_deploy_multiplier(history_dir, end_date, book_gross: float,
+                           multiplier: float, mode: str) -> None:
+    """실제 적용된 배포 배수를 시점별로 기록한다 (2026-08-19).
+
+    목표 gross 정규화 모드에서는 배수가 매 시점 달라지므로, "그 달에 무엇을
+    적용했는지"를 사후에 확인할 근거가 필요하다.
+    """
+    history_dir.mkdir(parents=True, exist_ok=True)
+    path = history_dir / f"deploy_multiplier_{end_date}.csv"
+    pd.DataFrame([{
+        "as_of": end_date,
+        "book_gross_before": round(book_gross, 8),
+        "multiplier": round(multiplier, 8),
+        "gross_after": round(book_gross * multiplier, 8),
+        "long_after": round(book_gross * multiplier / 2, 8),
+        "short_after": round(-book_gross * multiplier / 2, 8),
+        "mode": mode,
+    }]).to_csv(path, index=False)
+    logger.info("weight_history: deploy_multiplier 저장 %s", path.name)

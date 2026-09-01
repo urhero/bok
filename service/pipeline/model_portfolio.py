@@ -20,9 +20,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
-from config import PARAM, PIPELINE_PARAMS
+from config import PARAM, PIPELINE_PARAMS, TAX_EXCLUSION_THRESHOLD_BP
 
 # 모듈 import
 from service.pipeline.factor_analysis import (
@@ -30,23 +31,33 @@ from service.pipeline.factor_analysis import (
     calculate_factor_stats_batch,
     filter_and_label_factors,
 )
-from service.pipeline.optimization import optimize_constrained_weights
+from service.pipeline.optimization import optimize_constrained_weights, weight_kwargs_from
 from service.pipeline.weight_construction import (
     aggregate_mp_weights,
+    apply_multiplier,
     build_factor_weight_frames,
     build_pivoted_export,
     calculate_style_weights,
+    multiplier_for_target,
+    resolve_multiplier,
+    resolve_target_gross,
 )
 from service.factor.factor_returns import aggregate_factor_returns  # re-export (하위호환)
 from service.factor.universe_mask import apply_universe_mask, compute_universe_classification
 from service.pipeline.universe import evaluate_universe
 from service.pipeline.weight_history import (
     load_prev_factor_weights,
+    save_deploy_multiplier,
     save_factor_styles,
     save_factor_weights,
     save_style_totals,
 )
 from service.download.parquet_io import load_factor_parquet
+from service.pipeline.bm_weights import apply_bm_short_cap, bm_weights_at
+from service.pipeline.transaction_tax import (
+    drop_high_tax_countries,
+    excluded_countries,
+)
 from service.download.paths import mreturn_filename
 from service.paths import DATA_DIR, HISTORY_DIR, OUTPUT_DIR, PROJECT_ROOT as _PROJECT_ROOT
 from utils.validation import validate_output_weights
@@ -99,11 +110,46 @@ class ModelPortfolioPipeline:
         # [2] 메타데이터 병합 + 5분위 분석 — README [1], [2]
         factor_metadata, merged_data, factor_abbr_list, orders = self._prepare_metadata(raw_data, market_return_df)
         self.factor_metadata = factor_metadata
+
+        # [2.3] 롤링 IS 윈도우 (2026-07-28 채택, w48): 규칙 학습·선정·가중을
+        # 최근 N개월로 제한해 레짐 적응. walk-forward 엔진의 is_window_months 와
+        # 동일 의미 (production parity). 미지정/이력 부족 시 no-op (expanding).
+        # 리포트 모드는 슬라이스 제외 — 별첨 북의 차트 데이터는 전체 이력이되,
+        # 섹터 제거·L/S 라벨은 아래 [2.5]에서 운용(48M) 규칙을 별도 fit 해 매핑한다
+        # (2026-08-27 사용자 지정: 북과 운용의 팩터 집합·규칙 일치).
+        from service.pipeline.factor_analysis import slice_recent_months
+        window = None if report else self.pipeline_params.get("is_window_months")
+        if window:
+            before = merged_data["ddt"].nunique()
+            merged_data = slice_recent_months(merged_data, int(window))
+            logger.info("Rolling IS window: %d -> %d months (window=%d + lag base)",
+                        before, merged_data["ddt"].nunique(), int(window))
         slim_data = merged_data[[c for c in ANALYZE_COLS if c in merged_data.columns]]
         self.factor_stats = self._analyze_factors(slim_data, factor_abbr_list, orders, test_file)
 
         if report:
-            self._generate_report(factor_abbr_list, factor_metadata)
+            # [2.5] 별첨 규칙 = 실제 운용 규칙 (2026-08-27 사용자 지정): 48M 창으로
+            # 섹터 제거·라벨을 fit 하고, 북 차트는 그 규칙을 전체 이력에 적용한다.
+            # 재학습 금지 원칙은 walk-forward 와 동일 (dropped_sectors/label_rules
+            # 직접 매핑 — CLAUDE.md OOS 오염 주의 참조).
+            live_rules = None
+            win = self.pipeline_params.get("is_window_months")
+            if win:
+                is_slim = slice_recent_months(slim_data, int(win))
+                stats_is = self._analyze_factors(is_slim, factor_abbr_list, orders, test_file)
+                k_abbr, _, _, _, d_sec, f_data = filter_and_label_factors(
+                    factor_abbr_list, factor_metadata.factorName.tolist(),
+                    factor_metadata.styleName.tolist(), stats_is,
+                    spread_threshold_pct=self.pipeline_params["spread_threshold_pct"],
+                    sector_drop_tstat=self.pipeline_params.get("sector_drop_tstat"),
+                )
+                live_rules = {
+                    "kept_abbrs": k_abbr,
+                    "dropped_sectors": dict(zip(k_abbr, d_sec)),
+                    "label_rules": {a: fd.groupby("quantile")["label"].first().to_dict()
+                                    for a, fd in zip(k_abbr, f_data)},
+                }
+            self._generate_report(factor_abbr_list, factor_metadata, end_date, live_rules)
             return
 
         # [3] 섹터 필터링 + L/N/S 라벨링 — README [3]
@@ -134,21 +180,20 @@ class ModelPortfolioPipeline:
         style_list = [style_map[f] for f in factor_list]
         ret_subset = self.return_matrix[factor_list]
 
-        # TS 모멘텀 틸트는 optimize_constrained_weights 내부에서 캡 재분배 이전에
-        # 적용된다 (2026-08-05 채택 — 캡 규제 요건 준수를 위해 base 단계 적용).
+        # TS 모멘텀 틸트는 optimize_constrained_weights 내부에서 캡 재분배 이전 적용
+        # (2026-08-06 순서 교정 — 캡 25% 준수 보장, main/MXCN1A 와 동일).
+        # 파라미터 추출은 weight_kwargs_from 단일 출처 (2026-08-25 — 엔진과 공유,
+        # 구버전 mp 의 erc_* 누락 사고 재발 방지).
         sim_result = optimize_constrained_weights(
             ret_subset, style_list, test_mode=bool(test_file),
-            mode=self.pipeline_params["optimization_mode"],
-            style_cap=self.pipeline_params["style_cap"],
-            style_cap_basis=self.pipeline_params.get("style_cap_basis", "weight"),
-            erc_shrinkage=float(self.pipeline_params.get("erc_shrinkage", 0.5)),
-            ts_mom_window=self.pipeline_params.get("ts_mom_window"),
-            ts_mom_scale=float(self.pipeline_params.get("ts_mom_scale", 0.5)),
+            **weight_kwargs_from(self.pipeline_params),
         )
 
-        # [6.5] 배포 가중치 = 목표 가중치 (스무딩 제거: production 은 항상 목표 그대로 배포)
         weights_tbl = sim_result[1]
         target_weights = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
+
+        # [6.5] 배포 가중치: deploy_step<1 이면 직전 배포 비중에서 step 만큼만 이동
+        # (부분 조정 — walk-forward 엔진과 동일 의미. 10bp 전환 후 기본 1.0 = 전량 조정).
         # 구 step_smooth(step=1.0) 동작 보존(출력 byte 동일): 정렬 순서 + 합 1.0 재정규화.
         _order = sorted(target_weights)
         _scale = 1.0 / sum(target_weights[f] for f in _order)
@@ -159,8 +204,13 @@ class ModelPortfolioPipeline:
         full_style_map = dict(zip(factor_info["factorAbbreviation"], factor_info["styleName"]))
 
         if not test_file:                                   # 테스트 모드는 history 저장 skip
-            # prev_weights 는 델타 리포트(factor_styles/style_totals)용으로 로드
+            # prev_weights 는 블렌딩 + 델타 리포트(factor_styles/style_totals)용
             prev_weights, _ = load_prev_factor_weights(HISTORY_DIR, end_date)
+            from service.pipeline.optimization import blend_deploy_weights
+            deployed = blend_deploy_weights(
+                deployed, prev_weights or None,
+                float(self.pipeline_params.get("deploy_step", 1.0)),
+            )
             save_factor_weights(HISTORY_DIR, end_date, deployed)               # 다음 회차 prev
             # ERC 시각화용 상관 무리 저장 (실패해도 파이프라인 산출물 보존)
             try:
@@ -169,7 +219,7 @@ class ModelPortfolioPipeline:
                                      deployed, full_style_map)
             except Exception as e:
                 logger.warning("factor_clusters 저장 실패 (%s) - 대시보드 무리 섹션만 생략됨", e)
-            # 스타일 캡 전/후 비교 저장 (raw=캡 전 원비중(틸트 반영), fitted=캡 후. 대시보드용)
+            # 스타일 캡 전/후 비교 저장 (raw=캡 전 ERC 원비중, fitted=캡 후. 대시보드용)
             _ddt = pd.Timestamp(end_date).strftime("%Y-%m-%d")
             weights_tbl[["factor", "styleName", "raw_weight", "fitted_weight"]].to_csv(
                 HISTORY_DIR / f"style_cap_effect_{_ddt}.csv", index=False)
@@ -246,6 +296,14 @@ class ModelPortfolioPipeline:
             try:
                 # 연도별 분할 parquet 또는 단일 파일 로드 (parquet_io가 자동 탐색)
                 raw = load_factor_parquet(DATA_DIR, benchmark, validate=True)
+                # 고세율 국가 배제 (실험 스위치, 기본 None=무동작). mp/백테스트/실측이
+                # 모두 이 로더를 지나므로 여기 한 곳이면 전 경로에 반영된다.
+                _n0 = len(raw)
+                raw = drop_high_tax_countries(raw, benchmark, TAX_EXCLUSION_THRESHOLD_BP)
+                if len(raw) != _n0:
+                    logger.info("고세율 국가 배제(>=%.1fbp): %s -> %s rows (%s)",
+                                TAX_EXCLUSION_THRESHOLD_BP, f"{_n0:,}", f"{len(raw):,}",
+                                ",".join(sorted(excluded_countries(TAX_EXCLUSION_THRESHOLD_BP))))
                 market_return_df = pd.read_parquet(mreturn_path)
 
                 # categorical → object 변환 (pivot_table/groupby의 observed=False OOM 방지)
@@ -310,6 +368,27 @@ class ModelPortfolioPipeline:
             how="inner",
         )
 
+        # 지역 중립 랭킹용 region 부착 (테스트 모드 제외 — 테스트 데이터는
+        # country map 커버리지가 없어 전 종목 랭킹 제외가 되므로)
+        if (
+            self.pipeline_params.get("ranking_group", "sector") == "region_sector"
+            and not self.is_test
+        ):
+            from service.pipeline.factor_analysis import attach_region
+            merged = attach_region(
+                merged, DATA_DIR / f"{self.config['benchmark']}_country_map.parquet"
+            )
+
+        # 국가 모멘텀 합성 팩터 주입 (실험 플래그, 2026-07-28 Sharpe 목표)
+        if self.pipeline_params.get("inject_country_momentum") and not self.is_test:
+            from service.pipeline.factor_analysis import inject_country_momentum
+            merged, synth_meta = inject_country_momentum(
+                merged, DATA_DIR / f"{self.config['benchmark']}_country_map.parquet"
+            )
+            factor_metadata = pd.concat([factor_metadata, synth_meta], ignore_index=True)
+            factor_abbr_list = factor_metadata.factorAbbreviation.tolist()
+            orders = factor_metadata.factorOrder.tolist()
+
         logger.info("[Trace] Merged data shape: %s", merged.shape)
         return factor_metadata, merged, factor_abbr_list, orders
 
@@ -320,18 +399,25 @@ class ModelPortfolioPipeline:
             merged_data, factor_abbr_list, orders, test_mode=bool(test_file),
             min_sector_stocks=self.pipeline_params["min_sector_stocks"],
             sector_spread_geometric=bool(self.pipeline_params.get("sector_spread_geometric", False)),
+            min_coverage_pct=float(self.pipeline_params.get("min_coverage_pct", 0.0)),
+            # 테스트 데이터는 country map 커버리지가 없어 sector 랭킹으로 고정
+            ranking_group=("sector" if test_file
+                           else self.pipeline_params.get("ranking_group", "sector")),
+            n_quantiles=int(self.pipeline_params.get("n_quantiles", 5)),
         )
         logger.info("Factors assigned in %.2fs", time.time() - t1)
         return result
 
-    def _generate_report(self, factor_abbr_list, factor_metadata):
+    def _generate_report(self, factor_abbr_list, factor_metadata, end_date=None,
+                         live_rules=None):
         """리포트를 생성한다. run()에서 early return으로 이후 단계 스킵."""
         from service.report.report_generator import generate_report
 
         factor_name_list = factor_metadata.factorName.tolist()
         style_name_list = factor_metadata.styleName.tolist()
         logger.info("Report generation requested.")
-        generate_report(factor_abbr_list, factor_name_list, style_name_list, self.factor_stats)
+        generate_report(factor_abbr_list, factor_name_list, style_name_list,
+                        self.factor_stats, end_date, live_rules)
         logger.info("Report generated.")
 
     def _construct_and_export(self, sim_result, kept_abbrs, filtered_data, end_date, test_file):
@@ -347,18 +433,69 @@ class ModelPortfolioPipeline:
         # (월별 재생성 시 값은 동일하나 행순서/말단자릿수만 달라져 git diff 가 전체 파일로 잡히는 문제 방지)
         weight_raw = weight_raw.sort_values(["factor", "ticker", "gvkeyiid"]).reset_index(drop=True)
 
-        agg_w = aggregate_mp_weights(weight_raw, end_date_ts)
+        agg_w = aggregate_mp_weights(
+            weight_raw, end_date_ts,
+            sector_short_cap=self.pipeline_params.get("sector_short_cap"),
+        )
         weight_raw = calculate_style_weights(weight_raw)
         agg_w["style_ls_weight"] = agg_w["mp_ls_weight"]
 
         # 결합 및 출력
         final_weights = pd.concat([weight_raw, agg_w], axis=0, ignore_index=True)
         final_weights = final_weights.sort_values(["style", "factor", "ticker", "gvkeyiid"]).reset_index(drop=True)
+        # MP 배포 배수 사전 적용 (2026-08-19): 산출물이 이미 배수 적용 상태로 나가
+        # Bloomberg ex-ante TE 를 그대로 확인할 수 있게 한다. style 집계/피벗보다
+        # 먼저 적용해 세 산출물이 모두 같은 배수를 반영하도록 한다. 성과 백테스트·
+        # 실측은 팩터 비중에서 재구성하므로 이 배수의 영향을 받지 않는다.
+        mp_rows = final_weights["style"] == "MP"
+        book_gross = float(final_weights.loc[mp_rows, "mp_ls_weight"].abs().sum())
+        # 목표 노출은 시점별 이력(data/mp_target_gross.csv)이 우선 — 운용 중 규모를
+        # 바꿔도 과거 시점 재현이 그때 규모로 정확히 나온다 (2026-08-21).
+        target = resolve_target_gross(
+            end_date, DATA_DIR / "mp_target_gross.csv",
+            self.pipeline_params.get("mp_target_gross"),
+        )
+        if target:
+            mult, mode = multiplier_for_target(book_gross, float(target)), f"target_gross={target:g}"
+        else:
+            mult, mode = resolve_multiplier(end_date, DATA_DIR / "mp_multiplier.csv"), "manual_csv"
+        final_weights = apply_multiplier(final_weights, mult)
+        logger.info("MP 배포 배수 %.4f (%s): gross %.2f%% -> %.2f%% (롱/숏 각 %.2f%%)",
+                    mult, mode, book_gross * 100, book_gross * mult * 100,
+                    book_gross * mult * 50)
+
+        # 종목별 숏 <= BM 비중 (2026-08-21): 총 보유가 음수가 되지 않게.
+        # 상한은 팩터별이 아니라 **netting 완료된 최종 MP 순비중**에 걸고(배수 적용 후),
+        # 종목별 축소 비율을 팩터 전개행에도 동일하게 곱해 "팩터행 합 = MP행"
+        # 항등식을 유지한다 (팩터별 기여도가 제약 반영분으로 바뀜, 사용자 결정).
+        if self.pipeline_params.get("bm_short_cap") and target:
+            bm = bm_weights_at(self.config["benchmark"], end_date)
+            if bm is None:
+                logger.warning("BM 비중 없음 - 숏 상한 미적용 (%s)", end_date)
+            else:
+                mp_w = final_weights.loc[mp_rows].groupby("gvkeyiid")["mp_ls_weight"].sum()
+                capped = apply_bm_short_cap(mp_w, bm, float(target) / 2.0)
+                # 순비중 ~0 종목은 비율 1 (조정 불필요) — 0 으로 두면 팩터 전개
+                # 상세가 통째로 지워진다 (롱/숏이 상쇄된 종목).
+                ratio = (capped / mp_w).where(mp_w.abs() > 1e-12, 1.0)
+                ratio = ratio.replace([np.inf, -np.inf], 1.0).fillna(1.0)
+                key = final_weights["gvkeyiid"].map(ratio).fillna(1.0)
+                for c in ("mp_ls_weight", "ls_weight", "style_ls_weight"):
+                    final_weights[c] = final_weights[c] * key
+                n_cut = int((ratio < 1 - 1e-9).sum())
+                logger.info("BM 숏 상한: %d종목 축소, 롱 %.2f%% / 숏 %.2f%% (팩터행 동반 조정)",
+                            n_cut, capped[capped > 0].sum() * 100, capped[capped < 0].sum() * 100)
+        if not test_file:
+            save_deploy_multiplier(HISTORY_DIR, end_date, book_gross, mult, mode)
+
         final_style_weight = final_weights.groupby(["ddt", "ticker", "isin", "gvkeyiid", "style"])[
             ["ls_weight", "style_ls_weight", "factor_weight"]
         ].sum()
 
         suffix = f"_{Path(test_file).stem}" if test_file else ""
+        # 배포 규모를 파일명에 명시 (총 gross % — 예: gross32 = 롱/숏 각 ±16%)
+        if target:
+            suffix += f"_gross{round(float(target) * 100)}"
         final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test{suffix}.csv")
         final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_test{suffix}.csv")
 

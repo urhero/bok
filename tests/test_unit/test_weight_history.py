@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -350,3 +351,36 @@ def test_save_style_totals_excludes_zero_weight_from_count():
         row = df[df["style"] == "Value"].iloc[0]
         assert row["factor_count"] == 1
         assert row["factors"] == "A"
+
+
+def test_save_factor_clusters_groups_correlated_factors():
+    """|corr|>0.5 인 팩터끼리 같은 cluster_id, 독립 팩터는 단독 무리."""
+    from service.pipeline.weight_history import save_factor_clusters
+
+    rng = np.random.default_rng(0)
+    base = rng.normal(0, 0.02, 48)
+    ret = pd.DataFrame({
+        "A": np.concatenate([[0.0], base + rng.normal(0, 0.004, 48)]),
+        "B": np.concatenate([[0.0], base + rng.normal(0, 0.004, 48)]),   # A와 고상관
+        "C": np.concatenate([[0.0], rng.normal(0, 0.02, 48)]),           # 독립
+    }, index=pd.date_range("2022-01-31", periods=49, freq="ME"))
+    weights = {"A": 0.4, "B": 0.35, "C": 0.25}
+    styles = {"A": "Quality", "B": "Quality", "C": "Momentum"}
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = save_factor_clusters(Path(tmp), "2026-06-30", ret, weights, styles)
+        df = pd.read_csv(path)
+        cid = df.set_index("factor")["cluster_id"]
+        assert cid["A"] == cid["B"]          # 고상관 무리
+        assert cid["C"] != cid["A"]          # 독립
+        # 무리 정렬: A+B 합산 비중(0.75)이 최대 -> cluster_id 1
+        assert cid["A"] == 1
+        assert set(df.columns) >= {"factor", "styleName", "weight", "cluster_id"}
+
+
+def test_save_factor_clusters_single_factor_returns_none():
+    from service.pipeline.weight_history import save_factor_clusters
+    ret = pd.DataFrame({"A": [0.0, 0.01, 0.02]},
+                       index=pd.date_range("2026-01-31", periods=3, freq="ME"))
+    with tempfile.TemporaryDirectory() as tmp:
+        assert save_factor_clusters(Path(tmp), "2026-06-30", ret, {"A": 1.0}, {}) is None

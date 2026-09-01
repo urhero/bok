@@ -55,8 +55,8 @@ def main(argv: list[str] | None = None) -> int:
                                   help="Minimum IS period in months (default: 36)")
     parser_backtest.add_argument("--factor-rebal-months", type=int, default=6,
                                   help="Tier 1 rebalancing frequency (default: 6)")
-    parser_backtest.add_argument("--weight-rebal-months", type=int, default=3,
-                                  help="Tier 2 rebalancing frequency (default: 3)")
+    parser_backtest.add_argument("--weight-rebal-months", type=int, default=None,
+                                  help="Tier 2 rebalancing frequency (default: config weight_rebal_months)")
     parser_backtest.add_argument("--top-factors", type=int, default=50,
                                   help="Number of top factors to select (default: 50)")
     parser_backtest.add_argument("--selection-hysteresis", type=float, default=None,
@@ -67,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
                                        "winner_median=1등보호+중위값바닥)")
     parser_backtest.add_argument("--style-cap", type=float, default=None,
                                   help="Style 합계 상한 (default: config 0.25; 1.0=캡 해제)")
+    parser_backtest.add_argument("--is-window-months", type=int, default=None,
+                                  help="롤링 IS 윈도우 개월 수 (default: config is_window_months; 0=expanding)")
 
     # viz: 기존 output CSV -> 인터랙티브 HTML 대시보드 (read-only, 파이프라인 미수정)
     parser_viz = subparsers.add_parser("viz", help="Generate interactive HTML dashboard from existing outputs.")
@@ -209,6 +211,7 @@ def _run_backtest(args):
     )
     from service.report.reporting import print_overfit_report
     from service.backtest.walk_forward_engine import WalkForwardEngine
+    from service.paths import dated
     from service.pipeline.model_portfolio import OUTPUT_DIR
 
     # CLI 미지정 시 config 값 사용 (production parity)
@@ -226,27 +229,36 @@ def _run_backtest(args):
     engine = WalkForwardEngine(
         min_is_months=args.min_is_months,
         factor_rebal_months=args.factor_rebal_months,
-        weight_rebal_months=args.weight_rebal_months,
+        weight_rebal_months=(args.weight_rebal_months if args.weight_rebal_months is not None
+                             else int(PIPELINE_PARAMS.get("weight_rebal_months", 3))),
         top_factors=args.top_factors,
         selection_hysteresis=selection_hysteresis,
         pipeline_params_override=override,
+        # CLI 미지정 시 config 값 (production parity). 0 지정 시 expanding 강제.
+        is_window_months=(args.is_window_months if args.is_window_months is not None
+                          else PIPELINE_PARAMS.get("is_window_months")) or None,
     )
 
     result = engine.run(args.start_date, args.end_date, test_file=getattr(args, "test_file", None))
 
-    # 결과 저장
-    result.to_csv(str(OUTPUT_DIR / "walk_forward_results.csv"))
+    # 결과 저장 — 파일명 기준일 = 마지막 OOS 월 (backtest CLI 날짜는 엔진이 무시)
+    as_of = result.oos_returns.index.max() if len(result.oos_returns) else None
+    result.to_csv(str(dated(OUTPUT_DIR / "walk_forward_results.csv", as_of)))
 
     # 팩터 가중치 이력 직렬화 (viz 대시보드의 비중 추이/회전율용; 가산적, 기존 출력 불변)
     if not result.weight_history.empty:
-        result.weight_history.to_csv(OUTPUT_DIR / "walk_forward_weight_history.csv")
+        result.weight_history.to_csv(dated(OUTPUT_DIR / "walk_forward_weight_history.csv", as_of))
+
+    # 팩터 기여도 이력 (비중 x 당월수익, 행합 = cew_return) — viz 성과 원천 섹션용
+    if not result.contribution_history.empty:
+        result.contribution_history.to_csv(dated(OUTPUT_DIR / "factor_contrib.csv", as_of))
 
     # 과적합 진단 (full_period_cagr은 마지막 Tier 2 시점의 IS MP CAGR)
     oos_report = generate_overfit_report(result, full_period_cagr=result.is_full_period_cagr)
     print_overfit_report(oos_report)
 
     # 진단 결과 CSV 저장 (세로형: Category/Metric/Value/Interpretation) — 직렬화는 도메인 모듈로 위임
-    serialize_diagnostics_csv(oos_report, OUTPUT_DIR / "overfit_diagnostics.csv")
+    serialize_diagnostics_csv(oos_report, dated(OUTPUT_DIR / "overfit_diagnostics.csv", as_of))
 
     # 진단 표 포함 대시보드 자동 생성 (read-only viz). 실패해도 백테스트 산출물은 보존.
     # end_date=None: 최신 스냅샷 자동 선택. backtest CLI 날짜(args.end_date)는 production

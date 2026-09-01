@@ -75,6 +75,8 @@ def _equal_weight_allocation(
     test_mode: bool,
     base_weights: np.ndarray | None = None,
     cap_scale: np.ndarray | None = None,
+    ts_mom_window: int | None = None,
+    ts_mom_scale: float = 0.5,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """초기 가중(기본 1/N, base_weights 지정 시 그 값) + 스타일 캡 재분배.
 
@@ -89,6 +91,15 @@ def _equal_weight_allocation(
         w = np.ones(n_factors, dtype=np.float32) / n_factors
     else:
         w = base_weights.astype(np.float32).copy()
+        w /= w.sum()
+
+    # TS 모멘텀 틸트는 스타일 캡 재분배 '이전'(base 단계)에 적용 — 캡 준수 보장.
+    # (구 구현은 캡 이후 틸트+재정규화라 스타일 합이 캡을 초과했음. 2026-08-06
+    # 순서 교정 — main/MXCN1A 와 동일. 예: 2026-06-30 EQ 26.07% -> 25% 준수)
+    if ts_mom_window:
+        tilted = apply_ts_momentum_tilt(
+            dict(zip(factors, w)), rtn_df, ts_mom_window, ts_mom_scale)
+        w = np.array([tilted[f] for f in factors], dtype=np.float32)
         w /= w.sum()
 
     # 스타일 캡 재분배 (수렴까지 반복)
@@ -124,7 +135,7 @@ def _equal_weight_allocation(
 
     weights_tbl = pd.DataFrame({
         "factor": factors,
-        "raw_weight": w_pre_cap,   # 캡 적용 전 (2026-08-05부터 실제 pre-cap; 이전엔 fitted 와 동일했음)
+        "raw_weight": w_pre_cap,   # 캡 적용 전 (2026-07-30부터 실제 pre-cap; 이전엔 fitted 와 동일했음)
         "styleName": styles_arr,
         "fitted_weight": w,        # 캡 적용 후 (배포/백테스트가 쓰는 값 — 기존 동작 불변)
     })
@@ -148,12 +159,13 @@ def _equal_weight_allocation(
 
 
 def _solve_erc_ccd(cov: np.ndarray, max_sweeps: int = 500, tol_w: float = 1e-12) -> np.ndarray:
-    """정식 ERC 해 (Spinu 볼록형의 CCD 반복, mxwo_sharpe1 에서 이식).
+    """정식 ERC 해 (Spinu 볼록형의 CCD 반복, 2026-07-30 교체).
 
     min (1/2) w'Σw - λ Σ ln w_i 의 1계 조건 w_i(Σw)_i = λ (모든 i 동일) 가 곧 ERC.
     좌표별 닫힌해 w_i = (-b_i + sqrt(b_i^2 + 4 σ_ii λ)) / (2 σ_ii), b_i = Σ_{j≠i} σ_ij w_j.
-    sqrt 항이 |b_i| 보다 항상 크므로 음의 상관(b_i<0)에서도 양수 비중이 보장된다.
-    PD cov 에서 해는 유일(스케일 제외). RC 균등 검증: 2026-08-05 게이트 (1.00x, 붕괴 없음).
+    sqrt 항이 |b_i| 보다 항상 크므로 **음의 상관(b_i<0)에서도 양수 비중이 보장**되고,
+    그런 팩터는 (Σw)_i 가 작아 오히려 큰 비중을 받는다 (분산 재료 우대 — 구 곱셈
+    반복법이 이들을 0으로 붕괴시키던 결함의 교정). PD cov 에서 해는 유일(스케일 제외).
     """
     n = cov.shape[0]
     if n == 1:
@@ -178,15 +190,58 @@ def apply_ts_momentum_tilt(
     window: int | None,
     scale: float = 0.5,
 ) -> dict[str, float]:
-    """팩터 TS 모멘텀 틸트 (2026-08-05 채택): trailing window 개월 자기 누적수익이
+    """팩터 TS 모멘텀 틸트 (2026-07-30 채택): trailing window 개월 자기 누적수익이
     음수인 팩터의 비중을 scale 배로 감쇠. window 미지정(None/0) = no-op.
     반환값은 비정규화 — 호출부의 합=1 정규화 단계가 이어받는다.
-    mp / walk-forward 엔진 공용 (동일 지점: 가중 산출 직후).
+    mp / walk-forward 엔진 / 비용 실측 스크립트 3곳 공용 (동일 지점: 가중 산출 직후).
     """
     if not window or not weights:
         return weights
     trail = (1.0 + ret_df.iloc[1:].tail(int(window))).prod() - 1.0
     return {f: w * (scale if trail.get(f, 0.0) < 0 else 1.0) for f, w in weights.items()}
+
+
+def blend_deploy_weights(
+    target: dict[str, float],
+    prev: dict[str, float] | None,
+    step: float,
+) -> dict[str, float]:
+    """부분 조정 배포: prev 에서 target 으로 step 만큼만 이동 후 합 1 재정규화.
+
+    step>=1 또는 prev 없음 -> target 그대로 (기존 동작 보존).
+    월간 신호를 유지하면서 트레이드 크기를 줄여 실측 비용을 절감한다
+    (2026-07-29 MP-level 실측: step 0.5 에서 net Sharpe 0.448->0.564).
+    """
+    if step >= 1.0 or not prev:
+        return dict(target)
+    keys = sorted(set(target) | set(prev))
+    blended = {f: step * target.get(f, 0.0) + (1.0 - step) * prev.get(f, 0.0) for f in keys}
+    total = sum(blended.values())
+    return {f: w / total for f, w in blended.items() if w > 1e-10}
+
+
+def weight_kwargs_from(pp: dict) -> dict:
+    """PIPELINE_PARAMS -> optimize_constrained_weights 키워드 인자 추출 (단일 출처).
+
+    2026-08-25 도입: 운용 mp(model_portfolio)와 백테스트(walk_forward_engine)가
+    이 추출을 각자 손으로 복제했었고, 실제로 구버전 mp 가 erc_* 를 누락해
+    수축 0.5/0.7 불일치 사고가 났었다 (production parity 는 코드로 강제할 것).
+    새 파라미터를 추가하면 이 함수 한 곳만 고치면 두 경로에 함께 반영된다.
+    폴백 기본값은 함수 시그니처와 동일하게 유지 (config 미등재 키 전용).
+    """
+    return {
+        "mode": pp["optimization_mode"],
+        "style_cap": pp["style_cap"],
+        "style_cap_basis": pp.get("style_cap_basis", "weight"),
+        "erw_vol_window": pp.get("erw_vol_window"),
+        "erc_shrinkage": float(pp.get("erc_shrinkage", 0.5)),
+        "erc_shrink_target": pp.get("erc_shrink_target", "diag"),
+        "erc_cov_type": pp.get("erc_cov_type", "full"),
+        "erc_vol_model": pp.get("erc_vol_model", "sample"),
+        "erc_ewma_lambda": float(pp.get("erc_ewma_lambda", 0.97)),
+        "ts_mom_window": pp.get("ts_mom_window"),
+        "ts_mom_scale": float(pp.get("ts_mom_scale", 0.5)),
+    }
 
 
 def optimize_constrained_weights(
@@ -197,7 +252,12 @@ def optimize_constrained_weights(
     tol: float = 1e-12,
     test_mode: bool = False,
     style_cap_basis: str = "weight",
+    erw_vol_window: int | None = None,
     erc_shrinkage: float = 0.5,
+    erc_shrink_target: str = "diag",
+    erc_cov_type: str = "full",
+    erc_vol_model: str = "sample",
+    erc_ewma_lambda: float = 0.97,
     ts_mom_window: int | None = None,
     ts_mom_scale: float = 0.5,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -206,13 +266,11 @@ def optimize_constrained_weights(
     현재 "최적화"라는 이름과 달리, 공분산/리스크 모델 기반의 진짜 최적화는
     제거됐다 (커밋 8dfb64e). 두 모드 모두 학습되는 가중치 없음.
 
-    네 가지 모드를 지원한다:
-    - "erc": 상관 인지 Equal Risk Contribution (config.py 기본값, 2026-08-05 채택 —
-      docs/experiments/mxcn1a_component_ablation_20260805.md)
-    - "equal_weight": 1/N 동일가중 + 스타일 캡 재분배 (backtest 모드에서
-      "hardcoded"를 주면 자동으로 이 모드로 변환됨)
-    - "equal_risk_weight": 팩터 IS 변동성 반비례 가중 + 스타일 캡 재분배 (구 기본,
-      2026-07-22~08-05)
+    세 가지 모드를 지원한다:
+    - "equal_weight": 1/N 동일가중 + 스타일 캡 재분배 (config.py 기본값;
+      backtest 모드에서 "hardcoded"를 주면 자동으로 이 모드로 변환됨)
+    - "equal_risk_weight": 팩터 IS 변동성 반비례 가중 + 스타일 캡 재분배 (실험용,
+      docs/experiments 참조)
     - "hardcoded": 프로덕션용 고정 가중치 CSV (data/hardcoded_weights.csv) 반환
 
     Args:
@@ -232,48 +290,98 @@ def optimize_constrained_weights(
         logger.info("Using hardcoded weights (production mode)")
         return _get_hardcoded_weights()
 
-    if mode == "equal_weight" and not ts_mom_window:
-        # 틸트 off 시 기존 경로 그대로 (byte-identical 보존)
-        return _equal_weight_allocation(rtn_df, style_list, style_cap, tol, test_mode)
-
     if mode == "equal_weight":
-        base = np.ones(rtn_df.shape[1], dtype=np.float64)
-        cap_scale = None
-    elif mode == "equal_risk_weight":
+        return _equal_weight_allocation(rtn_df, style_list, style_cap, tol, test_mode,
+            ts_mom_window=ts_mom_window, ts_mom_scale=ts_mom_scale)
+
+    if mode == "equal_risk_weight":
         # 팩터 IS 월간 수익률 변동성 반비례 가중. 첫 행(기준점 0) 제외는
         # compute_rank_score 의 monthly_rets = iloc[1:] 관례와 동일.
-        vol = rtn_df.iloc[1:].std().to_numpy(dtype=np.float64)
+        # erw_vol_window 지정 시 최근 N개월 실현 변동성만 사용 (내부 vol 타이밍:
+        # 총 비중 합 1 불변 — 포트폴리오 배수가 아니라 팩터 믹스 재배분).
+        vol_src = rtn_df.iloc[1:]
+        if erw_vol_window and len(vol_src) > erw_vol_window:
+            vol_src = vol_src.iloc[-erw_vol_window:]
+        vol = vol_src.std().to_numpy(dtype=np.float64)
         # ponytail: 무분산 팩터 폭주 방지 하한. zero-filter 가 상류에서 대부분 거르므로
         # 실전에서 밟힐 일은 드물다.
         vol = np.maximum(vol, 1e-6)
         base = 1.0 / vol
         # style_cap_basis="risk": 캡을 비중이 아닌 리스크 예산(w*sigma) 기준으로 적용
         cap_scale = vol if style_cap_basis == "risk" else None
-    elif mode == "erc":
+        return _equal_weight_allocation(
+            rtn_df, style_list, style_cap, tol, test_mode,
+            base_weights=base, cap_scale=cap_scale,
+            ts_mom_window=ts_mom_window, ts_mom_scale=ts_mom_scale,
+        )
+
+    if mode == "min_var":
+        # 롱온리 최소분산: min w'Σw, w>=0, Σw=1 (2026-07-30 — 붕괴 ERC 가 우연히
+        # 근사하던 저변동·저상관 팩터 틸트의 의도된 설계 버전. cov 는 erc 와 동일 수축)
+        vol_src = rtn_df.iloc[1:]
+        if erw_vol_window and len(vol_src) > erw_vol_window:
+            vol_src = vol_src.iloc[-erw_vol_window:]
+        cov = vol_src.cov().to_numpy(dtype=np.float64)
+        cov = (1.0 - erc_shrinkage) * cov + erc_shrinkage * np.diag(np.diag(cov))
+        n = cov.shape[0]
+        from scipy.optimize import minimize
+        res = minimize(
+            lambda w: w @ cov @ w, np.full(n, 1.0 / n),
+            jac=lambda w: 2.0 * (cov @ w), method="SLSQP",
+            bounds=[(0.0, 1.0)] * n,
+            constraints=[{"type": "eq", "fun": lambda w: w.sum() - 1.0}],
+            options={"maxiter": 300, "ftol": 1e-12},
+        )
+        w = np.maximum(res.x, 0.0)
+        w = w / w.sum() if w.sum() > 0 else np.full(n, 1.0 / n)
+        return _equal_weight_allocation(
+            rtn_df, style_list, style_cap, tol, test_mode, base_weights=w,
+            ts_mom_window=ts_mom_window, ts_mom_scale=ts_mom_scale,
+        )
+
+    if mode == "erc":
         # Equal Risk Contribution: 팩터 간 상관을 반영해 리스크 기여를 균등화.
         # 1/sigma(ERW)의 상관 무시 한계 보완 — 총 비중 합 1 불변 (배수 아님).
-        # cov 는 대각 수축(erc_shrinkage)으로 추정 노이즈 완화. 수축 0.2~0.5 는
-        # 고원 (2026-08-05 ablation), 실측 검증값 0.5 채택.
-        cov = rtn_df.iloc[1:].cov().to_numpy(dtype=np.float64)
-        cov = (1.0 - erc_shrinkage) * cov + erc_shrinkage * np.diag(np.diag(cov))
-        base = _solve_erc_ccd(cov)
-        cap_scale = None
-    else:
-        raise ValueError(
-            f"Unknown optimization mode: {mode!r}. "
-            "Use 'hardcoded', 'equal_weight', 'equal_risk_weight' or 'erc'."
+        # cov 는 진단 대각 50% 수축(shrinkage)으로 추정 노이즈 완화.
+        vol_src = rtn_df.iloc[1:]
+        if erw_vol_window and len(vol_src) > erw_vol_window:
+            vol_src = vol_src.iloc[-erw_vol_window:]
+        if erc_cov_type == "semi":
+            # 하방 반공분산 (tau=0): 같이 "깨지는" 동조만 측정 — 상방 동조는 무벌점.
+            # MDD/Calmar 지향 변형 (2026-07-30): Sigma_ij = E[min(r_i,0) min(r_j,0)]
+            d = np.minimum(vol_src.to_numpy(dtype=np.float64), 0.0)
+            cov = d.T @ d / max(len(d), 1)
+        else:
+            cov = vol_src.cov().to_numpy(dtype=np.float64)
+        if erc_vol_model == "ewma":
+            # "빠른 변동성 x 느린 상관" (2026-07-30 실험): 상관 구조는 IS 창 표본을
+            # 유지하고 변동성만 EWMA(RiskMetrics) 예측치로 교체 — vol clustering 반영.
+            # cov 창 자체를 줄이면 상관 노이즈로 붕괴했던 (12M 0.20) 것과 달리
+            # 변동성만 빠르게 하는 조합. lambda 월간 관례 0.97.
+            sd_old = np.sqrt(np.maximum(np.diag(cov), 1e-18))
+            corr_m = cov / np.outer(sd_old, sd_old)
+            ewma_var = (vol_src ** 2).ewm(alpha=1.0 - erc_ewma_lambda).mean().iloc[-1]
+            sd_new = np.sqrt(np.maximum(ewma_var.to_numpy(dtype=np.float64), 1e-18))
+            cov = corr_m * np.outer(sd_new, sd_new)
+        # erc_shrinkage: 수축 비율 (0=표본 cov 그대로).
+        # erc_shrink_target: "diag"=무상관 타깃(1/sigma 방향) /
+        #   "cc"=상수상관 타깃(Ledoit-Wolf constant-correlation 계열 — 평균 상관 보존)
+        sd = np.sqrt(np.maximum(np.diag(cov), 1e-18))
+        if erc_shrink_target == "cc":
+            corr = cov / np.outer(sd, sd)
+            n_ = corr.shape[0]
+            rho_bar = (corr.sum() - n_) / (n_ * (n_ - 1)) if n_ > 1 else 0.0
+            target = rho_bar * np.outer(sd, sd)
+            np.fill_diagonal(target, sd ** 2)
+        else:
+            target = np.diag(np.diag(cov))
+        cov = (1.0 - erc_shrinkage) * cov + erc_shrinkage * target
+        w = _solve_erc_ccd(cov)
+        return _equal_weight_allocation(
+            rtn_df, style_list, style_cap, tol, test_mode, base_weights=w,
+            ts_mom_window=ts_mom_window, ts_mom_scale=ts_mom_scale,
         )
 
-    # 팩터 TS 모멘텀 틸트는 스타일 캡 재분배 '이전'(base 단계)에 적용 — 캡(프로덕션
-    # 규제 요건) 준수 보장. mxwo_sharpe1 원구현은 캡 이후 틸트+재정규화라 캡이 뚫렸음
-    # (2026-08-05 순서 교정, 성과 재검증 완료).
-    if ts_mom_window:
-        tilted = apply_ts_momentum_tilt(
-            dict(zip(rtn_df.columns, base)), rtn_df, ts_mom_window, ts_mom_scale,
-        )
-        base = np.array([tilted[c] for c in rtn_df.columns])
-
-    return _equal_weight_allocation(
-        rtn_df, style_list, style_cap, tol, test_mode,
-        base_weights=base, cap_scale=cap_scale,
+    raise ValueError(
+        f"Unknown optimization mode: {mode!r}. Use 'hardcoded', 'equal_weight', 'equal_risk_weight' or 'erc'."
     )

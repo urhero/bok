@@ -28,7 +28,8 @@ class WalkForwardResult:
         oos_cumulative: OOS CEW 누적 수익률.
         oos_ew_cumulative: OOS EW 누적 수익률.
         weight_history: 팩터 가중치 이력 DataFrame.
-        is_meta_history: Tier 2 리밸런싱 시점별 IS meta 리스트.
+        is_meta_history: Tier 2 리밸런싱 시점별 IS meta 리스트 (실패 달은 None
+            자리 유지 — weight_rebal_indices 와 위치 정렬).
         active_factors_history: Tier 2 시점별 weight>0 팩터 set 리스트.
         oos_all_factor_returns_history: OOS 월별 전체 팩터 수익률 dict 리스트.
         rebalance_log: 리밸런싱 로그 DataFrame.
@@ -47,6 +48,7 @@ class WalkForwardResult:
             self.oos_ew_all_cumulative = pd.Series(dtype=float)
             self.oos_ew_top50_cumulative = pd.Series(dtype=float)
             self.weight_history = pd.DataFrame()
+            self.contribution_history = pd.DataFrame()
             self.is_meta_history = []
             self.oos_factor_returns_history = []
             self.active_factors_history = []
@@ -101,8 +103,25 @@ class WalkForwardResult:
         else:
             self.weight_history = pd.DataFrame()
 
-        # IS meta 이력 (Tier 2 리밸런싱 시점만)
-        self.is_meta_history = [r["is_meta"] for r in results if r.get("is_weight_rebal") and r.get("is_meta") is not None]
+        # 팩터 기여도 이력 (비중 x 당월 수익; 행합 = oos_return) — weight_history 와
+        # 동일한 결정적 직렬화 (2026-08-28 성과 원천 상설화)
+        contrib_records = []
+        for r in results:
+            if r.get("contributions"):
+                row = {"date": r["date"]}
+                row.update(r["contributions"])
+                contrib_records.append(row)
+        if contrib_records:
+            chist = pd.DataFrame(contrib_records).set_index("date")
+            self.contribution_history = chist.reindex(sorted(chist.columns), axis=1)
+        else:
+            self.contribution_history = pd.DataFrame()
+
+        # IS meta 이력 (Tier 2 리밸런싱 시점만). None 자리(Tier 2 실패 달)를 보존해
+        # overfit_diagnostics 의 weight_rebal_indices 와 위치 정렬을 유지한다
+        # (2026-08-25: 구 필터링은 실패 달 이후 전 구간의 meta<->OOS 창 짝을 한 칸씩
+        # 밀었음. 소비자는 meta is None 을 이미 skip 함).
+        self.is_meta_history = [r["is_meta"] for r in results if r.get("is_weight_rebal")]
 
         # Active factors 이력 (Tier 2 리밸런싱 시점만, weight>0 팩터 set)
         self.active_factors_history = [

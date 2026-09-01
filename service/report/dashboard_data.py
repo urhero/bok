@@ -201,13 +201,6 @@ def extended_stats(curves: pd.DataFrame) -> dict:
     }
 
 
-def rolling_sharpe(curves: pd.DataFrame, window: int = 12) -> pd.Series:
-    """롤링 window 개월 연환산 Sharpe (CEW). window 미만 구간은 dropna 로 제외."""
-    r = curves["cew_return"].astype(float)
-    rs = (r.rolling(window).mean() / r.rolling(window).std()) * (12 ** 0.5)
-    return rs.dropna()
-
-
 def build_vol_regime(source, window: int = 18, k_cap: float = 1.5):
     """전략(CEW) 월간 수익률의 실현변동성 국면 + 참고 배수 k.
 
@@ -396,30 +389,35 @@ def factor_tilt(weights: pd.DataFrame, top_n: int | None = None) -> pd.DataFrame
 
 
 def longs_shorts_style_decomposition(weights: pd.DataFrame, n: int = 15,
-                                     top_factors: int = 5) -> pd.DataFrame:
+                                     top_factors: int = 5,
+                                     id_col: str = "ticker") -> pd.DataFrame:
     """상위 롱/숏 종목의 (ticker, style) 순기여 분해 + 호버용 팩터 상세.
 
     top_longs_shorts 와 동일한 종목 집합(순비중 상위 롱 n + 숏 n)에 대해,
     스타일별 mp_ls_weight 합(contrib)과 그 스타일 안에서 |기여| 상위
     top_factors 개 팩터 문자열(detail, "외 N개 합계" 포함)을 만든다.
 
+    id_col: 종목 식별/라벨 컬럼 ("ticker" 또는 "isin" — ticker 는 결측 종목이
+    빠지므로 대시보드는 isin 사용, 2026-08-26). 출력 컬럼명은 스키마 유지 위해
+    "ticker" 로 고정한다 (값은 id_col 의 값).
+
     Returns:
         (ticker, style, contrib, net, detail) DataFrame.
         contrib 를 ticker 로 합치면 net(종목 순비중)과 일치한다.
     """
-    net = weights.groupby("ticker")["mp_ls_weight"].sum()
+    net = weights.groupby(id_col)["mp_ls_weight"].sum()
     net = net[net != 0]
     sel = pd.concat([net.sort_values(ascending=False).head(n), net.sort_values().head(n)])
     sel = sel[~sel.index.duplicated()]
 
-    sub = weights[weights["ticker"].isin(sel.index)]
-    per_f = (sub.groupby(["ticker", "style", "factor"], observed=True)["mp_ls_weight"]
+    sub = weights[weights[id_col].isin(sel.index)]
+    per_f = (sub.groupby([id_col, "style", "factor"], observed=True)["mp_ls_weight"]
              .sum().reset_index())
     per_f = per_f[per_f["mp_ls_weight"] != 0]
 
-    # (ticker, style) 그룹은 최대 2n x 스타일수 (~240개) — viz 레이어 소규모 루프 허용
+    # (id, style) 그룹은 최대 2n x 스타일수 (~400개) — viz 레이어 소규모 루프 허용
     rows = []
-    for (t, st), g in per_f.groupby(["ticker", "style"], observed=True):
+    for (t, st), g in per_f.groupby([id_col, "style"], observed=True):
         g = g.reindex(g["mp_ls_weight"].abs().sort_values(ascending=False).index)
         top = g.head(top_factors)
         parts = [f"{r.factor} {r.mp_ls_weight:+.2%}" for r in top.itertuples()]
@@ -433,9 +431,12 @@ def longs_shorts_style_decomposition(weights: pd.DataFrame, n: int = 15,
     return pd.DataFrame(rows)
 
 
-def top_longs_shorts(weights: pd.DataFrame, n: int = 15) -> pd.DataFrame:
-    """종목별 순비중(mp_ls_weight 합) 상위 롱 n + 하위(숏) n -> (ticker, weight, side)."""
-    net = weights.groupby("ticker")["mp_ls_weight"].sum()
+def top_longs_shorts(weights: pd.DataFrame, n: int = 15,
+                     id_col: str = "ticker") -> pd.DataFrame:
+    """종목별 순비중(mp_ls_weight 합) 상위 롱 n + 하위(숏) n -> (ticker, weight, side).
+
+    id_col: 종목 식별/라벨 컬럼 (출력 컬럼명은 "ticker" 로 고정, 값은 id_col 값)."""
+    net = weights.groupby(id_col)["mp_ls_weight"].sum()
     net = net[net != 0]
     longs = net.sort_values(ascending=False).head(n)
     shorts = net.sort_values().head(n)
@@ -450,6 +451,36 @@ def top_longs_shorts(weights: pd.DataFrame, n: int = 15) -> pd.DataFrame:
 def load_meta(path: Path) -> pd.DataFrame:
     """meta_data.csv -> 팩터 랭킹 테이블."""
     return pd.read_csv(path)
+
+
+def factor_delta_decomposition(output_dir: Path, snap: str):
+    """직전 스냅샷 대비 팩터별 명목 비중(캡 후) 변화 — 어떤 팩터가 +/- 였는지.
+
+    mp_weight_history/style_cap_effect_*.csv 시계열에서 snap 직전 파일과 비교한다.
+    신규 편입 팩터는 prev=0, 편출 팩터는 new=0 으로 잡힌다.
+
+    Returns:
+        (DataFrame(factor, style, prev, new, delta), prev_snap) — 직전 파일이
+        없거나 변화가 전혀 없으면 None.
+    """
+    hist = Path(output_dir) / "mp_weight_history"
+    files = sorted(hist.glob("style_cap_effect_*.csv"))
+    names = [f.stem.replace("style_cap_effect_", "") for f in files]
+    if snap not in names or names.index(snap) == 0:
+        return None
+    i = names.index(snap)
+    cols = ["factor", "styleName", "fitted_weight"]
+    cur = pd.read_csv(files[i])[cols]
+    prev = pd.read_csv(files[i - 1])[cols]
+    m = cur.merge(prev, on="factor", how="outer", suffixes=("", "_prev"))
+    m["style"] = m["styleName"].fillna(m["styleName_prev"])
+    m["new"] = m["fitted_weight"].fillna(0.0)
+    m["prev"] = m["fitted_weight_prev"].fillna(0.0)
+    m["delta"] = m["new"] - m["prev"]
+    m = m[m["delta"].abs() > 1e-12]
+    if m.empty:
+        return None
+    return m[["factor", "style", "prev", "new", "delta"]].reset_index(drop=True), names[i - 1]
 
 
 def load_style_deltas(output_dir: Path, snapshot_date: str) -> pd.DataFrame | None:
@@ -492,12 +523,68 @@ def sector_net_weights(weights: pd.DataFrame, sector_map: dict) -> pd.Series:
     return s[s != 0].sort_values()
 
 
+def sector_style_decomposition(weights: pd.DataFrame, sector_map: dict) -> pd.DataFrame:
+    """섹터 순노출의 스타일별 분해 (sec, style, contrib, net) — 롱/숏 분해와 동일 구조.
+
+    contrib 를 sec 로 합치면 net(섹터 순노출)과 일치한다. 스타일 컬럼이 없거나
+    분해가 비면 빈 DataFrame (호출부는 단일 막대로 폴백).
+    """
+    if "style" not in weights.columns:
+        return pd.DataFrame()
+    w = weights.copy()
+    w["sec"] = w["gvkeyiid"].astype(str).map(sector_map).fillna("Unknown")
+    per = (w.groupby(["sec", "style"], observed=True)["mp_ls_weight"]
+           .sum().reset_index(name="contrib"))
+    per = per[per["contrib"] != 0]
+    if per.empty:
+        return per
+    net = per.groupby("sec")["contrib"].sum()
+    per["net"] = per["sec"].map(net)
+    return per.reset_index(drop=True)
+
+
 # ── 백테스트 가중치 추이 / 회전율 ──────────────────────────────────────────
 
 def load_weight_history(path: Path) -> pd.DataFrame:
     """walk_forward_weight_history.csv -> date 인덱스 x factor 컬럼 DataFrame."""
     df = pd.read_csv(path, parse_dates=["date"])
     return df.set_index("date").sort_index()
+
+
+def load_factor_contrib(path: Path) -> pd.DataFrame:
+    """factor_contrib.csv -> date 인덱스 DataFrame (비중 x 당월수익, 행합 = cew_return).
+
+    워크포워드 엔진이 각 OOS 월의 '당시 규칙' 기준으로 기록한 정확 기여도
+    (2026-08-28 상설화). 사후 재구성은 최종 규칙 look-ahead 로 왜곡되므로 금지.
+    """
+    df = pd.read_csv(path, parse_dates=["date"])
+    return df.set_index("date").sort_index()
+
+
+def contrib_style_yearly(contrib: pd.DataFrame, style_map: dict) -> pd.DataFrame:
+    """연도 x 스타일 기여 합 (%p). 스타일 미등록 팩터는 '기타'.
+
+    컬럼은 전 기간 기여 합 내림차순 정렬 (읽는 순서 = 중요도).
+    """
+    c = contrib.apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    sty = c.T.groupby(c.columns.map(lambda f: style_map.get(f, "기타"))).sum().T
+    yr = sty.groupby(sty.index.year).sum() * 100.0
+    return yr[yr.sum().sort_values(ascending=False).index]
+
+
+def contrib_top_factors_yearly(contrib: pd.DataFrame, n_top: int = 3,
+                               n_bottom: int = 2) -> list[dict]:
+    """연도별 상/하위 기여 팩터. [{year, total, top: [(f, %p)], bottom: [(f, %p)]}]"""
+    c = contrib.apply(pd.to_numeric, errors="coerce")
+    yearly = c.groupby(c.index.year).sum() * 100.0
+    out = []
+    for y, row in yearly.iterrows():
+        r = row.dropna()
+        r = r[r != 0.0]
+        out.append({"year": int(y), "total": float(r.sum()),
+                    "top": list(r.nlargest(n_top).items()),
+                    "bottom": list(r.nsmallest(n_bottom).items())})
+    return out
 
 
 def compute_turnover(weight_history: pd.DataFrame) -> pd.Series:
@@ -530,6 +617,22 @@ def factor_style_map(factor_info_path: Path) -> dict:
     """factor_info.csv -> factorAbbreviation -> styleName 매핑."""
     df = pd.read_csv(factor_info_path)
     return dict(zip(df["factorAbbreviation"].astype(str), df["styleName"].astype(str)))
+
+
+def factor_name_map(factor_info_path: Path) -> dict:
+    """factor_info.csv -> factorAbbreviation -> factorName(전체명) 매핑."""
+    df = pd.read_csv(factor_info_path)
+    return dict(zip(df["factorAbbreviation"].astype(str), df["factorName"].astype(str)))
+
+
+def factor_desc_map(desc_path: Path) -> dict:
+    """factor_desc_kr.csv -> factorAbbreviation -> 1줄 한글 설명 매핑.
+
+    성과 원천 표용 수기 큐레이션 (2026-08-28). 미등재 팩터는 설명 줄 생략 —
+    표에 새 팩터가 등장하면 이 CSV에 행을 추가한다.
+    """
+    df = pd.read_csv(desc_path)
+    return dict(zip(df["factorAbbreviation"].astype(str), df["desc_kr"].astype(str)))
 
 
 def style_weight_history(weight_history: pd.DataFrame, factor_style: dict) -> pd.DataFrame:

@@ -21,6 +21,41 @@ from config import PARAM
 
 logger = logging.getLogger(__name__)
 
+# universe 테이블명은 파라미터화 불가 (DDL 식별자) → allowlist로 검증
+ALLOWED_UNIVERSES = {"clarifi_mxcn1a_afl", "clarifi_mxwo_afl"}
+
+
+def _build_engine(arg: dict):
+    """PARAM dict 로 SQLAlchemy 엔진 생성 (fetch_snp / fetch_country_map 공용)."""
+    conn_url = sql.engine.URL.create(
+        "mssql+pyodbc",
+        username=arg["user_name"],
+        password=arg["user_pwd"],
+        host=arg["server_name"],
+        database=arg["db_name"],
+        query={"driver": arg["odbc_name"]},
+    )
+    return sql.create_engine(conn_url)
+
+
+def fetch_country_map(param: dict | None = None) -> pd.DataFrame:
+    """gvkeyiid -> country 매핑을 반환한다 (지역 중립 랭킹용).
+
+    country 는 정적 속성 (전 이력 복수 국가 종목 0건 확인, 2026-07-28).
+    """
+    arg = param if param is not None else PARAM
+    universe = arg["universe"]
+    if universe not in ALLOWED_UNIVERSES:
+        raise ValueError(f"Invalid universe '{universe}'. Allowed: {ALLOWED_UNIVERSES}")
+    engine = _build_engine(arg)
+    df = pd.read_sql_query(
+        sql.text(f"SELECT gvkeyiid, MAX(country) AS country FROM [dbo].[{universe}] GROUP BY gvkeyiid"),
+        con=engine,
+    )
+    engine.dispose()
+    return df
+
+
 class GenerateQueryStructure:
     """Fetch raw factor data from SQL Server between *start* and *end* dates."""
 
@@ -45,20 +80,8 @@ class GenerateQueryStructure:
 
         logger.info("Fetching factors %s → %s (universe=%s)", self.start_date, self.end_date, arg["universe"])
 
-        # Build SQLAlchemy connection URL (ODBC driver)
-        conn_url = sql.engine.URL.create(
-            "mssql+pyodbc",
-            username=arg["user_name"],
-            password=arg["user_pwd"],
-            host=arg["server_name"],
-            database=arg["db_name"],
-            query={"driver": arg["odbc_name"]},
-        )
+        engine = _build_engine(arg)
 
-        engine = sql.create_engine(conn_url)
-
-        # universe 테이블명은 파라미터화 불가 (DDL 식별자) → allowlist로 검증
-        ALLOWED_UNIVERSES = {"clarifi_mxcn1a_afl", "clarifi_mxwo_afl"}
         universe = arg["universe"]
         if universe not in ALLOWED_UNIVERSES:
             raise ValueError(f"Invalid universe '{universe}'. Allowed: {ALLOWED_UNIVERSES}")
@@ -84,6 +107,11 @@ class GenerateQueryStructure:
         logger.debug("SQL query with params: start=%s, end=%s", self.start_date, self.end_date)
         df = pd.read_sql_query(query_raw, con=engine, params={"start_date": self.start_date, "end_date": self.end_date})
         engine.dispose()
+
+        # 서버에 따라 ddt가 datetime.date(object)로 내려온다 (kb_global의 date 컬럼).
+        # 파이프라인 전역이 datetime64를 가정하므로 fetch 지점에서 정규화한다.
+        if not df.empty:
+            df["ddt"] = pd.to_datetime(df["ddt"])
 
         if df.empty:
             logger.warning("No rows returned for given date range.")

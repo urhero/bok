@@ -20,6 +20,11 @@ import pandas as pd
 from rich.progress import track
 
 from config import PARAM, PIPELINE_PARAMS
+from service.backtest.stock_level import (
+    build_stock_series,
+    series_metrics,
+    stock_weights_at,
+)
 from service.backtest.data_slicer import get_oos_dates
 from service.factor.selection import (
     apply_selection_hysteresis,
@@ -38,7 +43,7 @@ from service.pipeline.model_portfolio import (
     ModelPortfolioPipeline,
     aggregate_factor_returns,
 )
-from service.pipeline.optimization import optimize_constrained_weights
+from service.pipeline.optimization import optimize_constrained_weights, weight_kwargs_from
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +65,16 @@ def deploy_weights(
 
 # 최소 유효 팩터 수 — 이 미만이면 Tier 2 스킵
 MIN_REQUIRED_FACTORS = 5
+
+
+def rolling_is_start(all_dates: list, is_end_idx: int, window_months: int | None):
+    """롤링 IS 시작 날짜를 반환한다. window 미지정(None/0)이면 None(=expanding).
+
+    윈도우가 가용 이력보다 길면 처음부터 사용한다 (expanding 과 동일).
+    """
+    if not window_months:
+        return None
+    return all_dates[max(0, is_end_idx - window_months + 1)]
 
 
 def _run_rule_learning(
@@ -98,6 +113,13 @@ def _run_rule_learning(
         test_mode=bool(test_file),
         min_sector_stocks=pp["min_sector_stocks"],
         sector_spread_geometric=bool(pp.get("sector_spread_geometric", False)),
+        # 커버리지 필터는 IS 학습에만 적용 (규칙으로서 kept_abbrs 에 반영됨).
+        # 전체 데이터 사전계산(factor_stats_full)에는 미적용 — IS/full 커버리지가
+        # 임계 근처에서 엇갈릴 때 kept 팩터의 stats 가 사라지는 불일치 방지.
+        min_coverage_pct=float(pp.get("min_coverage_pct", 0.0)),
+        # 랭킹 그룹은 구조 파라미터 — IS/full 양쪽 동일 적용 (횡단면, look-ahead 없음)
+        ranking_group=("sector" if test_file else pp.get("ranking_group", "sector")),
+        n_quantiles=int(pp.get("n_quantiles", 5)),
     )
 
     # [3] 섹터 필터링 + L/N/S 라벨링
@@ -146,6 +168,7 @@ def _apply_rules_and_aggregate(
     rule_bundle: dict[str, Any],
     pipeline: ModelPortfolioPipeline,
     universe_df: pd.DataFrame | None = None,
+    out_frames: dict | None = None,
 ) -> pd.DataFrame:
     """IS에서 학습한 규칙을 (사전 계산된) 전체 데이터 5분위 통계에 적용하고 팩터 수익률을 사전 계산한다.
 
@@ -236,6 +259,13 @@ def _apply_rules_and_aggregate(
         logger.warning("No valid factors after applying IS rules to full data")
         return pd.DataFrame()
 
+    # 종목단 재구성용 프레임 보존 (2026-08-19): 노출/배수/TE 시계열 산출에 필요.
+    # 호출부가 out_frames 를 넘기면 abbr -> 라벨 프레임 매핑을 채워준다 (반환 시그니처
+    # 불변 -> 기존 호출부/테스트 영향 없음).
+    if out_frames is not None:
+        out_frames.clear()
+        out_frames.update(dict(zip(valid_abbrs, valid_filtered)))
+
     # aggregate_factor_returns 1회 실행 (전기간)
     precomputed_ret_df = aggregate_factor_returns(
         valid_filtered, valid_abbrs,
@@ -252,12 +282,14 @@ def _resolve_backtest_cost_bps(pp: dict) -> float:
     팩터별 전액 계상은 교차 팩터 netting(실거래는 MP 합산 후 월 1회 매매)을 무시해
     비용을 과대평가한다. MP-level 실측 netting ratio = 0.574 (실제 종목매매비용 /
     팩터별 전액계상 비용, docs/experiments/mp_level_cost_20260703.md) -> 기본 배수
-    0.6 으로 근사 (20bp x 0.6 = 12bp). 상세는 config.py 주석 참조.
+    0.6 으로 근사 (현 MXWO 기본 10bp x 0.6 = 6bp). 상세는 config.py 주석 참조.
 
     - 배수는 config PIPELINE_PARAMS['backtest_cost_multiplier'] 로 조정한다 (figure 관리).
     - 운영 mp 파이프라인에는 적용되지 않는다 (이 함수는 백테스트 엔진 전용).
     """
-    base = float(pp.get("transaction_cost_bps", 20.0))
+    # 키 폴백 없음 (2026-08-25): 구 fallback 20.0 은 config(10bp)와 어긋나 키 누락 시
+    # 조용히 2배 비용으로 돌았음. 호출자는 모두 PIPELINE_PARAMS 기반 -> fail-loud.
+    base = float(pp["transaction_cost_bps"])
     mult = float(pp.get("backtest_cost_multiplier", 0.6))
     return base * mult
 
@@ -277,16 +309,9 @@ def _run_weight_optimization(
     style_list = [style_map[f] for f in factor_list]
     ret_subset = ret_df_is[factor_list]
 
-    # TS 모멘텀 틸트는 optimize_constrained_weights 내부에서 캡 재분배 이전에 적용
-    # (2026-08-05 채택 — mp 파이프라인과 동일 경로 공유)
+    # 파라미터 추출은 weight_kwargs_from 단일 출처 (2026-08-25 — mp 와 공유)
     _best_stats, weights_tbl = optimize_constrained_weights(
-        ret_subset, style_list,
-        mode=pp["optimization_mode"],
-        style_cap=pp["style_cap"],
-        style_cap_basis=pp.get("style_cap_basis", "weight"),
-        erc_shrinkage=float(pp.get("erc_shrinkage", 0.5)),
-        ts_mom_window=pp.get("ts_mom_window"),
-        ts_mom_scale=float(pp.get("ts_mom_scale", 0.5)),
+        ret_subset, style_list, **weight_kwargs_from(pp),
     )
 
     weights_dict = dict(zip(weights_tbl["factor"], weights_tbl["fitted_weight"]))
@@ -316,6 +341,7 @@ class WalkForwardEngine:
         top_factors: int = 50,
         selection_hysteresis: float = 0.0,
         pipeline_params_override: dict | None = None,
+        is_window_months: int | None = None,
     ):
         self.min_is_months = min_is_months
         self.factor_rebal_months = factor_rebal_months
@@ -323,6 +349,9 @@ class WalkForwardEngine:
         self.top_factors = top_factors
         self.selection_hysteresis = selection_hysteresis
         self.pipeline_params_override = pipeline_params_override
+        # 롤링 IS 윈도우 (개월). None=expanding(기존). 지정 시 Tier 1 규칙 학습과
+        # Tier 2 선정/가중 IS 를 모두 최근 N개월로 제한 — 레짐 적응용 (2026-07-28).
+        self.is_window_months = is_window_months
 
     def run(
         self,
@@ -353,7 +382,7 @@ class WalkForwardEngine:
         if pp["optimization_mode"] == "hardcoded":
             pp["optimization_mode"] = "equal_weight"  # hardcoded는 backtest에서 사용 불가
 
-        # factor-level 백테스트 비용 보정: 종목비용 x backtest_cost_multiplier (기본 0.6 -> 20bp x 0.6 = 12bp).
+        # factor-level 백테스트 비용 보정: 종목비용 x backtest_cost_multiplier (기본 0.6 -> 10bp x 0.6 = 6bp).
         # 팩터별 전액 계상은 교차 팩터 netting(실거래는 MP 합산 후 월 1회 매매)을 무시해 과대평가
         # -> MP-level 실측 netting ratio 0.574 로 근사 (_resolve_backtest_cost_bps 참조).
         # 이 pp 가 이후 ModelPortfolioPipeline / aggregate_factor_returns 전체에 적용됨.
@@ -406,9 +435,14 @@ class WalkForwardEngine:
             test_mode=bool(test_file),
             min_sector_stocks=pp["min_sector_stocks"],
             sector_spread_geometric=bool(pp.get("sector_spread_geometric", False)),
+            # 랭킹 그룹은 IS 학습과 동일해야 함 (구조 파라미터, 횡단면이라 안전)
+            ranking_group=("sector" if test_file else pp.get("ranking_group", "sector")),
+            n_quantiles=int(pp.get("n_quantiles", 5)),
         )
 
         # 2. 캐시 초기화
+        stock_frames: dict = {}
+        stock_monthly: list = []
         cached_rule_bundle: dict | None = None
         precomputed_ret_df: pd.DataFrame | None = None
         cached_weights: dict[str, float] | None = None
@@ -423,6 +457,7 @@ class WalkForwardEngine:
         for i, oos_date in enumerate(track(oos_dates, description="Walk-Forward OOS...")):
             is_end_idx = self.min_is_months + i - 1
             is_end_date = all_dates[is_end_idx]
+            is_start_date = rolling_is_start(all_dates, is_end_idx, self.is_window_months)
 
             is_rule_rebal = False
             is_weight_rebal = False
@@ -433,7 +468,13 @@ class WalkForwardEngine:
                 # IS 는 캐시된 전체 merged 를 날짜 슬라이스해 재사용 (Tier 1 마다의 재-merge/copy 제거).
                 #   merged_full[ddt<=cutoff] == _prepare_metadata(is_raw)  (동일 행·순서, inner merge 키에 ddt 포함)
                 #   -> byte-identical. factor_metadata/abbr/orders 도 전체와 동일(factor_info.csv 고정).
+                # 경계 계약: <= inclusive (data_slicer.slice_data_by_date 와 동일 — < 로 바꾸면
+                #   IS 가 1개월 짧아지는 off-by-one. 계약 테스트는 test_oos_purity 참조).
                 merged_is = merged_full[merged_full["ddt"] <= pd.Timestamp(is_end_date)]
+                if is_start_date is not None:
+                    # 롤링 IS: lag(shift 1) 소실 방지를 위해 시작 1개월 이전부터 슬라이스
+                    lag_start = pd.Timestamp(is_start_date) - pd.DateOffset(months=1, days=5)
+                    merged_is = merged_is[merged_is["ddt"] >= lag_start]
                 prepared_is = (_meta_full, merged_is, factor_abbr_list_full, orders_full)
                 cached_rule_bundle = _run_rule_learning(
                     None, None, pipeline, test_file, prepared=prepared_is,
@@ -442,7 +483,7 @@ class WalkForwardEngine:
                 # 사전 계산된 전체 데이터 5분위 통계에 규칙 적용 + aggregate 1회 실행
                 precomputed_ret_df = _apply_rules_and_aggregate(
                     factor_stats_full, factor_abbr_list_full, cached_rule_bundle, pipeline,
-                    universe_df=universe_df,
+                    universe_df=universe_df, out_frames=stock_frames,
                 )
 
                 if precomputed_ret_df.empty:
@@ -468,7 +509,10 @@ class WalkForwardEngine:
                 is_weight_rebal = True
 
                 # IS 구간 슬라이스 (aggregate 재실행 불필요)
-                ret_df_is = precomputed_ret_df[precomputed_ret_df.index <= is_end_date].copy()
+                ret_df_is = precomputed_ret_df[precomputed_ret_df.index <= is_end_date]
+                if is_start_date is not None:
+                    ret_df_is = ret_df_is[ret_df_is.index >= pd.Timestamp(is_start_date)]
+                ret_df_is = ret_df_is.copy()
 
                 if len(ret_df_is) < 3:
                     logger.warning("OOS %s: IS 구간 너무 짧음 (%d), 이전 가중치 유지", oos_date, len(ret_df_is))
@@ -509,6 +553,8 @@ class WalkForwardEngine:
                         ret_df_selected = ret_df_is[selected]
 
                         try:
+                            # TS 틸트는 _run_weight_optimization 내부(캡 이전)에서 적용
+                            # (2026-08-06 순서 교정 — 캡 준수 보장)
                             raw_new_weights, cached_meta = _run_weight_optimization(
                                 ret_df_selected, meta_top, pp,
                             )
@@ -532,8 +578,11 @@ class WalkForwardEngine:
                             # 구 step_smooth(step=1.0) 동작 보존(출력 byte 동일): 정렬 + 합 1.0 재정규화.
                             _order = sorted(raw_new_weights)
                             _wscale = 1.0 / sum(raw_new_weights[f] for f in _order)
-                            cached_weights = {f: raw_new_weights[f] * _wscale for f in _order}
-                            cached_selected_factors = list(raw_new_weights.keys())
+                            _target = {f: raw_new_weights[f] * _wscale for f in _order}
+                            from service.pipeline.optimization import blend_deploy_weights
+                            cached_weights = blend_deploy_weights(
+                                _target, cached_weights, float(pp.get("deploy_step", 1.0)))
+                            cached_selected_factors = list(cached_weights.keys())
 
             if cached_weights is None or cached_selected_factors is None:
                 continue
@@ -542,6 +591,18 @@ class WalkForwardEngine:
             if oos_date not in precomputed_ret_df.index:
                 logger.warning("OOS date %s not in precomputed_ret_df, skipping", oos_date)
                 continue
+
+            # 종목단 재구성 (2026-08-19): 프레임이 살아있는 이 시점에 월별 종목
+            # 순비중만 뽑아 둔다 (프레임 자체는 무거워 보관하지 않음).
+            if stock_frames:
+                w_t, r_t = stock_weights_at(
+                    stock_frames, cached_weights, oos_date,
+                    pd.Timestamp(pp["backtest_start"]),
+                    stock_weight_cap=pp.get("stock_weight_cap"),
+                    sector_short_cap=pp.get("sector_short_cap"),
+                )
+                if len(w_t):
+                    stock_monthly.append((oos_date, w_t, r_t))
 
             record = self._assemble_oos_record(
                 oos_date, precomputed_ret_df, cached_weights, cached_meta,
@@ -558,10 +619,34 @@ class WalkForwardEngine:
         # 성과 산출물이 아니라 상관 구조 참고 데이터. 테스트 모드는 생략)
         if not test_file and precomputed_ret_df is not None and not precomputed_ret_df.empty:
             try:
-                from service.paths import OUTPUT_DIR
-                precomputed_ret_df.to_csv(OUTPUT_DIR / "factor_returns_matrix.csv")
+                from service.paths import OUTPUT_DIR, dated
+                precomputed_ret_df.to_csv(dated(
+                    OUTPUT_DIR / "factor_returns_matrix.csv",
+                    precomputed_ret_df.index.max()))
             except OSError as e:
                 logger.warning("factor_returns_matrix 저장 실패 (%s)", e)
+
+        # 배포 기준 시계열 저장 (노출/배수/TE) — 종목단 netting 반영
+        if not test_file and stock_monthly:
+            try:
+                from service.paths import OUTPUT_DIR, dated
+                # 목표 노출 일정(Active Risk 조정 이력) 반영 — 시점별로 다른 규모
+                from service.paths import DATA_DIR as _DD
+                from service.pipeline.weight_construction import resolve_target_gross
+                _tg_path, _tg_def = _DD / "mp_target_gross.csv", pp.get("mp_target_gross")
+                series = build_stock_series(
+                    stock_monthly, float(PIPELINE_PARAMS["transaction_cost_bps"]),
+                    lambda d: resolve_target_gross(d, _tg_path, _tg_def),
+                    benchmark=(PARAM["benchmark"] if pp.get("bm_short_cap") else None),
+                )
+                series.to_csv(dated(OUTPUT_DIR / "stock_level_series.csv", series.index.max()))
+                m = series_metrics(series)
+                logger.info(
+                    "배포 기준(노출 %.1f%%): Sharpe %.3f / CAGR %.2f%% / MDD %.2f%% / TE %.2f%% / IR %.2f",
+                    m["avg_long_exposure"] * 100, m["sharpe"], m["cagr"] * 100,
+                    m["mdd"] * 100, m["tracking_error"] * 100, m["info_ratio"])
+            except Exception as e:  # 산출물 보존 우선
+                logger.warning("stock_level_series 생성 실패 (%s)", e)
 
         return WalkForwardResult(results)
 
@@ -576,6 +661,17 @@ class WalkForwardEngine:
             클러스터 dedup **이전** 순수 rank_score 상위 top_n 리스트
             (Funnel Value-Add 의 B 단계 = 1차 랭킹 필터 곡선용).
         """
+        # 팩터 MDD 극단 필터 (MDD/Calmar 실험, 2026-07-30): IS 창에서 팩터 자체
+        # 낙폭이 최악 분위인 팩터를 선정 후보에서 제외. 미지정(None/0) = no-op.
+        mdd_filter_pct = pp.get("factor_mdd_filter_pct")
+        if mdd_filter_pct:
+            eq = (1 + ret_df_is).cumprod()
+            factor_mdd = (eq / eq.cummax() - 1).min()  # 팩터별 (음수)
+            cutoff = factor_mdd.quantile(float(mdd_filter_pct))
+            keep_cols = factor_mdd.index[factor_mdd >= cutoff]
+            if len(keep_cols) >= MIN_REQUIRED_FACTORS:
+                ret_df_is = ret_df_is[keep_cols]
+
         months = len(ret_df_is) - 1
         cum = (1 + ret_df_is).cumprod().iloc[-1]
         cagr_series = cum ** (12 / months) - 1
@@ -668,11 +764,18 @@ class WalkForwardEngine:
         oos_return = sum(oos_factor_returns[f] * avail_weights.get(f, 0) for f in available_factors)
         oos_ew_return = oos_factor_returns.mean()
 
+        # 팩터별 기여도 (비중 x 당월 수익; 합 = oos_return) — 성과 원천 분석의 정식
+        # 산출물. 사후 재구성(최종 윈도우 수익 행렬 x 비중)은 look-ahead 로 왜곡되므로
+        # (corr 0.68, 2025년 2배 과대 실측) 당시 규칙 기준으로 여기서 기록한다 (2026-08-28).
+        contributions = {f: oos_factor_returns[f] * avail_weights.get(f, 0)
+                         for f in available_factors}
+
         return {
             "date": oos_date,
             "oos_return": oos_return,
             "oos_ew_return": oos_ew_return,
             "oos_factor_returns": oos_factor_returns.to_dict(),
+            "contributions": contributions,
             "weights": dict(cached_weights),
             "is_meta": cached_meta.copy() if cached_meta is not None else None,
             "is_rule_rebal": is_rule_rebal,

@@ -20,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 
 from service.factor.factor_returns import aggregate_factor_returns
-from service.paths import HISTORY_DIR, OUTPUT_DIR
+from service.paths import HISTORY_DIR, OUTPUT_DIR, dated
 from service.pipeline.weight_history import load_prev_selection
 from utils.validation import validate_return_matrix
 
@@ -90,7 +90,10 @@ def evaluate_universe(kept_abbrs, kept_names, kept_styles, filtered_data, end_da
     meta = meta_all[meta_all["factorAbbreviation"].isin(valid)].reset_index(drop=True)
 
     months = len(ret_df) - 1
-    meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).values
+    # 명시 정렬 (다른 지표 3개와 동일한 reindex 관례): 위치 대입은 중복 팩터명으로
+    # 컬럼 dedup 이 발동하면 meta(중복 행 유지)와 길이가 어긋나 크래시했음
+    meta["cagr"] = ((1 + ret_df).cumprod().iloc[-1] ** (12 / months) - 1).reindex(
+        meta["factorAbbreviation"]).values
 
     # Sprint 1-C: Newey-West 보정 t-stat 진단 컬럼 (관찰용)
     from service.factor.selection import (
@@ -126,7 +129,8 @@ def evaluate_universe(kept_abbrs, kept_names, kept_styles, filtered_data, end_da
         suffix = f"_{Path(test_file).stem}"
         meta.to_csv(OUTPUT_DIR / f"meta_data_test{suffix}.csv", index=False)
     else:
-        meta.to_csv(OUTPUT_DIR / "meta_data.csv", index=False)
+        # 기준일 = 수익률 행렬의 마지막 월
+        meta.to_csv(dated(OUTPUT_DIR / "meta_data.csv", ret_df.index.max()), index=False)
 
     top_n = min(pipeline_params["top_factor_count"], len(meta))
     meta_full = meta  # truncation 전 전체 후보 (히스테리시스 부활 후보/점수 조회용)

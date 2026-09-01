@@ -25,7 +25,7 @@ from matplotlib.patches import Ellipse, Rectangle
 
 from config import PARAM, PIPELINE_PARAMS
 from service.factor.factor_returns import aggregate_factor_returns
-from service.paths import HISTORY_DIR, OUTPUT_DIR
+from service.paths import HISTORY_DIR, OUTPUT_DIR, latest
 from service.pipeline.factor_analysis import filter_and_label_factors
 from service.report.style_colors import STYLE_COLORS, _DEFAULT_COLOR
 
@@ -106,8 +106,43 @@ def _fmt_tick(t):
 
 
 # ── 커버 페이지 ──────────────────────────────────────────────────────────────
-def _cover_page(pp, appendix_no, title_lines, desc, style_counts, today,
-                howto_draw, n_inport=0):
+def _callout(fig, xpx, ypx, n, r=8.0):
+    """동그라미 번호 주석 (읽는 법 가이드용)."""
+    from matplotlib.patches import Circle
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
+    ax.set_xlim(0, PAGE_W); ax.set_ylim(PAGE_H, 0)
+    ax.add_patch(Circle((xpx, ypx), r, facecolor=INK, edgecolor="none", zorder=6))
+    _text(fig, xpx, ypx - 5.5, str(n), 10, "#ffffff", weight="bold", ha="center")
+
+
+def _guide_box(fig, xpx, ypx, wpx, hpx, n, corner="tl"):
+    """읽는 법 가이드: 해당 영역을 점선 라운드 박스로 감싸고 모서리에 번호 원.
+
+    corner="tl"(좌상단, 기본) / "tr"(우상단 — 왼쪽에 긴 텍스트가 있을 때).
+    """
+    from matplotlib.patches import FancyBboxPatch
+    ax = fig.add_axes([0, 0, 1, 1]); ax.axis("off")
+    ax.set_xlim(0, PAGE_W); ax.set_ylim(PAGE_H, 0)
+    ax.add_patch(FancyBboxPatch(
+        (xpx, ypx), wpx, hpx, boxstyle="round,pad=0,rounding_size=5",
+        facecolor="none", edgecolor=INK, linewidth=1.0,
+        linestyle=(0, (3, 2)), alpha=0.55, zorder=5))
+    cx = xpx if corner == "tl" else xpx + wpx
+    _callout(fig, cx, ypx, n)
+
+
+def _example_notes(fig, x, y, notes, line_h=17.0, wrap_x=None):
+    """번호별 설명 리스트. notes = [(번호, [줄들])]."""
+    for num, lines in notes:
+        _callout(fig, x + 8, y + 7, num)
+        for j, ln in enumerate(lines):
+            _text(fig, x + 24, y + j * line_h, ln, 10.5, SUB)
+        y += len(lines) * line_h + 8
+    return y
+
+
+def _cover_page(pp, appendix_no, title_lines, desc, style_counts, cover_date,
+                howto_draw, n_inport=0, example_draw=None):
     fig = plt.figure(figsize=(8.27, 11.69))
     L, R, T = 64.0, PAGE_W - 64.0, 72.0
     _text(fig, L, T, f"APPENDIX {appendix_no} · {_BM} UNIVERSE", 12, MUTE)
@@ -143,8 +178,14 @@ def _cover_page(pp, appendix_no, title_lines, desc, style_counts, today,
         _rank_badge(fig, col2 + 4, cy, 1, True)
         _text(fig, col2 + 34, cy, f"In current model portfolio ({n_inport} factors)",
               11.5, SUB)
+    # 읽는 법 가이드: 첫 팩터 카드 예시 + 동그라미 주석 (2026-08-27 사용자 지정)
+    if example_draw is not None:
+        y_ex = y_body + ((len(items) + 1) // 2) * 22 + (34 if n_inport else 22) + 26
+        _hline(fig, L, R, y_ex - 16, INK, lw=0.9)
+        _text(fig, L, y_ex, "READING GUIDE — FIRST FACTOR AS EXAMPLE", 11, MUTE)
+        example_draw(fig, L, y_ex + 26)
     _text(fig, L, PAGE_H - 56, _BM, 11, MUTE, va="bottom")
-    _text(fig, R, PAGE_H - 56, today, 11, MUTE, ha="right", va="bottom")
+    _text(fig, R, PAGE_H - 56, cover_date, 11, MUTE, ha="right", va="bottom")
     pp.savefig(fig)
     plt.close(fig)
 
@@ -392,28 +433,68 @@ def _render_grid_book03(pdf_path, records, cover_fn):
 
 
 # ── 메인 엔트리 ──────────────────────────────────────────────────────────────
-def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
+def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
+                    end_date: str | None = None, live_rules: dict | None = None):
+    """별첨 01~04 생성. end_date = 기준일(파일명 접미사). None 이면 최신 스냅샷일.
+
+    live_rules: 운용(48M rolling IS)에서 fit 한 규칙 번들
+        {kept_abbrs, dropped_sectors, label_rules}. 제공되면 북의 팩터 집합·
+        섹터 제외·L/S 라벨이 실제 운용과 일치하고, 차트만 전체 이력 수익으로
+        그린다 (2026-08-27 사용자 지정). None 이면 구 방식(전체 이력 fit) 폴백.
+    """
     logger.info("Starting generate_report (A4 book redesign)...")
     plt.ioff()
 
-    (kept_abbr, _kept_name, _kept_style, kept_idx, dropped_sec, cleaned_raw,
-     ) = filter_and_label_factors(factor_abbrs, factor_names, style_names, factor_stats)
+    if live_rules:
+        # 운용 규칙을 전체 이력 5분위 통계에 직접 매핑 — 재학습 금지
+        # (walk_forward._apply_rules_and_aggregate 와 동일 원칙)
+        abbr_to_idx = {a: i for i, a in enumerate(factor_abbrs)}
+        kept_abbr, kept_idx, dropped_sec, cleaned_raw = [], [], [], []
+        for abbr in live_rules["kept_abbrs"]:
+            idx = abbr_to_idx.get(abbr)
+            if idx is None or factor_stats[idx][0] is None:
+                continue
+            raw_df = factor_stats[idx][3]
+            dropped = live_rules["dropped_sectors"].get(abbr, [])
+            raw_clean = raw_df[~raw_df["sec"].isin(dropped)] if dropped else raw_df
+            labels = live_rules["label_rules"].get(abbr, {})
+            merged = raw_clean.copy()
+            merged["label"] = merged["quantile"].map(labels)
+            merged = merged.dropna(subset=["label"])
+            if merged.empty or not ((merged["label"] == 1).any()
+                                    and (merged["label"] == -1).any()):
+                continue
+            kept_abbr.append(abbr)
+            kept_idx.append(idx)
+            dropped_sec.append(dropped)
+            cleaned_raw.append(merged)
+        logger.info("Live-rule mapping retained %d / %d operational factors",
+                    len(kept_abbr), len(live_rules["kept_abbrs"]))
+    else:
+        (kept_abbr, _kept_name, _kept_style, kept_idx, dropped_sec, cleaned_raw,
+         ) = filter_and_label_factors(factor_abbrs, factor_names, style_names, factor_stats)
     # 별첨은 전체 이력 표시 (backtest_start 기본값 2017-12 절단 우회; 2026-08-06)
     factor_rets = aggregate_factor_returns(
         cleaned_raw, kept_abbr, backtest_start="1900-01-01",
-        cost_bps=float(PIPELINE_PARAMS.get("transaction_cost_bps", 20.0)))
+        cost_bps=float(PIPELINE_PARAMS["transaction_cost_bps"]))  # 폴백 금지 (2026-08-25 P3 동일 조치)
     factor_rets.loc[factor_rets.index[0]] = 0.0
     factor_rets = factor_rets.sort_index()
     valid = factor_rets.columns[(factor_rets == 0).sum() <= 10]
     factor_rets = factor_rets[valid]
 
-    meta_df = (pd.read_csv(OUTPUT_DIR / "meta_data.csv", index_col=0)
+    meta_df = (pd.read_csv(latest(OUTPUT_DIR / "meta_data.csv"), index_col=0)
                .sort_values(by="cagr", ascending=False).reset_index()
                .rename(columns={"index": "factorAbbreviation"}))
 
     # ── 실사용(편입) 팩터 집합: 최신 mp 실행이 저장한 factor_weights_*.csv ──
     port_weights: dict[str, float] = {}
     weight_files = sorted(HISTORY_DIR.glob("factor_weights_*.csv"))
+    if weight_files and end_date:
+        # 기준일 이후 스냅샷은 배제 — 과거 기준일로 북을 다시 뽑을 때 최신 포트가
+        # 섞여 들어가는 것을 막는다 (2026-08-19).
+        cutoff = f"factor_weights_{str(end_date)[:10]}.csv"
+        eligible = [f for f in weight_files if f.name <= cutoff]
+        weight_files = eligible or weight_files
     if weight_files:
         wdf = pd.read_csv(weight_files[-1])
         port_weights = {r["factor"]: float(r["weight"]) for _, r in wdf.iterrows()
@@ -423,9 +504,20 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
     else:
         logger.warning("factor_weights_*.csv not found in %s - 편입 표시 생략", HISTORY_DIR)
 
+    # 파일명 기준일: 인자 > 최신 factor_weights 파일명 > 오늘
+    as_of = end_date or (weight_files[-1].stem.replace("factor_weights_", "")
+                         if weight_files else pd.Timestamp.now().strftime("%Y-%m-%d"))
+    as_of = pd.Timestamp(as_of).strftime("%Y-%m-%d")
+    logger.info("별첨 기준일: %s", as_of)
+
     # ── 별첨01 xlsx ──
-    xlsx_path = OUTPUT_DIR / f"별첨01_{_BM}_Factor_Return_Info.xlsx"
+    xlsx_path = OUTPUT_DIR / f"별첨01_{_BM}_Factor_Return_Info_{as_of}.xlsx"
     info_df = meta_df[["factorAbbreviation", "factorName", "styleName", "cagr"]].copy()
+    # 별첨 4종 팩터 집합 통일 (2026-08-27 사용자 지정): Factor_Info 도 북(02~04)과
+    # 동일한 집합만 수록 — 북 수록 조건(라벨 규칙 존재 & 전 기간 수익 시계열 유효)과
+    # 같은 술어라 4종 모두 271개·동일 순서가 보장된다.
+    _book_set = set(kept_abbr) & set(factor_rets.columns)
+    info_df = info_df[info_df["factorAbbreviation"].isin(_book_set)].reset_index(drop=True)
     info_df["in_portfolio"] = info_df["factorAbbreviation"].map(
         lambda a: "Y" if a in port_weights else "")
     info_df["port_weight"] = info_df["factorAbbreviation"].map(
@@ -487,12 +579,91 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
         if n:
             style_counts[s] = n
     n_inport = sum(1 for r in records if r["in_port"])
-    today = pd.Timestamp.now().strftime("%B %Y")
+    # 커버 우하단 날짜 = 생성일이 아니라 데이터 기준일 (파일명과 일치, 2026-08-19)
+    cover_date = f"AS OF {pd.Timestamp(as_of).strftime('%d %b %Y').upper()}"
     n_months = len(cum_rets)
     start_label = cum_rets.index[0].strftime("%B %Y")
-    cost_bps = int(PIPELINE_PARAMS.get("transaction_cost_bps", 10))
+    cost_bps = int(PIPELINE_PARAMS["transaction_cost_bps"])  # 폴백 금지 (2026-08-25 P3 동일 조치)
 
     # ── 별첨02 ──
+    # ── 커버 "읽는 법" 예시 (첫 팩터 카드 + 동그라미 주석) ──────────────────
+    # 세 북이 같은 ①~④ 틀을 공유한다. 규칙(섹터 제외·L/S 라벨)은 운용 48M과
+    # 동일하고, 차트의 수익 측정 기간만 전체 이력이다 (2026-08-27 사용자 지정 —
+    # 별첨과 운용의 팩터 집합·규칙 일치, 기간 차이만 명시해 오해 방지).
+    _ex = records[0] if records else None
+    _hist_label = f"Jul 2015 - {pd.Timestamp(as_of).strftime('%b %Y')}"
+    _NOTE_COMMON = [
+        (1, ["Rank - ordered by ③ L-S CAGR, descending.",
+             "Filled dark badge = in the current Top-50 portfolio."]),
+        (2, ["Factor name - colour dot = style (legend above)."]),
+        (3, ["L-S CAGR - LAST 48 MONTHS only (rolling IS),",
+             f"net of {cost_bps} bp cost. The live selection / sort",
+             "basis. The L/S labels and sector exclusions",
+             "shown are these same live 48M rules."]),
+    ]
+
+    def _make_example(chart_kind, note4_lines, layout="stacked", note3_lines=None):
+        """커버 읽는 법 예시: 각 북의 '실제 카드 레이아웃 그대로' + ①~④ 점선 박스.
+
+        layout="stacked"(별첨02/04): 한 줄 헤더 — 이름 왼쪽, 스타일·CAGR 오른쪽.
+        layout="grid"(별첨03): 이름 첫 줄, 스타일 둘째 줄 왼쪽 + CAGR 둘째 줄 오른쪽.
+        실제 페이지와 예시가 다르면 가이드가 아니라 혼란이므로, 헤더 렌더는
+        본문과 동일 함수/좌표를 쓴다 (2026-08-27 사용자 지정).
+        """
+        if _ex is None:
+            return None
+
+        def draw(fig, x, y):
+            w = PAGE_W - 128.0                      # 682 = stacked 실제 카드 폭
+            x0 = x + 8
+            svg_h = 110.0
+            if layout == "stacked":
+                # 실제 _card_header 그대로 (별첨02/04 본문과 동일)
+                _card_header(fig, x0, y, _ex["rank"], _ex["color"], _ex["name"],
+                             _ex["style"], f"L-S CAGR {_pct(_ex['cagr'])}",
+                             wpx=w, in_port=_ex["in_port"])
+                # 박스: ① 배지 / ② 점+이름 / ③ 스타일+CAGR(우측 블록)
+                # — 서로 겹치지 않게 분리, ② 우변은 이름 폭 실측+여유 (2026-08-27 교정)
+                _guide_box(fig, x0 - 6, y - 5, 31, 19, 1)
+                name_end = min(41.0 + len(_ex["name"]) * 6.8 + 14.0, w - 250.0)
+                _guide_box(fig, x0 + 24, y - 8, name_end - 24.0, 25, 2)
+                style_px = len(_ex["style"]) * 6.2
+                blk_l = x0 + w - 96.0 - style_px - 12.0
+                _guide_box(fig, blk_l, y - 7, (x0 + w + 8) - blk_l, 24, 3, corner="tr")
+                chart_y = y + 18.0
+            else:
+                # 별첨03 그리드 헤더 (본문과 동일 배치, 폭만 전폭)
+                _rank_badge(fig, x0, y, _ex["rank"], _ex["in_port"])
+                _swatch(fig, x0 + 26, y + 1, 8, 8, _ex["color"], circle=True)
+                nm = _ex["name"] if len(_ex["name"]) <= 90 else _ex["name"][:87] + "..."
+                _text(fig, x0 + 39, y - 1, nm, 10.5, INK, weight="bold")
+                # 스타일 텍스트는 예시에서만 점(dot) 라인에 맞춰 시작 — ② 박스가
+                # 첫 글자를 자르지 않게 (실제 카드와 7px 차이, 인지 불가)
+                _text(fig, x0 + 30, y + 15, _ex["style"], 9, MUTE)
+                _text(fig, x0 + w, y + 15, f"L-S CAGR {_pct(_ex['cagr'])}", 9, SUB, ha="right")
+                _guide_box(fig, x0 - 6, y - 5, 30, 19, 1)
+                name_px = min(39.0 + len(nm) * 6.5 + 12.0, w - 140.0)
+                style_px = 27.0 + len(_ex["style"]) * 5.6 + 12.0
+                _guide_box(fig, x0 + 25, y - 8, max(name_px, style_px) - 25.0, 38, 2)
+                _guide_box(fig, x0 + w - 104, y + 6, 112, 22, 3, corner="tr")
+                chart_y = y + 36.0
+            # ── 차트 (북별 실제 차트, 실제 폭) ──
+            ax = _svg_axes(fig, x0, chart_y, w, svg_h, 682.0, svg_h)
+            if chart_kind == "sector":
+                _chart_sector(ax, _ex["sector_vals"], _ex["sectors"], _ex["dropped_idx"], svg_h)
+            elif chart_kind == "series":
+                _chart_ls_series(ax, _ex["series"], _ex["color"], svg_h)
+            else:
+                _chart_quintile(ax, _ex["quint_vals"], _ex["quint_labels"], svg_h, svg_w=682.0)
+            # ④ 는 ② 하단과 겹치지 않게 차트 상단선에 맞춤
+            _guide_box(fig, x0 - 6, chart_y + 2, w + 12, svg_h + 4, 4)
+            # ── 설명: 카드 아래 2열 (①② 왼쪽 / ③④ 오른쪽) ──
+            ny = chart_y + svg_h + 26
+            _example_notes(fig, x0, ny, _NOTE_COMMON[:2])
+            n3 = (3, note3_lines) if note3_lines else _NOTE_COMMON[2]
+            _example_notes(fig, x0 + w / 2 + 14, ny, [n3, (4, note4_lines)])
+        return draw
+
     def cover02(pp):
         def howto(fig, x, y):
             for i, c in enumerate(RAMP):
@@ -501,13 +672,23 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
             _text(fig, x, y + 30, "Each cluster of five bars is one sector; bars run", 12, SUB)
             _text(fig, x, y + 48, "Q1 (highest factor score) to Q5 (lowest), dark to light.", 12, SUB)
             _swatch(fig, x, y + 74, 10, 10, DROP)
-            _text(fig, x + 16, y + 73, "Grey clusters mark sectors excluded from the", 12, SUB)
-            _text(fig, x, y + 91, "factor — the Q1–Q5 spread is negative there.", 12, SUB)
+            _text(fig, x + 16, y + 73, "Grey clusters mark sectors the live 48-month", 12, SUB)
+            _text(fig, x, y + 91, "rules exclude from the factor.", 12, SUB)
         _cover_page(pp, "02", ["Sector × Quintile", "Return Book"],
                     ["Average monthly returns of each factor's quintile",
                      f"portfolios, by GICS sector. {len(records)} factors,",
-                     "ordered by in-sample L–S CAGR."],
-                    style_counts, today, howto, n_inport=n_inport)
+                     "ordered by in-sample L–S CAGR (last 48 months, net of cost)."],
+                    style_counts, cover_date, howto, n_inport=n_inport,
+                    example_draw=_make_example("sector", note3_lines=[
+                        "Style name / L-S CAGR - the LAST 48 MONTHS",
+                        f"only (rolling IS), net of {cost_bps} bp cost. The live",
+                        "selection / sort basis. Grey exclusions in the",
+                        "chart are these same live 48M rules."],
+                        note4_lines=[
+                        f"Chart - FULL HISTORY ({_hist_label}): avg monthly",
+                        "return of each sector x quintile portfolio, BEFORE",
+                        "costs. Only the return window differs from ③ -",
+                        "the sector exclusions applied are the live rules."]))
 
     def hdr_legend02(fig, right_px):
         x = right_px - 60
@@ -516,7 +697,7 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
             _swatch(fig, x - 42 - (4 - i) * 12, 41.5, 9, 9, RAMP[i])
 
     _render_stacked_book(
-        OUTPUT_DIR / f"별첨02_{_BM}_Sector_Quintile_Return_Book.pdf", records,
+        OUTPUT_DIR / f"별첨02_{_BM}_Sector_Quintile_Return_Book_{as_of}.pdf", records,
         f"{_BM} · Sector × Quintile Returns",
         "Appendix 02 — Sector Quintile Return Book", "Avg monthly return, %",
         cover02,
@@ -531,16 +712,22 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
                                           ("Neutral", NEUT_C))):
                 _swatch(fig, x + i * 92, y, 14, 14, c)
                 _text(fig, x + i * 92 + 19, y + 1, lab, 11, SUB)
-            _text(fig, x, y + 30, "Quintiles are selected as long or short by performance", 12, SUB)
-            _text(fig, x, y + 48, "against a spread-based threshold — not fixed to Q1 / Q5.", 12, SUB)
+            _text(fig, x, y + 30, "Long / short quintiles follow the live 48-month rules —", 12, SUB)
+            _text(fig, x, y + 48, "spread-threshold based, not fixed to Q1 / Q5.", 12, SUB)
             _text(fig, x, y + 66, "Grey quintiles are left out of the portfolio.", 12, SUB)
         _cover_page(pp, "03", ["Quintile", "Return Book"],
                     ["Average monthly return of each factor's quintile",
                      "portfolios and the long / short quintiles selected",
-                     f"from them. {len(records)} factors, ordered by in-sample L–S CAGR."],
-                    style_counts, today, howto, n_inport=n_inport)
+                     f"from them. {len(records)} factors, ordered by",
+                     "in-sample L–S CAGR (last 48 months, net of cost)."],
+                    style_counts, cover_date, howto, n_inport=n_inport,
+                    example_draw=_make_example("quintile", layout="grid", note4_lines=[
+                        f"Bars - FULL HISTORY ({_hist_label}): avg monthly",
+                        "return of the five quintiles, BEFORE costs. L/S",
+                        "tags are the live 48M rules; only the return",
+                        "window differs from ③ (so signs can disagree)."]))
 
-    _render_grid_book03(OUTPUT_DIR / f"별첨03_{_BM}_Quintile_Return_Book.pdf",
+    _render_grid_book03(OUTPUT_DIR / f"별첨03_{_BM}_Quintile_Return_Book_{as_of}.pdf",
                         records, cover03)
 
     # ── 별첨04 ──
@@ -553,11 +740,23 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats):
         _cover_page(pp, "04", ["Long–Short Portfolio", "Return Book"],
                     ["Cumulative return of each factor's long–short",
                      f"portfolio, net of {cost_bps} bp transaction cost.",
-                     f"{len(records)} factors over {n_months} months, ordered by in-sample CAGR."],
-                    style_counts, today, howto, n_inport=n_inport)
+                     f"{len(records)} factors over {n_months} months, ordered by",
+                     "in-sample L–S CAGR (last 48 months, net of cost)."],
+                    style_counts, cover_date, howto, n_inport=n_inport,
+                    example_draw=_make_example("series", note3_lines=[
+                        "Style name / L-S CAGR - the LAST 48 MONTHS",
+                        f"only (rolling IS), net of {cost_bps} bp cost. The live",
+                        "selection / sort basis. The curve below uses",
+                        "these same live 48M L/S rules."],
+                        note4_lines=[
+                        f"Curve - the live 48M L/S rules applied over FULL",
+                        f"HISTORY ({_hist_label}), net of {cost_bps} bp cost.",
+                        "Rules are fit on recent data, so the long-run",
+                        "curve is context, not a live track record -",
+                        "it can rise while the recent ③ is negative."]))
 
     _render_stacked_book(
-        OUTPUT_DIR / f"별첨04_{_BM}_LongShort_Port_Return_Book.pdf", records,
+        OUTPUT_DIR / f"별첨04_{_BM}_LongShort_Port_Return_Book_{as_of}.pdf", records,
         f"{_BM} · Long–Short Cumulative Returns",
         "Appendix 04 — Long–Short Portfolio Return Book",
         f"Cumulative return, % · net of {cost_bps} bp cost",

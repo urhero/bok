@@ -1,0 +1,51 @@
+factor,styleName,raw_weight,fitted_weight
+UnexpectedInvChg,Earnings Quality,0.021799888,0.016865784
+CapExToAst,Capital Efficiency,0.025950093,0.036233142
+TotalAccruals,Earnings Quality,0.031854,0.024644293
+SalesToInvCap,Earnings Quality,0.01643361,0.012714092
+CQPTTMCFtoSales,Historical Growth,0.014139209,0.011092929
+CapExToSales,Earnings Quality,0.027223112,0.02106154
+Rev3MFY1C,Analyst Expectations,0.0140756965,0.019653372
+EbitdaToAst,Capital Efficiency,0.017513942,0.024454068
+EPSSurpC,Analyst Expectations,0.02298294,0.032090224
+ETO,Earnings Quality,0.0037395358,0.002893144
+AdjInvPEGC,Analyst Expectations,0.016689949,0.023303553
+Chg3YFCF,Historical Growth,0.026570382,0.020845817
+EBITMargin,Earnings Quality,0.024959223,0.019310053
+ShortIntTrdVol,Price Momentum,0.017054925,0.023813156
+AdjRevMagC,Analyst Expectations,0.0151214525,0.021113522
+Chg1YFCF,Historical Growth,0.030964332,0.024293099
+CashAdjEV,Valuation,0.003276982,0.0045755277
+ConsQPosChginTTMCF,Historical Growth,0.004792488,0.003759951
+ROA,Capital Efficiency,0.015353565,0.021437613
+WCAccruals,Earnings Quality,0.03949191,0.030553468
+PAdjChg1YSales,Historical Growth,0.016762173,0.013150779
+CurLiaP,Valuation,0.023349067,0.032601435
+Chg1YOPM,Historical Growth,0.01411248,0.01107196
+OCFRatio,Capital Efficiency,0.020562224,0.028710267
+GPMargin,Earnings Quality,0.0347945,0.026919248
+BookLev,Volatility,0.018583449,0.025947377
+InvPEGC,Analyst Expectations,0.021970863,0.030677097
+FCFEV,Valuation,0.023949903,0.033440355
+PAdjChg3YFCF,Historical Growth,0.02811726,0.022059426
+OCFIC,Earnings Quality,0.0035050276,0.0027117133
+PAdjChg1YEPS,Historical Growth,0.016415305,0.012878643
+LogAssets,Size,0.013507628,0.018860199
+OPM,Earnings Quality,0.019682292,0.01522748
+AdjRev3MFY1C,Analyst Expectations,0.010899777,0.015218953
+CFIC,Earnings Quality,0.013040703,0.010089124
+PAdjChg1YFCF,Historical Growth,0.029640796,0.023254711
+PAdjChg3YOCF,Historical Growth,0.019603923,0.015380277
+RevMagFY1C,Analyst Expectations,0.014679315,0.020496182
+AstAdjChg1YFCF,Historical Growth,0.025192544,0.019764833
+RecTurn,Capital Efficiency,0.04931368,0.06885485
+OEA,Earnings Quality,0.016090149,0.0124483695
+PAdjChg1YOCF,Historical Growth,0.023845231,0.018707795
+AstAdjChg1YOCF,Historical Growth,0.018583871,0.014579995
+IntCovRatio,Capital Efficiency,0.0058083544,0.00810999
+PAdjChg1YCF,Historical Growth,0.016266666,0.012762029
+AdjAccruals,Earnings Quality,0.070648916,0.054658517
+CQDOHtoSales,Historical Growth,0.0042095827,0.003302632
+AdjIntCov,Capital Efficiency,0.0042587854,0.005946384
+CFROIC,Capital Efficiency,0.0030574715,0.004269033
+PAdjChg3YSales,Historical Growth,0.0295608,0.023191951

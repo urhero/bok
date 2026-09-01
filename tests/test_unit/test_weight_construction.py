@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import numpy as np
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -301,3 +302,116 @@ class TestAggregateFactorReturnsParallel:
 
         assert not parallel.empty, "병렬 경로가 실제로 결과를 내야 한다 (빈 프레임 동치 방지)"
         pd.testing.assert_frame_equal(serial, parallel, check_exact=True)
+
+
+# ── apply_sector_short_cap (2026-07-30 채택) ──────────────────────────────
+
+def _mk_agg(rows):
+    return pd.DataFrame(rows, columns=["ddt", "ticker", "isin", "gvkeyiid", "sec", "mp_ls_weight", "factor_weight"])
+
+
+def test_sector_short_cap_reduces_over_sector_and_preserves_gross():
+    from service.pipeline.weight_construction import apply_sector_short_cap
+    d = pd.Timestamp("2026-06-30")
+    agg = _mk_agg([
+        [d, "A", "iA", "gA", "Financials", -0.30, 0.1],
+        [d, "B", "iB", "gB", "Energy", -0.10, 0.1],
+        [d, "C", "iC", "gC", "Tech", 0.40, 0.1],
+    ])
+    out = apply_sector_short_cap(agg, cap=0.5)   # Financials 숏 비중 0.75 > 0.5
+    shorts = out[out["mp_ls_weight"] < 0]
+    total_sg = shorts["mp_ls_weight"].abs().sum()
+    fin = shorts[shorts["sec"] == "Financials"]["mp_ls_weight"].abs().sum()
+    assert abs(total_sg - 0.40) < 1e-9, "총 숏 gross 보존"
+    assert fin <= 0.5 * total_sg + 1e-9, "초과 섹터가 캡 이하로"
+    assert out[out["mp_ls_weight"] > 0]["mp_ls_weight"].sum() == 0.40, "롱 사이드 불변"
+
+
+def test_sector_short_cap_noop_when_under_cap_or_off():
+    from service.pipeline.weight_construction import apply_sector_short_cap
+    d = pd.Timestamp("2026-06-30")
+    agg = _mk_agg([
+        [d, "A", "iA", "gA", "Financials", -0.20, 0.1],
+        [d, "B", "iB", "gB", "Energy", -0.20, 0.1],
+    ])
+    assert apply_sector_short_cap(agg, cap=0.6).equals(agg)
+    assert apply_sector_short_cap(agg, cap=None).equals(agg)
+
+
+def test_sector_short_cap_matches_old_one_pass_when_no_reviolation():
+    """재위반 없는 케이스의 구 1-pass 수식 재현 (2섹터 케이스).
+
+    주의: 일반 케이스에서는 total/free_g 합산 단위(종목단 vs 섹터단) 차이로
+    ULP(~1e-16) 수준 차이가 가능 (Opus 검증 2026-08-25). 이 테스트는 두 합이
+    일치하는 최소 케이스에서 수식 구조가 같음을 고정하는 용도."""
+    from service.pipeline.weight_construction import apply_sector_short_cap
+    d = pd.Timestamp("2026-06-30")
+    agg = _mk_agg([
+        [d, "A", "iA", "gA", "Financials", -0.30, 0.1],
+        [d, "B", "iB", "gB", "Energy", -0.10, 0.1],
+        [d, "C", "iC", "gC", "Tech", 0.40, 0.1],
+    ])
+    out = apply_sector_short_cap(agg, cap=0.5)
+    # 구 로직 float 연산 순서 그대로 재현 (0.30-0.20 의 이진 오차까지 동일해야 byte 보존)
+    freed = 0.30 - 0.5 * 0.40
+    assert out.loc[0, "mp_ls_weight"] == -0.30 * ((0.5 * 0.40) / 0.30)
+    assert out.loc[1, "mp_ls_weight"] == -0.10 * (1.0 + freed / 0.10)
+    assert out.loc[2, "mp_ls_weight"] == 0.40
+
+
+def test_sector_short_cap_waterfills_reviolation():
+    """재분배 수혜 섹터가 캡을 재초과하면 수렴까지 반복해야 한다 (구 1-pass 버그)."""
+    from service.pipeline.weight_construction import apply_sector_short_cap
+    d = pd.Timestamp("2026-06-30")
+    # cap 0.15, 숏 7개 섹터 (합 1.0): A 0.25 초과 -> 1-pass 재분배 시 B/C(0.14)가 0.158로 재초과
+    secs = {"A": 0.25, "B": 0.14, "C": 0.14, "D": 0.13, "E": 0.12, "F": 0.11, "G": 0.11}
+    rows = [[d, s, f"i{s}", f"g{s}", s, -g, 0.1] for s, g in secs.items()]
+    rows.append([d, "L", "iL", "gL", "Tech", 1.0, 0.1])
+    agg = _mk_agg(rows)
+    out = apply_sector_short_cap(agg, cap=0.15)
+    shorts = out[out["mp_ls_weight"] < 0]
+    total_sg = shorts["mp_ls_weight"].abs().sum()
+    sec_g = shorts.groupby("sec")["mp_ls_weight"].apply(lambda x: x.abs().sum())
+    assert abs(total_sg - 1.0) < 1e-9, "feasible 케이스는 총 숏 gross 보존"
+    assert (sec_g <= 0.15 * total_sg + 1e-9).all(), f"전 섹터 캡 준수 실패: {sec_g.to_dict()}"
+    assert out[out["mp_ls_weight"] > 0]["mp_ls_weight"].sum() == 1.0, "feasible 케이스 롱 불변"
+
+
+def test_sector_short_cap_infeasible_cap_wins_and_stays_neutral():
+    """숏 섹터 < 1/cap 개면 캡 우선: 숏 gross 축소 + 롱 동반 축소 (달러 중립 유지)."""
+    from service.pipeline.weight_construction import apply_sector_short_cap
+    d = pd.Timestamp("2026-06-30")
+    rows = [[d, s, f"i{s}", f"g{s}", s, -0.25, 0.1] for s in ["A", "B", "C", "D"]]
+    rows.append([d, "L", "iL", "gL", "Tech", 1.0, 0.1])
+    agg = _mk_agg(rows)
+    out = apply_sector_short_cap(agg, cap=0.15)  # 4섹터 x 0.15 = 0.6 < 1.0 인피저블
+    shorts = out[out["mp_ls_weight"] < 0]
+    sec_g = shorts.groupby("sec")["mp_ls_weight"].apply(lambda x: x.abs().sum())
+    assert (sec_g <= 0.15 * 1.0 + 1e-9).all(), "원 gross 기준 캡 준수"
+    total_sg = shorts["mp_ls_weight"].abs().sum()
+    assert abs(total_sg - 0.6) < 1e-9, "숏 gross 0.6 으로 축소"
+    long_sum = out[out["mp_ls_weight"] > 0]["mp_ls_weight"].sum()
+    assert abs(long_sum - total_sg) < 1e-9, "롱 동반 축소 -> 달러 중립"
+
+
+def test_stock_level_sector_short_cap_shares_helper():
+    """백테스트 경로(stock_weights_at)도 재위반 시 water-filling 수렴해야 한다 (parity).
+
+    섹터별 종목 수 = weight_construction 재위반 시나리오와 동일 비율 (A 25 / B·C 14 /
+    D 13 / E 12 / F·G 11): 구 1-pass 는 A 절단분 재분배로 B·C 가 0.1587 > cap 재초과
+    -> 구 코드에서 실패하는 회귀 가드 (2026-08-25 Sonnet 검증 지적으로 강화).
+    """
+    from service.backtest.stock_level import stock_weights_at
+    t = pd.Timestamp("2026-06-30")
+    counts = {"A": 25, "B": 14, "C": 14, "D": 13, "E": 12, "F": 11, "G": 11}
+    recs = [{"ddt": t, "gvkeyiid": f"s{s}{i}", "label": -1, "M_RETURN": 0.0, "sec": s}
+            for s, n in counts.items() for i in range(n)]
+    recs.append({"ddt": t, "gvkeyiid": "long1", "label": 1, "M_RETURN": 0.0, "sec": "Tech"})
+    frames = {"F1": pd.DataFrame(recs)}
+    w, _r = stock_weights_at(frames, {"F1": 1.0}, t, pd.Timestamp("2000-01-31"),
+                             sector_short_cap=0.15)
+    shorts = w[w < 0]
+    total_sg = shorts.abs().sum()
+    sec_g = shorts.abs().groupby(shorts.index.str[1]).sum()  # gvkeyiid 두번째 문자 = 섹터
+    assert (sec_g <= 0.15 * total_sg + 1e-9).all(), f"캡 재초과 방치 (구 1-pass 버그): {sec_g.to_dict()}"
+    assert abs(total_sg - 1.0) < 1e-9, "feasible(7섹터) -> 숏 gross 보존 (팩터 숏 사이드 = wf 1.0)"

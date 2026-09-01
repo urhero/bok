@@ -7,9 +7,12 @@ filter_and_label_factors()에서 L/N/S 라벨이 부여된 종목 데이터를 �
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from config import PARAM
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +49,7 @@ def build_factor_weight_frames(
         factor_idx = factor_idx_map[factor_abbr]
         # end_date를 먼저 필터하여 이후 연산 대상 행 수를 최소화
         df = filtered_data[factor_idx].loc[
-            filtered_data[factor_idx]["ddt"] == end_date_ts, ["ddt", "ticker", "isin", "gvkeyiid", "label"]
+            filtered_data[factor_idx]["ddt"] == end_date_ts, ["ddt", "ticker", "isin", "gvkeyiid", "sec", "label"]
         ].copy()
         if df.empty:
             logger.warning("Factor %s has no stock data at %s, skipping (book gross may dip below 1.0)",
@@ -58,12 +61,15 @@ def build_factor_weight_frames(
         df["ls_weight"] = df["label"] / count_per_group
         df["factor_weight"] = fitted_weight
         df["style"] = style_name
-        df["name"] = f"MXCN1A_{style_name}"
+        df["name"] = f"{PARAM['benchmark']}_{style_name}"
         df["factor"] = factor_abbr
         df["count"] = count_per_group
-        df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
+        # Bloomberg 티커 포맷은 중국 A주(MXCN1A) 전용. 그 외 유니버스(MXWO 등)는
+        # 다국가 로컬 티커라 그대로 두고 ISIN을 식별자로 사용한다.
+        if PARAM["benchmark"] == "MXCN1A":
+            df["ticker"] = df["ticker"].astype(str).str.zfill(6).add(" CH Equity")
 
-        weight_frames.append(df[["ddt", "ticker", "isin", "gvkeyiid", "mp_ls_weight", "ls_weight", "factor_weight", "factor", "style", "name", "count"]].reset_index(drop=True))
+        weight_frames.append(df[["ddt", "ticker", "isin", "gvkeyiid", "sec", "mp_ls_weight", "ls_weight", "factor_weight", "factor", "style", "name", "count"]].reset_index(drop=True))
 
     if not weight_frames:
         logger.warning("No matching factors found in filtered data - skipping CSV export")
@@ -75,23 +81,99 @@ def build_factor_weight_frames(
     return weight_raw
 
 
+def sector_short_cap_scales(sec_gross: pd.Series, cap_frac: float) -> pd.Series:
+    """섹터별 숏 gross -> 캡 준수 배율 (water-filling, 2026-08-25 수렴 수정).
+
+    cap = cap_frac * 총 숏 gross. 초과 섹터를 캡에 동결하고 잘린 물량을 아직
+    동결되지 않은 섹터에 비례 재분배 — 재분배가 새 초과를 만들면 반복한다
+    (매회 >=1 섹터 동결이라 섹터 수 내 확정 종료. 구 1-pass 는 재분배 수혜
+    섹터가 캡을 재초과해도 방치했음). 전 섹터 동결 시(숏 섹터 < 1/cap_frac 개)
+    캡이 우선 — 총 숏 gross 축소를 허용한다 (crowding 국면에서 캡 해제 금지;
+    중립 유지는 호출부가 롱 비례 축소로 담당).
+
+    Returns:
+        섹터별 배율 Series (호출부는 숏 종목 행에 map 해서 곱한다).
+    """
+    total = float(sec_gross.sum())
+    cap = cap_frac * total
+    scale = pd.Series(1.0, index=sec_gross.index)
+    cur = sec_gross.astype(float).copy()
+    frozen = pd.Series(False, index=sec_gross.index)
+    for _ in range(len(sec_gross)):
+        over = (cur > cap + 1e-12) & ~frozen
+        if not over.any():
+            break
+        # 구 1-pass 와 동일한 곱 구조 유지. 단 total/free_g 를 종목단이 아닌
+        # 섹터단 합으로 계산하므로 재초과 없던 케이스도 ULP(~1e-16) 차이가
+        # 날 수 있음 (2026-08-25 Opus 검증: 무재초과 케이스의 13.6%) — 값 영향
+        # 없는 부동소수 반올림 차이로, byte-diff 회귀 시 참고.
+        scale[over] = cap / sec_gross[over]
+        freed = float((cur[over] - cap).sum())
+        cur[over] = cap
+        frozen |= over
+        free = ~frozen
+        free_g = float(cur[free].sum())
+        if free_g <= 1e-12:
+            break  # 전 섹터 동결 — gross 축소 (캡 우선)
+        factor = 1.0 + freed / free_g
+        scale[free] *= factor
+        cur[free] *= factor
+    return scale
+
+
+def apply_sector_short_cap(agg_w: pd.DataFrame, cap: float | None) -> pd.DataFrame:
+    """숏 crowding 완화 (2026-07-30 채택): 섹터별 숏 gross 가 전체 숏 gross 의
+    cap 비율을 넘으면 그 섹터 숏을 줄이고, 잘린 만큼을 다른 섹터 숏에 재분배한다
+    (water-filling — sector_short_cap_scales 참조. 2020-11형 백신 로테이션 이벤트
+    리스크 대응). 캡 인피저블 시 숏 gross 가 줄며, 달러 중립 유지를 위해 롱도
+    같은 비율로 축소한다. backtest stock_level.stock_weights_at 과 로직 공유.
+    """
+    if not cap or agg_w.empty:
+        return agg_w
+    w = agg_w["mp_ls_weight"]
+    shorts = w < 0
+    total_sg = w[shorts].abs().sum()
+    if total_sg <= 1e-12:
+        return agg_w
+    sec_gross = w[shorts].abs().groupby(agg_w.loc[shorts, "sec"]).sum()
+    if not (sec_gross > cap * total_sg).any():
+        return agg_w
+    scales = sector_short_cap_scales(sec_gross, cap)
+    agg_w = agg_w.copy()
+    agg_w.loc[shorts, "mp_ls_weight"] *= agg_w.loc[shorts, "sec"].map(scales).to_numpy()
+    new_sg = agg_w.loc[shorts, "mp_ls_weight"].abs().sum()
+    if new_sg < total_sg - 1e-9:  # 인피저블 — 롱 비례 축소로 중립 유지
+        longs = w > 0
+        agg_w.loc[longs, "mp_ls_weight"] *= new_sg / total_sg
+        logger.warning("sector_short_cap %.0f%% 인피저블 (숏 섹터 %d개): "
+                       "숏 gross %.2f%% -> %.2f%%, 롱 동반 축소",
+                       cap * 100, len(sec_gross), total_sg * 100, new_sg * 100)
+    cut = float((sec_gross * (1.0 - scales)).clip(lower=0).sum())  # 축소 섹터 절감분 합
+    logger.info("sector_short_cap %.0f%%: %s 섹터 숏 축소, %.2f%%p 재분배",
+                cap * 100, list(sec_gross.index[scales < 1 - 1e-12]), cut * 100)
+    return agg_w
+
+
 def aggregate_mp_weights(
     weight_raw: pd.DataFrame,
     end_date_ts: pd.Timestamp,
+    sector_short_cap: float | None = None,
 ) -> pd.DataFrame:
     """MP(Model Portfolio, 전체 팩터 합산) 가중치를 생성한다.
 
     Args:
         weight_raw: build_factor_weight_frames() 결과
         end_date_ts: 기준 날짜 Timestamp
+        sector_short_cap: 섹터별 숏 gross 상한 (전체 숏 gross 대비 비율, None=off)
 
     Returns:
         MP 집계 가중치 DataFrame
     """
-    agg_w = weight_raw.groupby(["ddt", "ticker", "isin", "gvkeyiid"], as_index=False)[["mp_ls_weight", "factor_weight"]].sum()
+    agg_w = weight_raw.groupby(["ddt", "ticker", "isin", "gvkeyiid", "sec"], as_index=False, observed=True)[["mp_ls_weight", "factor_weight"]].sum()
     agg_w["style"] = "MP"
-    agg_w["name"] = "MXCN1A_MP"
+    agg_w["name"] = f"{PARAM['benchmark']}_MP"
     agg_w = agg_w[agg_w["ddt"] == end_date_ts].reset_index(drop=True)
+    agg_w = apply_sector_short_cap(agg_w, sector_short_cap)
     agg_w["count"] = agg_w.groupby(["ddt", agg_w["mp_ls_weight"] > 0])["mp_ls_weight"].transform("size")
     agg_w["factor"] = "AGG"
     agg_w["ls_weight"] = agg_w["mp_ls_weight"]
@@ -126,6 +208,65 @@ def calculate_style_weights(
     )
     weight_raw = weight_raw.drop(columns=["_style_fw_sum"])
     return weight_raw
+
+
+# MP 배포 배수 (2026-08-19 도입): 최종 MP 북을 실제 포트폴리오에 적용할 때 곱하는
+# 배수를 산출물에 미리 반영한다 (Bloomberg ex-ante TE 확인을 배수 적용 상태로 하기 위함).
+# data/mp_multiplier.csv 는 (effective_date, multiplier) 이력 — 해당 시점 이후 다음
+# 변경 전까지 유효한 계단식 값. 파일/해당 행이 없으면 1.0 (미적용).
+MULTIPLIER_COLS = ("mp_ls_weight", "ls_weight", "style_ls_weight")
+
+
+def multiplier_for_target(book_gross: float, target_gross: float) -> float:
+    """목표 총 gross(롱+|숏|)에 맞추는 배수. netting 변동을 흡수해 노출을 고정한다.
+
+    고정 배수와 달리 매 시점 배수가 달라지지만, 실제 노출(=ex-ante TE 의 주 동인)이
+    항상 목표값이 된다. 팩터 겹침 정도(netting)는 투자 판단이 아니라 부산물이므로
+    그것이 포트 크기를 결정하지 않게 하는 것이 목적 (2026-08-19 채택).
+    """
+    if book_gross <= 0:
+        logger.warning("book gross 가 0 이하 - 배수 1.0 로 폴백")
+        return 1.0
+    return target_gross / book_gross
+
+
+def resolve_target_gross(as_of, path, default: float | None) -> float | None:
+    """기준일에 유효한 목표 총 gross = effective_date <= as_of 중 가장 최근 값.
+
+    data/mp_target_gross.csv 는 (effective_date, target_gross) 계단식 이력 —
+    운용 중 노출 규모를 바꿔도 과거 시점 재현이 그때의 규모로 정확히 나온다.
+    파일/해당 행이 없으면 config 기본값으로 폴백.
+    """
+    path = Path(path)
+    if not path.exists():
+        return default
+    hist = pd.read_csv(path, parse_dates=["effective_date"]).sort_values("effective_date")
+    eligible = hist[hist["effective_date"] <= pd.Timestamp(as_of)]
+    return float(eligible["target_gross"].iloc[-1]) if len(eligible) else default
+
+
+def resolve_multiplier(as_of, path) -> float:
+    """기준일에 유효한 배수 = effective_date <= as_of 중 가장 최근 값."""
+    path = Path(path)
+    if not path.exists():
+        return 1.0
+    hist = pd.read_csv(path, parse_dates=["effective_date"]).sort_values("effective_date")
+    eligible = hist[hist["effective_date"] <= pd.Timestamp(as_of)]
+    return float(eligible["multiplier"].iloc[-1]) if len(eligible) else 1.0
+
+
+def apply_multiplier(df: pd.DataFrame, multiplier: float) -> pd.DataFrame:
+    """종목 비중 컬럼에만 배수를 적용한다.
+
+    factor_weight 는 팩터 배분(피벗 컬럼 키)이라 스케일하지 않는다 — 곱하면
+    피벗 헤더가 바뀌고 팩터 비중의 의미(합=1)도 깨진다.
+    """
+    if multiplier == 1.0:
+        return df
+    for c in MULTIPLIER_COLS:
+        if c in df.columns:
+            df[c] = df[c] * multiplier
+    return df
 
 
 def build_pivoted_export(final_weights: pd.DataFrame, sim_result) -> pd.DataFrame:

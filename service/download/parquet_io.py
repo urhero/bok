@@ -210,7 +210,9 @@ def validate_loaded_factor_data(
     min_months: int = 3,
     min_factors_per_month: int = 50,
     min_stocks_per_month: int = 30,
-    max_null_pct: float = 0.10,
+    # 정상 베이스라인: MXCN1A ~5%, MXWO ~13% (글로벌 유니버스는 은행 전용
+    # 팩터·커버리지 차이로 구조적 희소). 로딩 실패형 회귀(전량 NaN)만 잡으면 된다.
+    max_null_pct: float = 0.20,
 ) -> list[dict]:
     """병합된 factor DataFrame의 무결성을 검증한다.
 
