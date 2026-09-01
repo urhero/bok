@@ -9,7 +9,7 @@
 
 ### 1.1 목적
 
-BOK은 **팩터 기반 Model Portfolio(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중(MP)을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다. **이 브랜치(`mxwo_sharpe1`)는 MXWO(선진국) 유니버스 기준**이며 (MXCN1A(중국)는 `main`), 유니버스는 `.env`가 결정한다. MXWO의 MP는 **롤링 IS 48개월 + rank_score 순수 Top-50 선정(클러스터 dedup off) + ERC(수축 0.2)·TS모멘텀 틸트 가중 + `style_cap`(25%)/섹터 숏캡(15%)** 으로 구성된다 (관례상 라벨은 Constrained EW) — 공분산/리스크 모델 기반의 종목단 최적화는 커밋 `8dfb64e`에서 제거됨.
+BOK은 **팩터 기반 Model Portfolio(MP) 생성 파이프라인**이다. 200+개 금융 팩터를 분석하여 최종 종목별 투자 비중(MP)을 산출하고, Bloomberg Optimizer에서 바로 사용 가능한 CSV를 생성한다. **MXCN1A(중국 A주)와 MXWO(MSCI World) 두 유니버스를 한 코드베이스가 지원**하며(2026-09-02 통합), 유니버스는 `BENCHMARK`(`.env` 우선, 없으면 `config.py` 상수)가 결정한다 — 아래 [1.1 유니버스 분리](#11-유니버스-분리-2026-09-02) 참조. 본문 서술은 MXWO 채택 스택 기준이며, MXWO의 MP는 **롤링 IS 48개월 + rank_score 순수 Top-50 선정(클러스터 dedup off) + ERC(수축 0.2)·TS모멘텀 틸트 가중 + `style_cap`(25%)/섹터 숏캡(15%)** 으로 구성된다 (관례상 라벨은 Constrained EW) — 공분산/리스크 모델 기반의 종목단 최적화는 커밋 `8dfb64e`에서 제거됨.
 
 ### 핵심 Funnel 구조
 
@@ -57,6 +57,38 @@ main.py (CLI)
 | `python main.py mp <start> <end> --benchmark` | MP vs. 동일가중 벤치마크 비교 | `compare_vs_benchmark()` |
 
 ---
+
+### 1.1 유니버스 분리 (2026-09-02)
+
+- `config.py`: `BENCHMARK = os.getenv("BENCHMARK") or "MXCN1A"` -> `UNIVERSES[BENCHMARK]`(universe/server/db; `.env` 값이 있으면 우선) -> `PARAM`.
+  `PIPELINE_PARAMS = {**_COMMON_PARAMS, **_UNIVERSE_PARAMS[BENCHMARK]}`. 미등록 값은 `KeyError`.
+- `service/paths.py`: `OUTPUT_DIR = output/{BENCHMARK}/` (구 "MXCN1A 만 루트 `output/`" 예외 제거), `HISTORY_DIR = OUTPUT_DIR/mp_weight_history/`.
+- 유니버스 종속 데이터는 전부 `data/{BENCHMARK}_` 접두어: 팩터/수익률 parquet, `_country_map.parquet`, `_bmwgt.parquet`,
+  `_bm_returns.csv`(대시보드 BM 오버레이), `_mp_target_gross.csv` / `_mp_multiplier.csv`(배포 배수 이력). 파일이 없으면 해당 기능은 no-op
+  (MXCN1A: 거래세 0, 배수 1.0, BM 오버레이 생략) — MXCN1A 결과가 MXWO 전용 기능의 영향을 받지 않는 근거.
+- sharpe1 에서 추가된 키(`min_coverage_pct`, `sector_short_cap`, `mp_target_gross`, `is_window_months`, `deploy_step`, `bm_short_cap`, `ranking_group`, `weight_rebal_months`)는
+  MXCN1A 쪽 값이 전부 "미적용"이라 코드 경로가 main 시절과 동일하다 (통합 시 mp test / 실데이터 백테스트로 검증).
+
+| 항목 | MXCN1A (중국 A주) | MXWO (MSCI World) |
+|---|---|---|
+| 데이터/서버 | GLOBAL, 2009-12~ | kb_global, 2015-06~ |
+| `transaction_cost_bps` | 20 | 10 (+ `COUNTRY_TAX_BPS` 국가별 거래세) |
+| `is_window_months` | None (expanding) | 48 (롤링) |
+| `use_cluster_dedup` | True (winner_median, ~28 가변) | False (순수 Top-50) |
+| `selection_hysteresis` | 0.5 | 0.25 |
+| `weight_rebal_months` | 3 | 1 |
+| `erc_shrinkage` / `ts_mom_scale` | 0.5 / 0.5 | 0.2 / 0.2 |
+| `min_coverage_pct` | 0 | 0.10 |
+| `sector_short_cap` | None | 0.15 |
+| `mp_target_gross` | None (배수 미적용) | 0.40 (롱 +20% / 숏 -20%) |
+| 출력 경로 | `output/MXCN1A/` | `output/MXWO/` |
+| 유니버스 종속 데이터 | `data/MXCN1A_*` | `data/MXWO_*` (+ `_mp_target_gross.csv`, `_mp_multiplier.csv`, `_bm_returns.csv`, `_bmwgt.parquet`, `_country_map.parquet`) |
+| 정본 실측 (배포 기준) | net Sharpe 0.703 / MDD -4.87% (미스케일, 거래세 미반영) | Sharpe 0.734 / MDD -1.80% / TE 1.04% (롱숏 ±20%, 거래세 반영) |
+
+공통 항목(style_cap 0.25, spread 0.05, ERC 모드, ts_mom_window 3, deploy_step 1.0 등)은 `config.py`의 `_COMMON_PARAMS`,
+유니버스별 항목은 `_UNIVERSE_PARAMS[BENCHMARK]` — `PIPELINE_PARAMS = {**_COMMON_PARAMS, **_UNIVERSE_PARAMS[BENCHMARK]}`.
+채택 근거(실험 문서·날짜)는 각 값 옆 주석 참조. MXCN1A: [`mxcn1a_component_ablation_20260805.md`](docs/experiments/mxcn1a_component_ablation_20260805.md),
+MXWO: [`mxwo_sharpe_ladder_20260729.md`](docs/experiments/mxwo_sharpe_ladder_20260729.md).
 
 ## 2. 데이터 흐름 (Data Flow)
 
@@ -740,7 +772,7 @@ Top-50이 아닌, **실제로 비중이 할당된 최종 팩터**에만 적용.
 - **배포 = 목표 비중 (스무딩 제거)**: 매 회차 optimizer 목표 비중(Top-N 동일가중 + style_cap, 합 1.0)을 그대로 배포한다. factor 키를 정렬한 뒤 합 1.0 으로 재정규화(결정적·byte 안정), 탈락 factor 는 즉시 제거. production `mp`·백테스트 동일. (과거 turnover 스무딩(절대스텝 밴드형)은 월간 turnover 를 ~32% 줄였으나 무비용 가정 OOS 에서 Sharpe 개선이 없어 **제거**됨 — 실험 기록: [`smoothing_cost_experiment_20260612.md`](docs/experiments/smoothing_cost_experiment_20260612.md), [`absolute_step_attribution_20260607.md`](docs/experiments/absolute_step_attribution_20260607.md). turnover 절감은 아래 선정 히스테리시스로 달성.)
 - **선정 히스테리시스 (production 적용, MXWO `selection_hysteresis=0.25`; MXCN1A는 0.5)**: 챌린저가 직전 보유 factor 를 rank_score 격차 margin 이상 이겨야 교체 (`factor.selection.apply_selection_hysteresis`, mp·백테스트 공유). 팩터단 전환비용 6-way 비교에서 히스테리시스는 **턴오버 -64% + gross CAGR +0.6~0.7%p 동시 개선** — [`smoothing_cost_experiment_20260612.md`](docs/experiments/smoothing_cost_experiment_20260612.md). `evaluate_universe` 가 `weight_history.load_prev_selection()` (직전 `factor_styles_*.csv` 의 raw_weight>0 = 직전 선정 집합) 으로 incumbents 를 로딩해 동일 함수 적용. test 모드는 prod history 오염 방지 skip. backtest CLI 는 `--selection-hysteresis` (미지정 시 config 값). 엔진 Tier 1 이 선정 incumbency 를 carry (기존 6개월 리셋 -> production 불일치 해소, Tier 2 는 규칙 갱신 시 강제 재실행).
 
-### 6.5.1 mp 가중치 history (`output/mp_weight_history/`)
+### 6.5.1 mp 가중치 history (`output/{BENCHMARK}/mp_weight_history/`)
 
 `mp` 명령 실행 시 회차별 factor 가중치와 style 요약을 저장한다. `service/pipeline/weight_history.py` 의 저장 함수 3 종 + 공유 헬퍼 1 종이 담당.
 
@@ -814,9 +846,9 @@ python main.py mp <start> <end> --benchmark
   Bartlett kernel, lag=3 기본. `meta_data.csv`의 `newey_west_tstat` 컬럼으로만 노출, 랭킹 교체 X.
 
 **산출 파일:**
-- `output/walk_forward_results.csv` -- OOS 월별 Constrained EW / EW / EW_All / EW_Top50 수익률 + 누적 수익률 (컬럼 prefix `cew_*`)
-- `output/overfit_diagnostics.csv` -- 과적합 진단 5개 지표 요약
-- `output/walk_forward_weight_history.csv` -- 월별 팩터 가중치 이력 (date x factor; viz 비중 추이/회전율용)
+- `output/{BENCHMARK}/walk_forward_results.csv` -- OOS 월별 Constrained EW / EW / EW_All / EW_Top50 수익률 + 누적 수익률 (컬럼 prefix `cew_*`)
+- `output/{BENCHMARK}/overfit_diagnostics.csv` -- 과적합 진단 5개 지표 요약
+- `output/{BENCHMARK}/walk_forward_weight_history.csv` -- 월별 팩터 가중치 이력 (date x factor; viz 비중 추이/회전율용)
 - `docs/backtest_results_2009_2026.md` -- 136개월 OOS 분석 보고서
 
 **재현성 (결정적 출력, 2026-06-24):** 위 두 CSV(`walk_forward_results.csv`,
@@ -841,7 +873,7 @@ python main.py mp <start> <end> --benchmark
 ## 7. 시각화 대시보드 레이어 (viz)
 
 백테스트와 현재 포트를 단일 인터랙티브 HTML로 보여주는 **read-only** 레이어.
-기존 `output/*.csv`만 소비하고 파이프라인 코드/출력 스키마를 일절 수정하지 않으므로,
+기존 `output/{BENCHMARK}/*.csv`만 소비하고 파이프라인 코드/출력 스키마를 일절 수정하지 않으므로,
 CLAUDE.md 의 코드 변경 검증 절차(aggregated_weights before/after diff)를 발동시키지 않는다.
 
 ### 7.1 모듈 구조 (관심사 분리)
@@ -874,7 +906,7 @@ KPI 카드(CAGR/MDD/Sharpe/Calmar/승률/초과CAGR)는 `build_kpis()`에서 **�
 
 ### 7.4 출력 / 제약
 
-- `output/dashboard_<date>.html`, plotly.js **인라인** 임베드 -> 오프라인 단독 열림(약 4.7MB).
+- `output/{BENCHMARK}/dashboard_<date>.html`, plotly.js **인라인** 임베드 -> 오프라인 단독 열림(약 4.7MB).
 - 백테스트 섹션 하단 "과적합 진단 상세" 표 = `overfit_diagnostics.csv` 전체를 순서대로 렌더(컬럼: 분류/지표/EW/Top50/CEW/해석). 단일값 행은 3열 colspan, Interpretation 의 `<`/`>`(예: 'A < B < C')는 escape. `parse_diagnostics()`는 KPI용이라 Interpretation/행순서를 버리므로 표는 CSV를 직접 읽는다.
 - **OOS 성과는 곡선에서 계산해 이 표에 통합**: `_oos_rows()`/`compute_series_perf()`가 walk_forward_results.csv 곡선에서 EW_All/EW_Top50/CEW 의 CAGR/MDD/Sharpe/Calmar 를 산출해 단일 "OOS 성과 (EW/Top50/CEW)" 블록으로 삽입(CSV/백테스트 스키마 무수정; 곡선 계산 = 진단값 §7.3; CSV 엔 없는 EW_All/Top50 의 Sharpe/Calmar 까지 메움). **중복 방지**: funnel 이 이미 OOS CAGR/MDD 를 EW/Top50/CEW 로 보여주므로, 통합 시 funnel 의 EW_All/EW_Top50/Constrained EW 변형행과 CSV OOS 섹션(CEW·선정EW)은 숨기고 funnel 패턴 판정 행만 남긴다. 곡선이 없으면(test 모드) funnel 변형행을 그대로 3열 피벗하는 폴백.
 - **낙폭 구간 분석**: `compute_drawdown_episodes(cum, min_depth=0.01)`(dashboard_data)가 곡선에서 underwater episode(고점->저점->회복)를 추출 — 깊이(%) + peak/trough/recovery 시점 + 하락(peak->trough)·회복(trough->recovery)·전체 기간(개월), 미회복 시 ONGOING. `_drawdown_episodes_section()`이 EW_All/EW_Top50/CEW 곡선별 표(깊은 순, 1% 이상)로 렌더. 정적 산출물 `docs/experiments/drawdown_analysis.md`(특정 설정/기간)와 달리 **현재 OOS 곡선에서 실시간 계산**이라 숫자는 다름.
@@ -892,7 +924,7 @@ parquet 없거나 날짜 불일치 시 빈 dict -> 섹터 차트 자동 생략. 
 ### 7.6 백테스트 비중 추이 / 회전율
 
 `WalkForwardResult.weight_history`(date x factor)는 메모리에만 있었으나, `_run_backtest`에서
-`result.weight_history.to_csv(output/walk_forward_weight_history.csv)` **한 줄로 직렬화**한다
+`result.weight_history.to_csv(output/{BENCHMARK}/walk_forward_weight_history.csv)` **한 줄로 직렬화**한다
 (기존 `walk_forward_results.csv` 기록 *다음에* 별도 파일을 쓰므로 기존 출력은 불변).
 viz는 이 파일을 읽어 `compute_turnover()`(one-way = 0.5*sum|dw|)로 회전율을,
 `style_weight_history()`(factor->style via `factor_info.csv`)로 스타일 비중 스택 영역을 그린다.

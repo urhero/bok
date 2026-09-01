@@ -1,15 +1,36 @@
-# 📘 엔드투엔드 팩터 파이프라인 요약 — MXWO 유니버스
+# 📘 엔드투엔드 팩터 파이프라인 요약 — MXCN1A / MXWO 유니버스
 [[pytest](https://github.com/urhero/bok/actions/workflows/test.yml/badge.svg)](https://github.com/urhero/bok/actions/workflows/test.yml)
 
 *(Code → Investment Process 매핑)*
 
-> **이 브랜치(`mxwo_sharpe1`)는 MXWO(선진국) 유니버스 기준입니다.** MXCN1A(중국)는
-> `main` 브랜치이며, 선정·가중 방법론이 유니버스별로 다르게 튜닝돼 있습니다
-> (문서 끝의 [MXCN1A(main)와의 차이](#mxcn1amain와의-차이) 참조). 유니버스 전환은
-> 코드가 아니라 `.env`(BENCHMARK/UNIVERSE/서버)가 결정합니다.
+> **하나의 코드베이스가 MXCN1A(중국 A주)와 MXWO(MSCI World) 두 유니버스를 지원합니다**
+> (2026-09-02 `mxwo_sharpe1` 브랜치 통합). 선정·가중 방법론은 유니버스별로 따로 튜닝돼 있고,
+> `BENCHMARK` 값 하나로 파라미터·DB·출력 폴더·데이터 파일이 전부 결정됩니다 —
+> [유니버스 전환](#유니버스-전환) 및 문서 끝의 [유니버스별 파라미터](#유니버스별-파라미터-mxcn1a-vs-mxwo) 참조.
+> 본문 각 단계의 수치 예시(롤링 IS 48개월, 순수 Top-50, 섹터 숏캡 등)는 **MXWO 기준**이며,
+> MXCN1A 는 표의 값(expanding IS, winner_median 클러스터, 숏캡 없음)으로 읽으면 됩니다.
 >
 > 각 섹션의 `[N]` 번호는 `model_portfolio.py:run()` 코드의 단계 주석과 동일합니다.
 > 함수별 Input/Output 상세, 코드 수준 구현 세부사항은 [`research.md`](research.md) 참조.
+
+---
+
+## 유니버스 전환
+
+```bash
+# .env — 두 블록 중 하나만 활성 (안 쓰는 쪽은 주석). BENCHMARK 가 없으면 config.py 의 BENCHMARK 상수(기본 MXCN1A)
+BENCHMARK=MXCN1A          # 또는 MXWO
+UNIVERSE=clarifi_mxcn1a_afl
+SERVER_NAME=10.206.1.19,9433
+DB_NAME=GLOBAL
+
+# 일회성으로 덮어쓰기 (환경변수가 .env 보다 우선)
+BENCHMARK=MXWO python main.py backtest 2015-06-30 2026-07-31
+```
+
+`BENCHMARK` 하나로 `config.py`가 `PARAM`(DB/universe), `PIPELINE_PARAMS`(공통 + 유니버스별 오버라이드),
+`service/paths.py`의 `OUTPUT_DIR = output/{BENCHMARK}/`, 유니버스 종속 데이터(`data/{BENCHMARK}_*`)를 전부 결정한다.
+미등록 값은 `KeyError`로 즉시 실패한다. 두 유니버스의 파라미터 차이는 [유니버스별 파라미터](#유니버스별-파라미터-mxcn1a-vs-mxwo).
 
 ---
 
@@ -145,7 +166,7 @@
   - `total_aggregated_weights_style_{end_date}_test.csv` — 스타일별 집계 (종목 단위, `_test` 동일)
   - `pivoted_total_agg_wgt_{end_date}.csv` — 피벗 형태 (Optimizer 연동용)
   - `meta_data.csv` — 팩터 성과 요약 (test 모드에서만 `meta_data_test_*.csv`로 바뀜)
-- factor 가중치 + style 요약 → `output/mp_weight_history/` (production 실행 시 항상 저장, test 모드는 3종 모두 미저장)
+- factor 가중치 + style 요약 → `output/{BENCHMARK}/mp_weight_history/` (production 실행 시 항상 저장, test 모드는 3종 모두 미저장)
   - `factor_weights_{end_date}.csv` — factor 단위 배포 가중치 (다음 회차 전월대비 delta 입력용)
   - `factor_styles_{end_date}.csv` — factor × style + raw/prev/new 가중치 분해
   - `style_totals_{end_date}.csv` — style 단위 raw/prev/new 합계 + delta + factor 목록
@@ -278,25 +299,25 @@ result = engine.run("2015-06-30", "2026-06-30")
 # OOS 성과 확인
 result.calc_performance()           # CAGR, MDD, Sharpe, Calmar
 result.compare_cew_vs_ew_oos()     # Constrained EW vs. EW 비교
-result.to_csv("output/wf.csv")      # 결과 저장
+result.to_csv("output/{BENCHMARK}/wf.csv")      # 결과 저장
 ```
 
 ### 실행 결과
 백테스트 결과 및 과적합 진단 상세는 [`docs/backtest_results_2009_2026.md`](docs/backtest_results_2009_2026.md) 참조.
 
 **산출 파일:**
-- `output/walk_forward_results.csv` — OOS 월별 Constrained EW / EW(선정) / EW_All / EW_Top50(dedup 이전 랭킹 Top-50) 수익률 + 누적 수익률 ([research.md §6.4](research.md) 곡선 정의 참조)
-- `output/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
-- `output/walk_forward_weight_history.csv` — 월별 팩터 가중치 이력 (대시보드 비중 추이/회전율용)
-- `output/dashboard_<date>.html` — **백테스트 실행 시 자동 생성**되는 인터랙티브 리포트 (KPI + 과적합 진단 전체 표 + 차트). `viz`로 재생성 가능
+- `output/{BENCHMARK}/walk_forward_results.csv` — OOS 월별 Constrained EW / EW(선정) / EW_All / EW_Top50(dedup 이전 랭킹 Top-50) 수익률 + 누적 수익률 ([research.md §6.4](research.md) 곡선 정의 참조)
+- `output/{BENCHMARK}/overfit_diagnostics.csv` — 과적합 진단 5개 지표 요약
+- `output/{BENCHMARK}/walk_forward_weight_history.csv` — 월별 팩터 가중치 이력 (대시보드 비중 추이/회전율용)
+- `output/{BENCHMARK}/dashboard_<date>.html` — **백테스트 실행 시 자동 생성**되는 인터랙티브 리포트 (KPI + 과적합 진단 전체 표 + 차트). `viz`로 재생성 가능
 
 ### 시각화 대시보드 사용법 (viz)
 백테스트 내역과 현재 포트(배팅)를 단일 인터랙티브 HTML 리포트로 본다.
-기존 `output/*.csv`만 읽는 read-only 레이어라 파이프라인을 건드리지 않는다 (plotly 사용, 새 의존성 없음).
+기존 `output/{BENCHMARK}/*.csv`만 읽는 read-only 레이어라 파이프라인을 건드리지 않는다 (plotly 사용, 새 의존성 없음).
 `backtest` 실행 시 자동 생성되며, 아래 `viz`로 언제든 최신 CSV 기준 재생성한다.
 
 ```bash
-# 최신 스냅샷으로 대시보드 생성 -> output/dashboard_<date>.html
+# 최신 스냅샷으로 대시보드 생성 -> output/{BENCHMARK}/dashboard_<date>.html
 python main.py viz
 
 # 특정 스냅샷 날짜 지정
@@ -317,7 +338,7 @@ python main.py viz --open
 
 HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 
-> **스타일 비중 추이/회전율**은 `output/walk_forward_weight_history.csv`가 있어야 표시된다.
+> **스타일 비중 추이/회전율**은 `output/{BENCHMARK}/walk_forward_weight_history.csv`가 있어야 표시된다.
 > 이 파일은 `python main.py backtest ...` 실행 시 생성되므로, 백테스트를 한 번 돌려야 한다.
 > **섹터별 순비중**은 `data/{benchmark}_factor_<연도>.parquet`을 read-only 로 읽어 `gvkeyiid`로 join한다
 > (파이프라인/출력 스키마 무수정).
@@ -326,7 +347,7 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 
 ## 파이프라인 비즈니스 파라미터 (`PIPELINE_PARAMS`)
 
-`config.py`의 `PIPELINE_PARAMS`에서 중앙 관리. Pipeline 클래스 생성자에서 주입되며, 각 모듈 함수에 파라미터로 전달됨.
+`config.py`의 `PIPELINE_PARAMS`에서 중앙 관리. Pipeline 클래스 생성자에서 주입되며, 각 모듈 함수에 파라미터로 전달됨. **아래 값은 MXWO 기준**이며, 유니버스별로 다른 10개 키는 [유니버스별 파라미터](#유니버스별-파라미터-mxcn1a-vs-mxwo) 표 참조.
 
 | 파라미터 | 값 | 설명 | 사용 모듈 |
 |---------|-----|------|-----------|
@@ -370,23 +391,29 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 
 ---
 
-## MXCN1A(main)와의 차이
+## 유니버스별 파라미터 (MXCN1A vs MXWO)
 
-브랜치 = 유니버스 구조이며, 방법론은 유니버스별로 따로 튜닝됐다 (2026-08 교차 이식 실험:
-어느 쪽 스택도 상대 유니버스에 통째로 이식하면 대폭 열위 — 컴포넌트 단위로만 이전 가능).
+방법론은 유니버스별로 따로 튜닝됐다 (2026-08 교차 이식 실험: 어느 쪽 스택도 상대 유니버스에 통째로
+이식하면 대폭 열위 — 컴포넌트 단위로만 이전 가능). 2026-09-02 부터 두 유니버스가 같은 `main`에서
+`BENCHMARK` 로 분기된다.
 
-| 항목 | **MXWO (이 브랜치)** | MXCN1A (main) |
+| 항목 | MXCN1A (중국 A주) | MXWO (MSCI World) |
 |---|---|---|
-| 데이터/서버 | kb_global, 2015-06~ | GLOBAL, 2009-12~ |
-| 거래비용 | 10bp | 20bp |
-| IS 윈도우 | 롤링 48개월 | expanding |
-| 팩터 선정 | 순수 Top-50 고정 (dedup off) | winner_median 클러스터 (~28 가변) |
-| 히스테리시스 | 0.25 | 0.5 |
-| 가중 리밸 | 월간 | 분기 |
-| 가중 | ERC 수축 0.2 + TSM 3M x0.2 | ERC 수축 0.5 + TSM 3M x0.5 |
-| TSM 틸트 위치 | 캡 이전 (2026-08-06 교정, 동일) | 캡 이전 (캡 준수 보장) |
-| min_coverage | 10% | 없음 |
-| 섹터 숏캡 | 15% | 없음 (no-op 확인) |
-| spread 임계 | 0.05 | 0.05 (동일) |
-| 출력 경로 | `output/MXWO/` | `output/` |
-| 정본 실측 (배포 기준) | Sharpe 0.734 / MDD -1.80% / TE 1.04% (롱숏 ±20%, 거래세 반영) | net Sharpe 0.703 / MDD -4.87% (미스케일, 거래세 미반영) |
+| 데이터/서버 | GLOBAL, 2009-12~ | kb_global, 2015-06~ |
+| `transaction_cost_bps` | 20 | 10 (+ `COUNTRY_TAX_BPS` 국가별 거래세) |
+| `is_window_months` | None (expanding) | 48 (롤링) |
+| `use_cluster_dedup` | True (winner_median, ~28 가변) | False (순수 Top-50) |
+| `selection_hysteresis` | 0.5 | 0.25 |
+| `weight_rebal_months` | 3 | 1 |
+| `erc_shrinkage` / `ts_mom_scale` | 0.5 / 0.5 | 0.2 / 0.2 |
+| `min_coverage_pct` | 0 | 0.10 |
+| `sector_short_cap` | None | 0.15 |
+| `mp_target_gross` | None (배수 미적용) | 0.40 (롱 +20% / 숏 -20%) |
+| 출력 경로 | `output/MXCN1A/` | `output/MXWO/` |
+| 유니버스 종속 데이터 | `data/MXCN1A_*` | `data/MXWO_*` (+ `_mp_target_gross.csv`, `_mp_multiplier.csv`, `_bm_returns.csv`, `_bmwgt.parquet`, `_country_map.parquet`) |
+| 정본 실측 (배포 기준) | net Sharpe 0.703 / MDD -4.87% (미스케일, 거래세 미반영) | Sharpe 0.734 / MDD -1.80% / TE 1.04% (롱숏 ±20%, 거래세 반영) |
+
+공통 항목(style_cap 0.25, spread 0.05, ERC 모드, ts_mom_window 3, deploy_step 1.0 등)은 `config.py`의 `_COMMON_PARAMS`,
+유니버스별 항목은 `_UNIVERSE_PARAMS[BENCHMARK]` — `PIPELINE_PARAMS = {**_COMMON_PARAMS, **_UNIVERSE_PARAMS[BENCHMARK]}`.
+채택 근거(실험 문서·날짜)는 각 값 옆 주석 참조. MXCN1A: [`mxcn1a_component_ablation_20260805.md`](docs/experiments/mxcn1a_component_ablation_20260805.md),
+MXWO: [`mxwo_sharpe_ladder_20260729.md`](docs/experiments/mxwo_sharpe_ladder_20260729.md).
