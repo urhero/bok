@@ -625,6 +625,16 @@ def factor_name_map(factor_info_path: Path) -> dict:
     return dict(zip(df["factorAbbreviation"].astype(str), df["factorName"].astype(str)))
 
 
+def factor_desc_map(desc_path: Path) -> dict:
+    """factor_desc_kr.csv -> factorAbbreviation -> 1줄 한글 설명 매핑.
+
+    성과 원천 표용 수기 큐레이션 (2026-08-28). 미등재 팩터는 설명 줄 생략 —
+    표에 새 팩터가 등장하면 이 CSV에 행을 추가한다.
+    """
+    df = pd.read_csv(desc_path)
+    return dict(zip(df["factorAbbreviation"].astype(str), df["desc_kr"].astype(str)))
+
+
 def style_weight_history(weight_history: pd.DataFrame, factor_style: dict) -> pd.DataFrame:
     """팩터 가중치 이력을 스타일별로 합산 -> date x style DataFrame (스택 영역용)."""
     wh = weight_history.apply(pd.to_numeric, errors="coerce").fillna(0.0)

@@ -87,6 +87,7 @@ h2 { font-size: 18px; font-weight: 600; color: var(--on-dark); margin: 32px 0 14
 .contrib-line { padding: 2px 0; line-height: 1.45; }
 .contrib-line + .contrib-line { border-top: 1px solid rgba(255,255,255,0.04); }
 .contrib-name { color: var(--muted); font-size: 12px; }
+.contrib-desc { color: var(--muted); font-size: 12px; padding: 1px 0 2px; }
 .contrib-table { table-layout: fixed; }
 .contrib-table td { vertical-align: top; }
 /* 라이트 테마 (우측 상단 토글, 기본은 다크) */
@@ -337,15 +338,17 @@ def _dd_episode_row(e: dict) -> str:
 
 
 def _contrib_table(rows: list[dict], deployed_yearly: dict | None = None,
-                   name_map: dict | None = None, style_map: dict | None = None) -> str:
+                   name_map: dict | None = None, style_map: dict | None = None,
+                   desc_map: dict | None = None) -> str:
     """연도별 상위/하위 기여 팩터 표 (성과 원천 섹션, %p).
 
     deployed_yearly: {연도: 배포 실측 net_return 연 단순합 %p}. 팩터단 합과
     나란히 실제 계좌 규모를 보여준다 (차이 = 배포 배수 + 실비용/세금).
-    팩터는 한 줄씩 — 약어 + 기여 + 스타일 칩 + 전체 팩터명 (2026-08-28 사용자 지정).
+    팩터는 한 줄씩 — 약어 + 기여 + 스타일 칩 + 전체 팩터명, 다음 줄에 1줄
+    한글 설명 (desc_map, 2026-08-28 사용자 지정; 미등재 팩터는 설명 생략).
     """
     from service.report.style_colors import STYLE_COLORS, _DEFAULT_COLOR
-    nmap, smap = name_map or {}, style_map or {}
+    nmap, smap, dmap = name_map or {}, style_map or {}, desc_map or {}
 
     def fline(f: str, v: float) -> str:
         sty = smap.get(f, "")
@@ -354,8 +357,10 @@ def _contrib_table(rows: list[dict], deployed_yearly: dict | None = None,
                 if sty else '')
         nm = nmap.get(f, "")
         name = f' <span class="contrib-name">{escape(nm)}</span>' if nm and nm != f else ''
+        d = dmap.get(f, "")
+        desc = f'<div class="contrib-desc">{escape(d)}</div>' if d else ''
         return (f'<div class="contrib-line"><b>{escape(f)}</b> '
-                f'<span class="dd-num">{v:+.2f}</span>{chip}{name}</div>')
+                f'<span class="dd-num">{v:+.2f}</span>{chip}{name}{desc}</div>')
 
     dep = deployed_yearly or {}
     dep_th = '<th>실측 net (%p)</th>' if dep else ''
@@ -691,8 +696,10 @@ def _build_backtest_section(output_dir: Path, end_date=None) -> tuple[list[str],
         parts.append(f'<div class="card full">'
                      f'{_fig_div(ch.contrib_style_heatmap_fig(dd.contrib_style_yearly(contrib, fmap), basis.split(" — ")[0]))}</div>')
         nmap = dd.factor_name_map(fi_path) if fi_path.exists() else {}
+        desc_path = dd.DATA_DIR / "factor_desc_kr.csv"
+        dmap = dd.factor_desc_map(desc_path) if desc_path.exists() else {}
         parts.append(_contrib_table(dd.contrib_top_factors_yearly(contrib), dep_yr,
-                                    name_map=nmap, style_map=fmap))
+                                    name_map=nmap, style_map=fmap, desc_map=dmap))
 
     # 접힌 항목은 페이지 맨 아래로 모은다 (2026-08-28 사용자 지정)
     folded: list[str] = []
