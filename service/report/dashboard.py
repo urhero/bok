@@ -1149,6 +1149,12 @@ def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
     body = header + "".join(bt_parts) + "".join(pf_parts) + "".join(bt_folded + pf_folded)
     html = (
         '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">'
+        # uncaught 오류 진단: 발생 파일/라인/스택을 DASH-DIAG 접두로 콘솔 기록.
+        # 내장 뷰어에서 재포장돼 뜨는 오류의 출처(페이지 내부 vs 뷰어 스크립트)를
+        # 가르는 용도 — 페이지 동작에는 영향 없음 (2026-08-28)
+        '<script>window.addEventListener("error",function(e){try{'
+        'console.error("DASH-DIAG",e.message,"@",e.filename||"(no file)",'
+        '(e.lineno||0)+":"+(e.colno||0),e.error&&e.error.stack)}catch(_){}});</script>'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f'<title>{_benchmark()} 유니버스 전략 포트폴리오 대시보드 {snap}</title>'
         '<link rel="preconnect" href="https://fonts.googleapis.com">'
