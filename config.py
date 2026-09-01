@@ -7,12 +7,25 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# ── 유니버스 스위치 ────────────────────────────────────────────────────────────
+# 우선순위: .env 의 BENCHMARK > 아래 상수. .env 에서 MXCN1A/MXWO 블록 중 하나만
+# 활성(나머지 주석)으로 두면 되고, .env 에 BENCHMARK 가 없으면 아래 값이 쓰인다.
+# 이 값 하나로 DB/universe 식별자, PIPELINE_PARAMS 유니버스별 값, output/{BENCHMARK}/,
+# data/{BENCHMARK}_* 데이터 파일이 전부 결정된다 (2026-09-02 통합).
+BENCHMARK = os.getenv("BENCHMARK") or "MXCN1A"
+
+UNIVERSES = {
+    "MXCN1A": {"universe": "clarifi_mxcn1a_afl", "server_name": "10.206.1.19,9433", "db_name": "GLOBAL"},
+    "MXWO":   {"universe": "clarifi_mxwo_afl",   "server_name": "10.206.101.14",    "db_name": "kb_global"},
+}
+_U = UNIVERSES[BENCHMARK]  # 미등록 유니버스(오타)는 여기서 KeyError 로 즉시 실패
+
 # ── DB 연결 설정 (.env 필수) ──────────────────────────────────────────────────
 PARAM = {
-    "benchmark": os.getenv("BENCHMARK", "MXCN1A"),
-    "universe": os.getenv("UNIVERSE", "clarifi_mxcn1a_afl"),
-    "server_name": os.getenv("SERVER_NAME", ""),
-    "db_name": os.getenv("DB_NAME", "GLOBAL"),
+    "benchmark": BENCHMARK,
+    "universe": os.getenv("UNIVERSE") or _U["universe"],
+    "server_name": os.getenv("SERVER_NAME") or _U["server_name"],
+    "db_name": os.getenv("DB_NAME") or _U["db_name"],
     "user_name": os.getenv("USER_NAME", ""),
     "user_pwd": os.getenv("USER_PWD", ""),
     "odbc_name": os.getenv("ODBC_NAME", "ODBC Driver 17 for SQL Server"),
@@ -28,47 +41,39 @@ if not PARAM["user_name"]:
 # ── 파이프라인 비즈니스 파라미터 ──────────────────────────────────────────────
 #
 # [최적화 모드 가이드]
-#   optimization_mode: "equal_risk_weight"(기본, 2026-07-22 채택: IS 변동성 반비례 1/sigma)
+#   optimization_mode: "erc"(기본, 상관 인지 ERC) / "equal_risk_weight"(1/sigma)
 #                      / "equal_weight"(구 기본 1/N) / "hardcoded"(프로덕션 고정 가중치)
 #   factor_ranking_method: "shrunk_tstat"(Sprint 1-A) / "tstat" / "cagr"
 #   use_cluster_dedup: Sprint 1-B Hierarchical Clustering 중복 제거 on/off
 #
-PIPELINE_PARAMS = {
+# 공통 파라미터 + 유니버스별 오버라이드 -> PIPELINE_PARAMS. 유니버스별 값은 각 브랜치
+# (main=MXCN1A, mxwo_sharpe1=MXWO)에서 채택돼 있던 값을 그대로 옮긴 것 (2026-09-02).
+_COMMON_PARAMS = {
     "style_cap": 0.25,                # 스타일별 최대 비중 (프로덕션 규제 요건)
-    "transaction_cost_bps": 10.0,      # 종목 단위 거래비용 (basis points). MXWO 선진국 대형주 실집행 기준 10bp (2026-07-30 사용자 지정; MXCN1A/main 브랜치는 20bp 유지)
     # ── factor-level 백테스트 전용 비용 배수 ──────────────────────────────────
     # 팩터별 전액 계상은 교차 팩터 netting(실거래는 MP 합산 후 월 1회 매매)을 무시해
     # 비용을 과대평가한다. MP-level(종목단) 비용 백테스트 실측 결과
     # 실제 종목매매비용 / 팩터별 전액계상 비용 = 0.574 (2026-07-03,
     # docs/experiments/mp_level_cost_20260703.md) -> 0.6 으로 근사 적용
-    # (현 MXWO 10bp x 0.6 = 6bp; 도입 당시 MXCN 20bp x 0.6 = 12bp).
+    # (MXWO 10bp x 0.6 = 6bp; MXCN1A 20bp x 0.6 = 12bp).
     # mp(운영) 파이프라인에는 적용되지 않음 (백테스트 전용).
-    "backtest_cost_multiplier": 0.6,   # 선정 입력용 비용 (6bp; 비용 인지 선정이 A/B 최적 — 0/22bp 모두 열위). 주의: factor-level 성과 회계는 고회전 구성에서 실비용 과소계상 -> 정본 성과 판단은 mp_level_cost_backtest 실측 기준 (step0.5 실측 netting 1.09, net Sharpe 0.564)
+    "backtest_cost_multiplier": 0.6,   # 선정 입력용 비용 (비용 인지 선정이 A/B 최적 — 0/22bp 모두 열위). 주의: factor-level 성과 회계는 고회전 구성에서 실비용 과소계상 -> 정본 성과 판단은 mp_level_cost_backtest 실측 기준
     "top_factor_count": 50,            # 상위 팩터 선정 수
-    "spread_threshold_pct": 0.05,      # L/N/S 라벨링 임계값. MXWO: 0.05 채택 (2026-07-29, 0.025~0.05 고원; 구 0.10)
+    "spread_threshold_pct": 0.05,      # L/N/S 라벨링 임계값. MXWO 0.05 (2026-07-29, 0.025~0.05 고원) / MXCN1A 0.05 (2026-08-05: MDD -10.1->-6.1%, Calmar 0.305); 구 0.10
     "min_sector_stocks": 10,           # 섹터-날짜 최소 종목 수 (프로덕션)
-    "min_coverage_pct": 0.10,          # 팩터 최소 단면 커버리지 (유니버스 대비 유효 관측 비율, IS 기준). 은행 전용 등 초저커버리지 팩터 제외 (2026-07-27 MXWO A/B 채택)
     "ranking_group": "sector",         # 5분위 랭킹 그룹: "sector"(기본, 채택) / "region_sector"=(날짜,지역,섹터). 지역 중립화는 전 윈도우에서 열위로 기각 (2026-07-28 A/B — 국가 모멘텀이 알파원)
     "max_zero_return_months": 10,      # 0 수익률 허용 최대 월 수
-    "backtest_start": "2009-12-31",    # 백테스트 시작일
+    "backtest_start": "2009-12-31",    # 백테스트 시작일 (엔진은 parquet 전체 기간을 돎 — MXWO 데이터는 2015-06 부터)
     "backtest_end": "2026-03-31",      # 백테스트 종료일
-    "optimization_mode": "erc",        # "erc"(상관 인지 ERC, 2026-07-29 채택) / "equal_risk_weight"(1/sigma) / "equal_weight"(1/N) / "hardcoded". 근거: docs/experiments/mxwo_sharpe_ladder_20260729.md
-    "erc_shrinkage": 0.2,              # ERC cov 대각 수축 비율. 0.2 채택 (2026-08-07 전구간 0~1 스윕: 단조 하강 곡선, 실측 net 0.761->0.782/MDD -3.71%. 0은 특이 cov(n<p)+집중 12%라 회피, 0.1~0.3 안전지대 내부점)
-    "deploy_step": 1.0,                # 부분 조정 배포 (1.0=전량 조정). 20bp 시절 0.5 채택했으나 10bp 전환 후 역전 — 실측 step1.0 0.672 > 0.5 0.604 (2026-07-30)
-    "ts_mom_window": 3,                # 팩터 TS 모멘텀 틸트: trailing N개월 자기수익 음수 팩터 비중 감쇠. 3 채택 (2026-08-07 재검증: 독립 재실행 2회 연속 3M 피크 재현 + 실측 net 0.721->0.761 전 지표 우위 — 구 "스파이크 할인" 논리 철회)
-    "ts_mom_scale": 0.2,               # 감쇠 배율. 0.2 채택 (2026-08-10 전구간 0~1 스윕: 0 방향 단조 우위, 실측 net 0.782->0.840/MDD -3.50%. 0은 완전 제외 벼랑 규칙+회전 4.4x+최근구간 최약이라 회피, 0.2 = 내부 안전점)
+    "optimization_mode": "erc",        # "erc"(상관 인지 ERC; MXWO 2026-07-29, MXCN1A 2026-08-05 채택) / "equal_risk_weight"(1/sigma) / "equal_weight"(1/N) / "hardcoded". 근거: docs/experiments/mxwo_sharpe_ladder_20260729.md, mxcn1a_component_ablation_20260805.md
+    "deploy_step": 1.0,                # 부분 조정 배포 (1.0=전량 조정). MXWO: 20bp 시절 0.5 채택했으나 10bp 전환 후 역전 — 실측 step1.0 0.672 > 0.5 0.604 (2026-07-30)
+    "ts_mom_window": 3,                # 팩터 TS 모멘텀 틸트: trailing N개월 자기수익 음수 팩터 비중 감쇠. MXWO 3 (2026-08-07 재검증: 독립 재실행 2회 연속 3M 피크 + 실측 net 0.721->0.761) / MXCN1A 3 (창 3~6 고원, 2026-08-05). None/0 = off
     "bm_short_cap": False,             # 종목별 숏 비중 <= 그 종목의 BM 비중 (총 보유가 음수가 되지 않게). 배수 적용 후 최종 비중에 적용, 초과분은 여유 있는 숏에 재분배(water-filling), 롱은 숏 총액에 맞춰 비례 조정(중립 유지). BM 미편입 종목은 숏 불가. data/{benchmark}_bmwgt.parquet 필요. **2026-08-21 실측 기각 -> False**: 상한이 소형주 숏을 잘라내 숏 북이 대형주로 편중되는데, 2018-2026 대형-소형 스프레드가 +8.63%p/yr 라 대형주 숏은 구조적 역풍 -> Sharpe +0.715 -> -0.447 반전. 구현은 보존 (mxwo_sharpe_ladder_20260729.md 13차)
-    "mp_target_gross": 0.40,           # MP 배포 목표 총 gross (롱+|숏|). 설정 시 매 시점 배수를 자동 산출해 노출을 고정 (netting 변동 흡수). None 이면 data/mp_multiplier.csv 의 시점별 수동 배수 사용. 0.40 = 롱 +20% / 숏 -20% (2026-08-19 사용자 지정)
-    "sector_short_cap": 0.15,          # 섹터별 숏 gross 상한 (전체 숏 gross 대비, 2026-07-30 채택 — 2020-11형 숏 crowding 완화. 실측 스택 net 0.692/MDD -4.95/Calmar 0.352)
-    "weight_rebal_months": 1,          # Tier 2 가중 리밸 주기 (백테스트 CLI 기본, 월간 채택 2026-07-29)
     "factor_ranking_method": "tstat",  # "shrunk_tstat" / "tstat"(현 기본) / "cagr" — mp+backtest 공통 선정 기준
-    "use_cluster_dedup": False,        # MXWO: 롤링 IS와 winner_median 궁합 문제로 off (2026-07-28 A/B: on -0.12 / off +0.41 Sharpe). MXCN1A(main 브랜치)는 True 유지
-    "is_window_months": 48,            # 롤링 IS 윈도우 (개월). None=expanding. MXWO w36~72 스윕 중 내부 고원점 w48 채택 (2026-07-28, full Sharpe 0.16->0.41)
     "n_clusters": 18,                  # 클러스터 수 (use_cluster_dedup=True일 때)
     "per_cluster_keep": 3,             # 클러스터당 유지 팩터 수
     "cluster_method": "winner_median", # "winner_median"(기본): 클러스터 1등 보호 + 전역 중위값 바닥(top_n 고정 없음, ~18~54 가변) / "topn": 클러스터당 상위3 -> 전역 rank_score Top-N
     "newey_west_lag": 3,               # Newey-West 보정 lag (meta_data.csv 진단용)
-    "selection_hysteresis": 0.25,      # 선정 히스테리시스 margin (rank_score 단위). 0=off. MXWO 0.25 채택 (2026-07-29; 구 0.5)
     "style_cap_basis": "weight",       # "weight"(명목비중, 기본)/"risk": 스타일 캡 적용 기준. risk 는 equal_risk_weight 전용 (w*sigma 예산 기준 캡)
     "universe_mask": "off",            # "off"/"on": 상대 모멘텀 유니버스 마스크 (docs/superpowers/specs/2026-07-21-ls-universe-mask-design.md)
     "universe_momentum_windows": [1, 3, 6, 12],         # 복합 신호 horizon (개월)
@@ -76,6 +81,39 @@ PIPELINE_PARAMS = {
     "universe_split": [0.3, 0.4, 0.3], # 롱/공통/숏 유니버스 비율
     "universe_group": "global",        # "global"/"sector": 유니버스 순위 그룹 (sector = (날짜,섹터) 내 백분위)
 }
+
+_UNIVERSE_PARAMS = {
+    # 중국 A주. 2026-08-05 컴포넌트 ablation 채택 스택 (docs/experiments/mxcn1a_component_ablation_20260805.md).
+    # 실측 net Sharpe 0.703 / MDD -4.9%.
+    "MXCN1A": {
+        "transaction_cost_bps": 20.0,  # 종목 단위 거래비용 (basis points)
+        "erc_shrinkage": 0.5,          # ERC cov 대각 수축 비율. 0.2~0.5 고원, 실측 검증값 0.5 채택 (2026-08-05)
+        "ts_mom_scale": 0.5,           # 감쇠 배율 (0.7은 열위, 0.5 채택)
+        "use_cluster_dedup": True,     # Sprint 1-B: Top-N Hierarchical Clustering 중복 제거 (production 적용)
+        "is_window_months": None,      # expanding IS
+        "selection_hysteresis": 0.5,   # 선정 히스테리시스 margin (rank_score 단위). 0=off. 실험 근거: smoothing_cost_experiment_20260612.md
+        "weight_rebal_months": 3,      # Tier 2 가중 리밸 주기 (구 backtest CLI 기본값)
+        "min_coverage_pct": 0.0,       # 커버리지 필터 미적용
+        "sector_short_cap": None,      # 섹터 숏캡 미적용
+        "mp_target_gross": None,       # 배포 배수 미적용 (data/MXCN1A_mp_multiplier.csv 도 없음 -> 배수 1.0)
+    },
+    # MSCI World. 2026-07~08 Sharpe 사다리 채택 스택 (docs/experiments/mxwo_sharpe_ladder_20260729.md).
+    # 실측 net Sharpe 0.739 / MDD -4.80 (국가별 거래세 반영 후).
+    "MXWO": {
+        "transaction_cost_bps": 10.0,  # 선진국 대형주 실집행 기준 10bp (2026-07-30 사용자 지정). 국가별 거래세는 COUNTRY_TAX_BPS 로 별도 계상
+        "erc_shrinkage": 0.2,          # 0.2 채택 (2026-08-07 전구간 0~1 스윕: 단조 하강 곡선, 실측 net 0.761->0.782/MDD -3.71%. 0은 특이 cov(n<p)+집중 12%라 회피, 0.1~0.3 안전지대 내부점)
+        "ts_mom_scale": 0.2,           # 0.2 채택 (2026-08-10 전구간 0~1 스윕: 0 방향 단조 우위, 실측 net 0.782->0.840/MDD -3.50%. 0은 완전 제외 벼랑 규칙+회전 4.4x+최근구간 최약이라 회피, 0.2 = 내부 안전점)
+        "use_cluster_dedup": False,    # 롤링 IS와 winner_median 궁합 문제로 off (2026-07-28 A/B: on -0.12 / off +0.41 Sharpe)
+        "is_window_months": 48,        # 롤링 IS 윈도우 (개월). w36~72 스윕 중 내부 고원점 w48 채택 (2026-07-28, full Sharpe 0.16->0.41)
+        "selection_hysteresis": 0.25,  # 0.25 채택 (2026-07-29; 구 0.5)
+        "weight_rebal_months": 1,      # 월간 가중 리밸 채택 (2026-07-29)
+        "min_coverage_pct": 0.10,      # 팩터 최소 단면 커버리지 (유니버스 대비 유효 관측 비율, IS 기준). 은행 전용 등 초저커버리지 팩터 제외 (2026-07-27 A/B 채택)
+        "sector_short_cap": 0.15,      # 섹터별 숏 gross 상한 (전체 숏 gross 대비, 2026-07-30 채택 — 2020-11형 숏 crowding 완화. 실측 스택 net 0.692/MDD -4.95/Calmar 0.352)
+        "mp_target_gross": 0.40,       # MP 배포 목표 총 gross (롱+|숏|). 설정 시 매 시점 배수를 자동 산출해 노출을 고정 (netting 변동 흡수). None 이면 data/{BENCHMARK}_mp_multiplier.csv 의 시점별 수동 배수 사용. 0.40 = 롱 +20% / 숏 -20% (2026-08-19 사용자 지정)
+    },
+}
+
+PIPELINE_PARAMS = {**_COMMON_PARAMS, **_UNIVERSE_PARAMS[BENCHMARK]}
 
 # ---------------------------------------------------------------------------
 # 국가별 증권거래세 (2026-08-12 도입). 단위: (매수bp, 매도bp). 미등재국 = 0.
