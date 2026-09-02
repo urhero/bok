@@ -88,7 +88,7 @@ _UNIVERSE_PARAMS = {
         "weight_rebal_months": 3,      # Tier 2 가중 리밸 주기 (구 backtest CLI 기본값)
         "min_coverage_pct": 0.0,       # 커버리지 필터 미적용
         "sector_short_cap": None,      # 섹터 숏캡 미적용
-        "mp_target_gross": None,       # 배포 배수 미적용 (data/MXCN1A_mp_multiplier.csv 도 없음 -> 배수 1.0)
+        "mp_target_gross": 0.14,       # MP 배포 목표 총 gross (롱 +7% / 숏 -7%). 2026-09-02 사용자 지정 (그 전엔 None=배수 1.0, 북 gross ~0.92 그대로). 시점별 이력은 data/MXCN1A_mp_target_gross.csv
     },
     # MSCI World. 2026-07~08 Sharpe 사다리 채택 스택 (docs/experiments/mxwo_sharpe_ladder_20260729.md).
     # 실측 net Sharpe 0.739 / MDD -4.80 (국가별 거래세 반영 후).

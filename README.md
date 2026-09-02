@@ -399,9 +399,9 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `erc_shrinkage` / `ts_mom_scale` | 0.5 / 0.5 | 0.2 / 0.2 |
 | `min_coverage_pct` | 0 | 0.10 |
 | `sector_short_cap` | None | 0.15 |
-| `mp_target_gross` | None (배수 미적용) | 0.40 (롱 +20% / 숏 -20%) |
+| `mp_target_gross` | 0.14 (롱 +7% / 숏 -7%, 2026-08-31 스냅샷부터; 이전은 배수 1.0) | 0.40 (롱 +20% / 숏 -20%) |
 | 출력 경로 | `output/MXCN1A/` | `output/MXWO/` |
-| 유니버스 종속 데이터 | `data/MXCN1A_*` | `data/MXWO_*` (+ `_mp_target_gross.csv`, `_mp_multiplier.csv`, `_bm_returns.csv`, `_bmwgt.parquet`, `_country_map.parquet`) |
+| 유니버스 종속 데이터 | `data/MXCN1A_*` (+ `_mp_target_gross.csv`) | `data/MXWO_*` (+ `_mp_target_gross.csv`, `_mp_multiplier.csv`, `_bm_returns.csv`, `_bmwgt.parquet`, `_country_map.parquet`) |
 | 정본 실측 (배포 기준) | net Sharpe 0.703 / MDD -4.87% (미스케일, 거래세 미반영) | Sharpe 0.734 / MDD -1.80% / TE 1.04% (롱숏 ±20%, 거래세 반영) |
 
 공통 항목(style_cap 0.25, spread 0.05, ERC 모드, ts_mom_window 3, deploy_step 1.0 등)은 `config.py`의 `_COMMON_PARAMS`,
