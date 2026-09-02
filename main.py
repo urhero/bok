@@ -5,9 +5,10 @@
     python main.py download 2023-01-01 2023-12-31 --incremental  # 증분 다운로드
     python main.py mp 2023-01-01 2023-12-31                # Model Portfolio 생성
     python main.py mp test test_data.csv                   # 테스트 모드
-    python main.py mp 2023-01-01 2023-12-31 --benchmark    # MP + 벤치마크 비교
+    python main.py mp 2023-01-01 2023-12-31 --report       # 별첨 리포트 북만 생성
     python main.py backtest 2017-12-31 2026-03-31          # Walk-Forward 백테스트
     python main.py backtest test test_data.csv             # 백테스트 테스트 모드
+    python main.py viz [YYYY-MM-DD] [--open]               # 기존 산출물 -> HTML 대시보드
 
 README.md [1]~[7] 파이프라인 단계를 라우팅한다.
 """
@@ -21,12 +22,22 @@ from service.download.download_factors import run_download_pipeline
 from service.pipeline.model_portfolio import run_model_portfolio_pipeline
 
 
+def _split_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """mp/backtest 공통 위치 인자 해석: 'test <file>' 또는 '<start_date> <end_date>'.
+
+    테스트: python main.py mp test test_data.csv  (소량 검증, _test 접미사)
+    일반:   python main.py mp 2023-01-01 2023-12-31  (프로덕션)
+    """
+    if len(args.args) != 2:
+        parser.error(f"{args.command} requires 'test <filename>' or '<start_date> <end_date>'")
+    if args.args[0] == "test":
+        args.test_file, args.start_date, args.end_date = args.args[1], None, None
+    else:
+        args.test_file, (args.start_date, args.end_date) = None, args.args
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI 명령어를 파싱하고 적절한 파이프라인을 실행한다."""
-
-    # ─────────────────────────────────────────────────────────────────────
-    # 명령어 파서 설정
-    # ─────────────────────────────────────────────────────────────────────
     parser = argparse.ArgumentParser(description="Factor analysis pipeline.")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -40,13 +51,9 @@ def main(argv: list[str] | None = None) -> int:
                                   help="Skip post-download validation checks.")
 
     # mp: pipeline-ready parquet → Model Portfolio → CSV — README [1]~[7]
-    # 현재 MP는 Top-N 동일가중 + style_cap(25%) 재분배 방식으로 구성됨 (Constrained EW).
-    # 과거 Monte Carlo 최적화는 커밋 8dfb64e에서 제거됨.
     parser_report = subparsers.add_parser("mp", help="Generate Model Portfolio from downloaded data.")
     parser_report.add_argument("args", nargs="+", help="'test <filename>' or '<start_date> <end_date>'")
     parser_report.add_argument("--report", action="store_true", help="Generate report and exit.")
-    parser_report.add_argument("--benchmark", action="store_true",
-                                help="Run benchmark comparison (MP vs. equal-weight) after pipeline.")
 
     # backtest: Walk-Forward 백테스트
     parser_backtest = subparsers.add_parser("backtest", help="Walk-Forward (Expanding Window) backtest.")
@@ -78,115 +85,38 @@ def main(argv: list[str] | None = None) -> int:
                             help="Open the generated HTML in the default browser after generating.")
 
     args = parser.parse_args(argv)
+    if args.command in ("mp", "backtest"):
+        _split_args(parser, args)
 
-    # ─────────────────────────────────────────────────────────────────────
-    # mp 인자 분기: 테스트 모드 vs 일반 모드
-    # ─────────────────────────────────────────────────────────────────────
-    # 테스트: python main.py mp test test_data.csv  (소량 검증, _test 접미사)
-    # 일반:   python main.py mp 2023-01-01 2023-12-31  (프로덕션 MP)
-    if args.command == "mp":
-        if args.args[0] == "test":
-            if len(args.args) != 2:
-                parser.error("mp test requires exactly one filename: mp test <filename>")
-            args.test_file = args.args[1]
-            args.start_date = None
-            args.end_date = None
-        else:
-            if len(args.args) != 2:
-                parser.error("mp requires start_date and end_date: mp <start_date> <end_date>")
-            args.start_date = args.args[0]
-            args.end_date = args.args[1]
-            args.test_file = None
+    if args.command not in ("download", "mp", "backtest", "viz"):
+        parser.print_help()
+        return 1
 
-    # backtest 인자 분기
-    if args.command == "backtest":
-        if args.args[0] == "test":
-            if len(args.args) != 2:
-                parser.error("backtest test requires exactly one filename: backtest test <filename>")
-            args.test_file = args.args[1]
-            args.start_date = None
-            args.end_date = None
-        else:
-            if len(args.args) != 2:
-                parser.error("backtest requires start_date and end_date: backtest <start_date> <end_date>")
-            args.start_date = args.args[0]
-            args.end_date = args.args[1]
-            args.test_file = None
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        datefmt="[%X]",
+        handlers=[RichHandler()],
+    )
 
-    # ─────────────────────────────────────────────────────────────────────
-    # 명령어 실행
-    # ─────────────────────────────────────────────────────────────────────
-    if args.command in ("download", "mp", "backtest", "viz"):
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(message)s",
-            datefmt="[%X]",
-            handlers=[RichHandler()],
+    if args.command == "download":
+        run_download_pipeline(
+            args.start_date, args.end_date,
+            incremental=args.incremental,
+            validate=not args.no_validate,
         )
-
-        if args.command == "download":
-            run_download_pipeline(
-                args.start_date, args.end_date,
-                incremental=args.incremental,
-                validate=not args.no_validate,
-            )
-        elif args.command == "mp":
-            pipeline = run_model_portfolio_pipeline(
-                args.start_date, args.end_date,
-                report=args.report,
-                test_file=args.test_file,
-            )
-            if args.benchmark:
-                _run_benchmark_comparison(pipeline, args.start_date, args.end_date, args.test_file)
-
-        elif args.command == "backtest":
-            _run_backtest(args)
-
-        elif args.command == "viz":
-            _run_viz(args)
-
-        return 0
-
-    parser.print_help()
-    return 1
-
-
-def _run_benchmark_comparison(pipeline, start_date, end_date, test_file):
-    """--benchmark 옵션: 파이프라인 후 벤치마크(MP equal_weight vs 1/N) 비교 실행.
-
-    벤치마크는 equal_weight MP 기준이다. config optimization_mode 가 이미
-    equal_weight 면 직전 mp 실행(pipeline)을 그대로 재사용하고, 아니면
-    equal_weight 로 1회만 재실행한다 (불필요한 전체 파이프라인 재실행 방지).
-    """
-    from config import PARAM, PIPELINE_PARAMS
-    from service.pipeline.benchmark_comparison import compare_vs_benchmark
-    from service.report.reporting import print_benchmark_report
-    from service.pipeline.model_portfolio import DATA_DIR, ModelPortfolioPipeline, OUTPUT_DIR
-
-    if PIPELINE_PARAMS.get("optimization_mode") != "equal_weight":
-        pp = dict(PIPELINE_PARAMS)
-        pp["optimization_mode"] = "equal_weight"
-        pipeline = ModelPortfolioPipeline(
-            config=PARAM,
-            factor_info_path=DATA_DIR / "factor_info.csv",
-            is_test=bool(test_file),
-            pipeline_params=pp,
+    elif args.command == "mp":
+        run_model_portfolio_pipeline(
+            args.start_date, args.end_date,
+            report=args.report,
+            test_file=args.test_file,
         )
-        pipeline.run(start_date, end_date, test_file=test_file)
+    elif args.command == "backtest":
+        _run_backtest(args)
+    elif args.command == "viz":
+        _run_viz(args)
 
-    if pipeline is None or pipeline.return_matrix is None or pipeline.weights is None:
-        logging.getLogger(__name__).warning("Pipeline results unavailable for benchmark comparison")
-        return
-
-    weights_dict = dict(zip(pipeline.weights["factor"], pipeline.weights["fitted_weight"]))
-    report = compare_vs_benchmark(pipeline.return_matrix, weights_dict)
-    print_benchmark_report(report)
-
-    # CSV 저장
-    import pandas as pd
-
-    summary = {k: v for k, v in report.items() if not isinstance(v, pd.Series)}
-    pd.DataFrame([summary]).to_csv(OUTPUT_DIR / "benchmark_comparison.csv", index=False)
+    return 0
 
 
 def _run_viz(args):
@@ -209,10 +139,9 @@ def _run_backtest(args):
         generate_overfit_report,
         serialize_diagnostics_csv,
     )
-    from service.report.reporting import print_overfit_report
     from service.backtest.walk_forward_engine import WalkForwardEngine
-    from service.paths import dated
-    from service.pipeline.model_portfolio import OUTPUT_DIR
+    from service.paths import OUTPUT_DIR, dated
+    from service.report.reporting import print_overfit_report
 
     # CLI 미지정 시 config 값 사용 (production parity)
     selection_hysteresis = (

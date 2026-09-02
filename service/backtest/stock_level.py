@@ -19,14 +19,11 @@ from service.pipeline.weight_construction import multiplier_for_target, sector_s
 logger = logging.getLogger(__name__)
 
 
-def stock_weights_at(frames, w_dep, t, backtest_start_ts, stock_weight_cap: float | None = None,
+def stock_weights_at(frames, w_dep, t, backtest_start_ts,
                      sector_short_cap: float | None = None):
     """월 t 의 MP 종목 비중과 종목 수익률 맵을 만든다 (production 구성 로직과 동일).
 
     각 팩터: L 종목 +w_f/n_L, S 종목 -w_f/n_S -> 종목 단위 합산 (netting).
-    stock_weight_cap: 종목당 |순비중| 상한 (예: 0.01). 초과분은 잘라내고 롱/숏
-    각 사이드의 원래 gross 를 보존하도록 사이드별 재정규화 (이벤트/스프링 집중 완화
-    실험 — 2026-07-30 MDD/Calmar 과제).
     """
     parts = []
     for f, wf in w_dep.items():
@@ -72,16 +69,6 @@ def stock_weights_at(frames, w_dep, t, backtest_start_ts, stock_weight_cap: floa
                                    "숏 gross 축소 %.2f%% -> %.2f%%",
                                    sector_short_cap * 100, t, len(sec_gross),
                                    total_sg * 100, new_sg * 100)
-    if stock_weight_cap:
-        for side in (1, -1):
-            mask = (w * side) > 0
-            gross = w[mask].abs().sum()
-            w[mask] = w[mask].clip(-stock_weight_cap, stock_weight_cap)
-            capped_gross = w[mask].abs().sum()
-            if capped_gross > 1e-12:
-                w[mask] *= gross / capped_gross  # 사이드 gross 보존
-                # 재정규화로 캡을 다시 넘는 종목은 한 번 더 클립 (근사 — 반복 수렴 생략)
-                w[mask] = w[mask].clip(-stock_weight_cap * 1.2, stock_weight_cap * 1.2)
     return w.sort_index(), r
 
 
@@ -116,7 +103,7 @@ def build_stock_series(monthly, mp_cost_bps: float, target_gross,
             bm = bm_weights_at(benchmark, t)
             if bm is not None:
                 before = w_dep[w_dep < 0]
-                w_dep = apply_bm_short_cap(w_dep, bm, (tg / 2.0) if tg else None)
+                w_dep = apply_bm_short_cap(w_dep, bm)
                 after = w_dep.reindex(before.index)
                 n_capped = int((after > before + 1e-12).sum())
 

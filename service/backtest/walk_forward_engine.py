@@ -20,30 +20,33 @@ import pandas as pd
 from rich.progress import track
 
 from config import PARAM, PIPELINE_PARAMS
+from service.backtest.data_slicer import get_oos_dates
+from service.backtest.result_stitcher import WalkForwardResult
 from service.backtest.stock_level import (
     build_stock_series,
     series_metrics,
     stock_weights_at,
 )
-from service.backtest.data_slicer import get_oos_dates
+from service.factor.factor_returns import aggregate_factor_returns
 from service.factor.selection import (
     apply_selection_hysteresis,
     cluster_and_dedup_top_n,
     cluster_winner_median_dedup,
     compute_rank_score,
 )
-from service.factor.universe_mask import apply_universe_mask, compute_universe_classification
-from service.backtest.result_stitcher import WalkForwardResult
+from service.paths import DATA_DIR, OUTPUT_DIR, dated
 from service.pipeline.factor_analysis import (
     ANALYZE_COLS,
     calculate_factor_stats_batch,
     filter_and_label_factors,
 )
-from service.pipeline.model_portfolio import (
-    ModelPortfolioPipeline,
-    aggregate_factor_returns,
+from service.pipeline.model_portfolio import ModelPortfolioPipeline
+from service.pipeline.optimization import (
+    blend_deploy_weights,
+    optimize_constrained_weights,
+    weight_kwargs_from,
 )
-from service.pipeline.optimization import optimize_constrained_weights, weight_kwargs_from
+from service.pipeline.weight_construction import resolve_target_gross
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +96,7 @@ def _run_rule_learning(
             용도(Tier 1 마다의 재-merge 제거). 미제공 시 is_raw/is_mret 로 병합.
 
     Returns:
-        rule_bundle: kept_abbrs, factor_stats, sort_order_map,
-                     dropped_sectors, label_rules, threshold_pct, kept_styles
+        rule_bundle: kept_abbrs, kept_styles, dropped_sectors, label_rules
     """
     pp = pipeline.pipeline_params
 
@@ -112,54 +114,31 @@ def _run_rule_learning(
         slim_data, factor_abbr_list, orders,
         test_mode=bool(test_file),
         min_sector_stocks=pp["min_sector_stocks"],
-        sector_spread_geometric=bool(pp.get("sector_spread_geometric", False)),
         # 커버리지 필터는 IS 학습에만 적용 (규칙으로서 kept_abbrs 에 반영됨).
         # 전체 데이터 사전계산(factor_stats_full)에는 미적용 — IS/full 커버리지가
         # 임계 근처에서 엇갈릴 때 kept 팩터의 stats 가 사라지는 불일치 방지.
         min_coverage_pct=float(pp.get("min_coverage_pct", 0.0)),
-        # 랭킹 그룹은 구조 파라미터 — IS/full 양쪽 동일 적용 (횡단면, look-ahead 없음)
-        ranking_group=("sector" if test_file else pp.get("ranking_group", "sector")),
-        n_quantiles=int(pp.get("n_quantiles", 5)),
     )
 
     # [3] 섹터 필터링 + L/N/S 라벨링
     factor_name_list = factor_metadata.factorName.tolist()
     style_name_list = factor_metadata.styleName.tolist()
-    kept_abbrs, kept_names, kept_styles, _kept_idx, dropped_sec, filtered_data = filter_and_label_factors(
+    kept_abbrs, _kept_names, kept_styles, _kept_idx, dropped_sec, filtered_data = filter_and_label_factors(
         factor_abbr_list, factor_name_list, style_name_list, factor_stats,
         spread_threshold_pct=pp["spread_threshold_pct"],
-        sector_drop_tstat=pp.get("sector_drop_tstat"),
     )
 
-    # sort_order_map 구성 (팩터별 정렬 방향)
-    sort_order_map = {}
-    for abbr, order in zip(factor_abbr_list, orders):
-        sort_order_map[abbr] = order
-
-    # label_rules 구성 (각 팩터의 분위별 라벨 매핑)
-    label_rules = {}
-    for i, abbr in enumerate(kept_abbrs):
-        fd = filtered_data[i]
-        if "quantile" in fd.columns and "label" in fd.columns:
-            q_labels = fd.groupby("quantile")["label"].first().to_dict()
-            label_rules[abbr] = q_labels
-
-    rule_bundle = {
+    # IS 전용 규칙만 보존 (제거 섹터 + 분위별 L/N/S 라벨). IS 프레임(factor_stats /
+    # filtered_data)은 여기서 버려져 Tier 1 주기 동안 메모리를 점유하지 않는다.
+    return {
         "kept_abbrs": kept_abbrs,
-        "kept_names": kept_names,
         "kept_styles": kept_styles,
-        "factor_stats": factor_stats,
-        "sort_order_map": sort_order_map,
         "dropped_sectors": {abbr: secs for abbr, secs in zip(kept_abbrs, dropped_sec) if secs},
-        "label_rules": label_rules,
-        "threshold_pct": pp["spread_threshold_pct"],
-        "filtered_data": filtered_data,
-        "factor_metadata": factor_metadata,
-        "factor_abbr_list": factor_abbr_list,
-        "orders": orders,
+        "label_rules": {
+            abbr: fd.groupby("quantile", observed=False)["label"].first().to_dict()
+            for abbr, fd in zip(kept_abbrs, filtered_data)
+        },
     }
-
-    return rule_bundle
 
 
 def _apply_rules_and_aggregate(
@@ -167,7 +146,6 @@ def _apply_rules_and_aggregate(
     factor_abbr_list: list[str],
     rule_bundle: dict[str, Any],
     pipeline: ModelPortfolioPipeline,
-    universe_df: pd.DataFrame | None = None,
     out_frames: dict | None = None,
 ) -> pd.DataFrame:
     """IS에서 학습한 규칙을 (사전 계산된) 전체 데이터 5분위 통계에 적용하고 팩터 수익률을 사전 계산한다.
@@ -189,8 +167,6 @@ def _apply_rules_and_aggregate(
         factor_stats_full: run()에서 사전 계산된 전체 데이터 5분위 통계
             (calculate_factor_stats_batch 결과; factor_abbr_list 와 인덱스 정렬).
         factor_abbr_list: factor_stats_full 인덱스에 대응하는 팩터 약어 리스트.
-        universe_df: 상대 모멘텀 유니버스 분류 (run()에서 1회 계산). None 이면
-            마스크 미적용(기존과 byte 동일).
 
     Returns:
         precomputed_ret_df: (전체 월 × 유효 팩터) 수익률 행렬
@@ -246,11 +222,6 @@ def _apply_rules_and_aggregate(
         if not (has_long and has_short):
             logger.debug("Factor %s skipped - missing long or short after IS rule application", abbr)
             continue
-
-        # 상대 모멘텀 유니버스 마스크 (None 이면 미적용 -> 기존과 byte 동일).
-        # fail-open 이 (날짜,사이드) 전멸을 막으므로 has_long/has_short 은 계속 성립.
-        if universe_df is not None:
-            merged = apply_universe_mask(merged, universe_df)
 
         valid_abbrs.append(abbr)
         valid_filtered.append(merged)
@@ -389,8 +360,6 @@ class WalkForwardEngine:
         pp["transaction_cost_bps"] = _resolve_backtest_cost_bps(pp)
 
         # 1. 데이터 1회 로딩 — pipeline 인스턴스를 통해 [1] 실행
-        from service.pipeline.model_portfolio import DATA_DIR
-
         pipeline = ModelPortfolioPipeline(
             config=PARAM,
             factor_info_path=DATA_DIR / "factor_info.csv",
@@ -400,20 +369,6 @@ class WalkForwardEngine:
         raw_data, market_return_df, start_date, end_date = pipeline._load_data(
             start_date, end_date, test_file
         )
-
-        # 상대 모멘텀 유니버스 (신호가 trailing-only -> 전기간 1회 계산해도 OOS look-ahead 없음)
-        universe_df = None
-        if pp.get("universe_mask", "off") == "on":
-            sector_df = None
-            if pp.get("universe_group", "global") == "sector":
-                sector_df = raw_data[["ddt", "gvkeyiid", "sec"]].drop_duplicates(["ddt", "gvkeyiid"])
-            universe_df = compute_universe_classification(
-                market_return_df,
-                windows=pp["universe_momentum_windows"],
-                horizon_weights=pp["universe_momentum_weights"],
-                split=pp["universe_split"],
-                sector_df=sector_df,
-            )
 
         all_dates = sorted(raw_data["ddt"].unique())
         oos_dates = get_oos_dates(all_dates, self.min_is_months)
@@ -434,10 +389,6 @@ class WalkForwardEngine:
             slim_full, factor_abbr_list_full, orders_full,
             test_mode=bool(test_file),
             min_sector_stocks=pp["min_sector_stocks"],
-            sector_spread_geometric=bool(pp.get("sector_spread_geometric", False)),
-            # 랭킹 그룹은 IS 학습과 동일해야 함 (구조 파라미터, 횡단면이라 안전)
-            ranking_group=("sector" if test_file else pp.get("ranking_group", "sector")),
-            n_quantiles=int(pp.get("n_quantiles", 5)),
         )
 
         # 2. 캐시 초기화
@@ -483,7 +434,7 @@ class WalkForwardEngine:
                 # 사전 계산된 전체 데이터 5분위 통계에 규칙 적용 + aggregate 1회 실행
                 precomputed_ret_df = _apply_rules_and_aggregate(
                     factor_stats_full, factor_abbr_list_full, cached_rule_bundle, pipeline,
-                    universe_df=universe_df, out_frames=stock_frames,
+                    out_frames=stock_frames,
                 )
 
                 if precomputed_ret_df.empty:
@@ -521,9 +472,8 @@ class WalkForwardEngine:
                 else:
                     ret_df_is.iloc[0] = 0.0  # 기준점
 
-                    # 0 수익률 월 필터 (max_zero_return_frac 지정 시 IS 길이 비례)
-                    from service.pipeline.universe import resolve_zero_cap
-                    valid = ret_df_is.columns[(ret_df_is == 0).sum() <= resolve_zero_cap(pp, len(ret_df_is))]
+                    # 0 수익률 월 필터
+                    valid = ret_df_is.columns[(ret_df_is == 0).sum() <= pp["max_zero_return_months"]]
                     ret_df_is = ret_df_is[valid]
 
                     if len(ret_df_is.columns) < MIN_REQUIRED_FACTORS:
@@ -579,7 +529,6 @@ class WalkForwardEngine:
                             _order = sorted(raw_new_weights)
                             _wscale = 1.0 / sum(raw_new_weights[f] for f in _order)
                             _target = {f: raw_new_weights[f] * _wscale for f in _order}
-                            from service.pipeline.optimization import blend_deploy_weights
                             cached_weights = blend_deploy_weights(
                                 _target, cached_weights, float(pp.get("deploy_step", 1.0)))
                             cached_selected_factors = list(cached_weights.keys())
@@ -598,7 +547,6 @@ class WalkForwardEngine:
                 w_t, r_t = stock_weights_at(
                     stock_frames, cached_weights, oos_date,
                     pd.Timestamp(pp["backtest_start"]),
-                    stock_weight_cap=pp.get("stock_weight_cap"),
                     sector_short_cap=pp.get("sector_short_cap"),
                 )
                 if len(w_t):
@@ -619,7 +567,6 @@ class WalkForwardEngine:
         # 성과 산출물이 아니라 상관 구조 참고 데이터. 테스트 모드는 생략)
         if not test_file and precomputed_ret_df is not None and not precomputed_ret_df.empty:
             try:
-                from service.paths import OUTPUT_DIR, dated
                 precomputed_ret_df.to_csv(dated(
                     OUTPUT_DIR / "factor_returns_matrix.csv",
                     precomputed_ret_df.index.max()))
@@ -629,11 +576,8 @@ class WalkForwardEngine:
         # 배포 기준 시계열 저장 (노출/배수/TE) — 종목단 netting 반영
         if not test_file and stock_monthly:
             try:
-                from service.paths import OUTPUT_DIR, dated
                 # 목표 노출 일정(Active Risk 조정 이력) 반영 — 시점별로 다른 규모
-                from service.paths import DATA_DIR as _DD
-                from service.pipeline.weight_construction import resolve_target_gross
-                _tg_path, _tg_def = _DD / f"{PARAM['benchmark']}_mp_target_gross.csv", pp.get("mp_target_gross")
+                _tg_path, _tg_def = DATA_DIR / f"{PARAM['benchmark']}_mp_target_gross.csv", pp.get("mp_target_gross")
                 series = build_stock_series(
                     stock_monthly, float(PIPELINE_PARAMS["transaction_cost_bps"]),
                     lambda d: resolve_target_gross(d, _tg_path, _tg_def),
@@ -661,17 +605,6 @@ class WalkForwardEngine:
             클러스터 dedup **이전** 순수 rank_score 상위 top_n 리스트
             (Funnel Value-Add 의 B 단계 = 1차 랭킹 필터 곡선용).
         """
-        # 팩터 MDD 극단 필터 (MDD/Calmar 실험, 2026-07-30): IS 창에서 팩터 자체
-        # 낙폭이 최악 분위인 팩터를 선정 후보에서 제외. 미지정(None/0) = no-op.
-        mdd_filter_pct = pp.get("factor_mdd_filter_pct")
-        if mdd_filter_pct:
-            eq = (1 + ret_df_is).cumprod()
-            factor_mdd = (eq / eq.cummax() - 1).min()  # 팩터별 (음수)
-            cutoff = factor_mdd.quantile(float(mdd_filter_pct))
-            keep_cols = factor_mdd.index[factor_mdd >= cutoff]
-            if len(keep_cols) >= MIN_REQUIRED_FACTORS:
-                ret_df_is = ret_df_is[keep_cols]
-
         months = len(ret_df_is) - 1
         cum = (1 + ret_df_is).cumprod().iloc[-1]
         cagr_series = cum ** (12 / months) - 1
@@ -680,8 +613,7 @@ class WalkForwardEngine:
         monthly_rets = ret_df_is.iloc[1:]  # 첫 행(기준점 0) 제외
 
         # production mp (_evaluate_universe) 와 동일 로직 공유
-        rank_score = compute_rank_score(monthly_rets, ranking_method, style_map_full,
-                                        half_life=pp.get("tstat_half_life_months"))
+        rank_score = compute_rank_score(monthly_rets, ranking_method, style_map_full)
 
         meta_df = pd.DataFrame({
             "factorAbbreviation": ret_df_is.columns,
@@ -725,12 +657,9 @@ class WalkForwardEngine:
         # 선정 히스테리시스: 직전 보유 팩터를 margin 미만 격차의
         # 챌린저로부터 보호 (노이즈성 교체 churn 절감)
         if self.selection_hysteresis > 0 and incumbents:
-            from service.pipeline.universe import resolve_hysteresis_margin
             score_full = meta_df.set_index("factorAbbreviation")["rank_score"]
             adjusted = apply_selection_hysteresis(
-                list(selected), score_full,
-                set(incumbents),
-                resolve_hysteresis_margin(pp, self.selection_hysteresis, score_full),
+                list(selected), score_full, set(incumbents), self.selection_hysteresis,
             )
             if set(adjusted) != set(selected):
                 selected = adjusted

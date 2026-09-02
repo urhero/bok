@@ -131,7 +131,7 @@ def _guide_box(fig, xpx, ypx, wpx, hpx, n, corner="tl"):
     _callout(fig, cx, ypx, n)
 
 
-def _example_notes(fig, x, y, notes, line_h=17.0, wrap_x=None):
+def _example_notes(fig, x, y, notes, line_h=17.0):
     """번호별 설명 리스트. notes = [(번호, [줄들])]."""
     for num, lines in notes:
         _callout(fig, x + 8, y + 7, num)
@@ -497,8 +497,8 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
         weight_files = eligible or weight_files
     if weight_files:
         wdf = pd.read_csv(weight_files[-1])
-        port_weights = {r["factor"]: float(r["weight"]) for _, r in wdf.iterrows()
-                        if float(r["weight"]) > 1e-12}
+        port_weights = {f: float(w) for f, w in zip(wdf["factor"], wdf["weight"])
+                        if float(w) > 1e-12}
         logger.info("Portfolio marks from %s (%d factors)",
                     weight_files[-1].name, len(port_weights))
     else:
@@ -763,7 +763,3 @@ def generate_report(factor_abbrs, factor_names, style_names, factor_stats,
         cover04,
         lambda ax, rec, h: _chart_ls_series(ax, rec["series"], rec["color"], h),
         "CAGR")
-
-
-if __name__ == "__main__":
-    pass

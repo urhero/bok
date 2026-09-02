@@ -39,8 +39,7 @@ from service.download.parquet_io import (
     list_yearly_parquets,
     save_factor_parquet_by_year,
 )
-from service.download.paths import mreturn_filename
-from service.paths import DATA_DIR as _DEFAULT_DATA_DIR, PROJECT_ROOT as _PROJECT_ROOT
+from service.paths import DATA_DIR as _DEFAULT_DATA_DIR, PROJECT_ROOT as _PROJECT_ROOT, mreturn_filename
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +55,6 @@ def _backup_existing_parquets(
 ) -> None:
     """기존 parquet 파일을 data_backup/으로 백업한다.
 
-    연도별 분할 파일과 레거시 단일 파일 모두 처리한다.
     파일명에 기존 데이터의 최종 날짜를 접미사로 붙인다.
     예: MXCN1A_factor_2026.parquet → data_backup/MXCN1A_factor_2026_20260228.parquet
 
@@ -67,9 +65,8 @@ def _backup_existing_parquets(
         move: True이면 이동 (전체 다운로드), False이면 복사 (증분 — 원본 유지)
     """
     yearly_files = list_yearly_parquets(out_dir, benchmark)
-    single_file = out_dir / f"{benchmark}_factor.parquet"
 
-    if not yearly_files and not single_file.exists() and not mreturn_path.exists():
+    if not yearly_files and not mreturn_path.exists():
         return
 
     _BACKUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -78,8 +75,6 @@ def _backup_existing_parquets(
     try:
         if yearly_files:
             dates = pd.read_parquet(yearly_files[-1], columns=["ddt"])["ddt"]
-        elif single_file.exists():
-            dates = pd.read_parquet(single_file, columns=["ddt"])["ddt"]
         else:
             dates = pd.Series(dtype="datetime64[ns]")
         max_date = dates.max().strftime("%Y%m%d") if not dates.empty else "unknown"
@@ -95,12 +90,6 @@ def _backup_existing_parquets(
         dst = _BACKUP_DIR / f"{src.stem}_{max_date}{src.suffix}"
         op(str(src), str(dst))
         logger.info("%s %s → %s", op_name, src.name, dst)
-
-    # 레거시 단일 파일 백업
-    if single_file.exists():
-        dst = _BACKUP_DIR / f"{single_file.stem}_{max_date}{single_file.suffix}"
-        op(str(single_file), str(dst))
-        logger.info("%s %s → %s", op_name, single_file.name, dst)
 
     # M_RETURN 백업
     if mreturn_path.exists():
@@ -184,11 +173,7 @@ def run_download_pipeline(
     mreturn_path = out_dir / mreturn_filename(benchmark)
     factor_info_path = out_dir / "factor_info.csv"
 
-    # 증분 모드 진입 조건: 분할 파일 또는 레거시 단일 파일 존재
-    has_existing = (
-        bool(list_yearly_parquets(out_dir, benchmark))
-        or (out_dir / f"{benchmark}_factor.parquet").exists()
-    )
+    has_existing = bool(list_yearly_parquets(out_dir, benchmark))
 
     if incremental and has_existing:
         # 증분 모드: 기존 파일 복사 백업 (원본 유지 — append 필요)

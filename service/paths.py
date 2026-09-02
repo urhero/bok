@@ -21,6 +21,11 @@ OUTPUT_DIR = PROJECT_ROOT / "output" / _BENCHMARK
 HISTORY_DIR = OUTPUT_DIR / "mp_weight_history"
 
 
+def mreturn_filename(benchmark: str) -> str:
+    """M_RETURN parquet 파일명 ({benchmark}_mreturn.parquet) — download/validation/mp 공용."""
+    return f"{benchmark}_mreturn.parquet"
+
+
 _DATE_GLOB = "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
 
 

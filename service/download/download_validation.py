@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from service.download.parquet_io import load_factor_parquet, month_gap_issues
-from service.download.paths import mreturn_filename
+from service.paths import mreturn_filename
 
 logger = logging.getLogger(__name__)
 

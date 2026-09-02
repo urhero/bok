@@ -8,10 +8,6 @@ GitHub 100MB 파일 크기 제한을 우회하기 위해 대용량 factor parque
     data/MXCN1A_factor_2018.parquet
     ...
     data/MXCN1A_factor_2026.parquet
-
-하위 호환:
-    - 단일 파일(MXCN1A_factor.parquet)만 있으면 그대로 로드
-    - 분할 파일 우선
 """
 from __future__ import annotations
 
@@ -92,10 +88,8 @@ def load_factor_parquet(
 ) -> pd.DataFrame:
     """연도별 분할 parquet을 로드하여 하나의 DataFrame으로 반환.
 
-    우선순위:
-        1. 분할 파일(MXCN1A_factor_YYYY.parquet) → 해당 연도만 선택적 로드
-        2. 단일 파일(MXCN1A_factor.parquet) → 그대로 로드 (하위 호환)
-        3. 둘 다 없음 → FileNotFoundError
+    분할 파일(MXCN1A_factor_YYYY.parquet)만 지원 — start/end_year 로 연도 선택 로드.
+    파일이 없으면 FileNotFoundError.
 
     Args:
         data_dir: parquet 디렉토리
@@ -113,42 +107,21 @@ def load_factor_parquet(
         FileNotFoundError: parquet 파일이 없는 경우
         RuntimeError: validate=True이고 ERROR 수준 문제 발견 시
     """
-    data_dir = Path(data_dir)
-
-    # 1. 분할 파일 탐색
-    split_files = sorted(
-        data_dir.glob(f"{benchmark}_factor_[0-9][0-9][0-9][0-9].parquet")
-    )
-
-    if split_files:
-        if start_year or end_year:
-            sy = start_year or 0
-            ey = end_year or 9999
-            split_files = [
-                f for f in split_files
-                if sy <= int(f.stem.rsplit("_", 1)[-1]) <= ey
-            ]
-
+    split_files = list_yearly_parquets(data_dir, benchmark)
+    if not split_files:
+        raise FileNotFoundError(f"No factor parquet found at {data_dir}")
+    if start_year or end_year:
+        sy, ey = start_year or 0, end_year or 9999
+        split_files = [f for f in split_files if sy <= int(f.stem.rsplit("_", 1)[-1]) <= ey]
         if not split_files:
             raise FileNotFoundError(
                 f"No yearly parquets for {benchmark} in year range "
                 f"{start_year}~{end_year} at {data_dir}"
             )
 
-        frames = [pd.read_parquet(f, columns=columns) for f in split_files]
-        result = pd.concat(frames, ignore_index=True)
-        logger.info(
-            "Loaded %d yearly parquets (%s rows)",
-            len(split_files), f"{len(result):,}",
-        )
-    else:
-        # 2. 단일 파일 fallback
-        single_path = data_dir / f"{benchmark}_factor.parquet"
-        if single_path.exists():
-            logger.info("Fallback: loading single parquet %s", single_path.name)
-            result = pd.read_parquet(single_path, columns=columns)
-        else:
-            raise FileNotFoundError(f"No factor parquet found at {data_dir}")
+    frames = [pd.read_parquet(f, columns=columns) for f in split_files]
+    result = pd.concat(frames, ignore_index=True)
+    logger.info("Loaded %d yearly parquets (%s rows)", len(split_files), f"{len(result):,}")
 
     if validate:
         issues = validate_loaded_factor_data(result)

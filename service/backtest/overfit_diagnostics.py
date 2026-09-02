@@ -38,6 +38,22 @@ from service.report.diagnostics_keys import (
 logger = logging.getLogger(__name__)
 
 
+def _weight_rebal_indices(rebal_log: pd.DataFrame) -> list[int]:
+    """Tier 2 리밸런싱이 일어난 OOS 인덱스 리스트."""
+    if "is_weight_rebal" not in rebal_log.columns:
+        return []
+    return np.flatnonzero(rebal_log["is_weight_rebal"].to_numpy(dtype=bool)).tolist()
+
+
+def _cum_returns(history: list[dict], start: int, end: int) -> dict[str, float]:
+    """월별 {팩터: 수익률} dict 리스트의 [start:end) 구간 팩터별 기하 누적 수익률."""
+    cum: dict[str, float] = {}
+    for month_dict in history[start:end]:
+        for f, r in month_dict.items():
+            cum[f] = (1 + cum.get(f, 0.0)) * (1 + r) - 1
+    return cum
+
+
 # ── 1순위: Funnel Value-Add Test ─────────────────────────────────────────
 
 
@@ -155,11 +171,7 @@ def calc_oos_percentile_tracking(walk_forward_result: WalkForwardResult) -> dict
             "interpretation": "데이터 부족 - Percentile Tracking 계산 불가",
         }
 
-    # Tier 2 리밸런싱 시점 인덱스
-    weight_rebal_indices = [
-        i for i, (_, row) in enumerate(rebal_log.iterrows())
-        if row.get("is_weight_rebal", False)
-    ]
+    weight_rebal_indices = _weight_rebal_indices(rebal_log)
 
     if not weight_rebal_indices:
         return {
@@ -188,19 +200,9 @@ def calc_oos_percentile_tracking(walk_forward_result: WalkForwardResult) -> dict
         if not active_set:
             continue
 
-        # OOS 구간: 현재 Tier 2 ~ 다음 Tier 2 (또는 끝)
+        # OOS 구간: 현재 Tier 2 ~ 다음 Tier 2 (또는 끝) 팩터별 누적 수익률 (기하 복리)
         next_rebal_i = weight_rebal_indices[k + 1] if k + 1 < len(weight_rebal_indices) else len(all_fr_history)
-        oos_slice = all_fr_history[rebal_i:next_rebal_i]
-
-        if not oos_slice:
-            continue
-
-        # 구간 내 팩터별 누적 수익률 (기하 복리)
-        cum_returns: dict[str, float] = {}
-        for month_dict in oos_slice:
-            for f, r in month_dict.items():
-                cum_returns[f] = (1 + cum_returns.get(f, 0.0)) * (1 + r) - 1
-
+        cum_returns = _cum_returns(all_fr_history, rebal_i, next_rebal_i)
         if len(cum_returns) < 3:
             continue
 
@@ -208,8 +210,9 @@ def calc_oos_percentile_tracking(walk_forward_result: WalkForwardResult) -> dict
         cum_series = pd.Series(cum_returns)
         rank_map = (cum_series.rank(ascending=False, method="average") / len(cum_series)).to_dict()
 
-        # 선정 팩터의 평균 백분위
-        active_percentiles = [rank_map[f] for f in active_set if f in rank_map]
+        # 선정 팩터의 평균 백분위 (결정적 출력: set 순회 순서가 PYTHONHASHSEED 에 따라
+        # 달라져 합산 순서/말단 자릿수가 흔들리고 0.40/0.60 경계 판정이 뒤집혔음 -> 정렬 고정)
+        active_percentiles = [rank_map[f] for f in sorted(active_set) if f in rank_map]
         if active_percentiles:
             period_percentiles.append(np.mean(active_percentiles))
 
@@ -321,9 +324,7 @@ def calc_is_oos_rank_correlation(walk_forward_result: WalkForwardResult) -> dict
     spearman_values = []
     p_values = []
 
-    # 리밸런싱 시점 인덱스 찾기
-    rebal_log = walk_forward_result.rebalance_log
-    weight_rebal_indices = [i for i, (_, row) in enumerate(rebal_log.iterrows()) if row.get("is_weight_rebal", False)]
+    weight_rebal_indices = _weight_rebal_indices(walk_forward_result.rebalance_log)
 
     meta_idx = 0
     for k, rebal_i in enumerate(weight_rebal_indices):
@@ -344,18 +345,9 @@ def calc_is_oos_rank_correlation(walk_forward_result: WalkForwardResult) -> dict
         is_factors = meta["factorAbbreviation"].tolist()
         is_scores = meta[score_col].tolist()
 
-        # OOS 기간: 현재 리밸런싱 ~ 다음 리밸런싱 (또는 끝)
+        # OOS 기간: 현재 리밸런싱 ~ 다음 리밸런싱 (또는 끝) 팩터별 누적 수익률 (기하 복리)
         next_rebal_i = weight_rebal_indices[k + 1] if k + 1 < len(weight_rebal_indices) else len(oos_history)
-        oos_slice = oos_history[rebal_i:next_rebal_i]
-
-        if not oos_slice:
-            continue
-
-        # OOS 팩터별 누적 수익률 (기하 복리)
-        oos_returns_by_factor: dict[str, float] = {}
-        for oos_dict in oos_slice:
-            for f, r in oos_dict.items():
-                oos_returns_by_factor[f] = (1 + oos_returns_by_factor.get(f, 0.0)) * (1 + r) - 1
+        oos_returns_by_factor = _cum_returns(oos_history, rebal_i, next_rebal_i)
 
         # IS와 OOS에 공통으로 존재하는 팩터만
         common_factors = [f for f in is_factors if f in oos_returns_by_factor]

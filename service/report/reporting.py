@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Rich 콘솔 리포트 표현 계층 (restructure 2차 Phase 2).
 
-검증/진단/벤치마크 모듈에 혼재돼 있던 Rich 터미널 출력(print_*_report)을 한곳으로
+검증/진단 모듈에 혼재돼 있던 Rich 터미널 출력(print_*_report)을 한곳으로
 분리한다. 전부 부수효과(-> None, 콘솔 출력)이며 CSV/parquet 산출물 계약과 무관하다.
 본문은 글자보존(이동만). rich 는 각 함수 내부 lazy import 유지.
 """
@@ -19,15 +19,10 @@ def print_coverage_report(
     mret_df: pd.DataFrame,
 ) -> None:
     """Rich 테이블로 커버리지 리포트를 터미널에 출력한다."""
-    try:
-        from rich.console import Console
-        from rich.table import Table
-        from rich.panel import Panel
-        from rich.text import Text
-    except ImportError:
-        for w in warnings_list:
-            print(f"[{w['level']}] {w['type']}: {w['message']}")
-        return
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
 
     console = Console()
 
@@ -220,30 +215,3 @@ def print_overfit_report(report: dict[str, Any]) -> None:
     # 경고 패널
     console.print(Panel(report["warning"], title="경고", style="yellow"))
     console.print(Panel(report["limitation"], title="한계점", style="dim"))
-
-
-def print_benchmark_report(report: dict[str, Any]) -> None:
-    """벤치마크 비교 리포트를 Rich 테이블로 콘솔 출력한다."""
-    from rich.console import Console
-    from rich.table import Table
-
-    console = Console()
-    table = Table(title="MP vs. Equal-Weight Benchmark (IS 전체 기간)", show_header=True)
-    table.add_column("Metric", style="bold")
-    table.add_column("MP (Model Portfolio)", justify="right")
-    table.add_column("EW (1/N)", justify="right")
-
-    table.add_row("CAGR", f"{report['mp_cagr']:.4%}", f"{report['ew_cagr']:.4%}")
-    table.add_row("Excess CAGR", f"{report['excess_cagr']:.4%}", "-")
-    table.add_row("MDD", f"{report['mp_mdd']:.4%}", f"{report['ew_mdd']:.4%}")
-    table.add_row("Sharpe", f"{report['mp_sharpe']:.4f}", f"{report['ew_sharpe']:.4f}")
-    table.add_row("Win Rate", f"{report['win_rate']:.2%}", "-")
-    table.add_row("t-stat (excess)", f"{report['t_statistic']:.4f}", "-")
-    table.add_row("p-value", f"{report['p_value']:.4f}", "-")
-
-    console.print(table)
-
-    if report["excess_cagr"] <= 0:
-        console.print("[yellow][!] MP가 동일가중을 이기지 못함 - 모델 점검 권장[/yellow]")
-    else:
-        console.print("[green]OK MP가 동일가중 대비 초과 성과 확인[/green]")

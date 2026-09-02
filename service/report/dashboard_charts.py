@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """대시보드 차트 레이어. DataFrame -> plotly Figure.
 
-색상 매핑은 service/report/report_generator.py 의 STYLE_COLORS 를 그대로 따르되,
-거기 빠진 Volatility 와 미정의 스타일 fallback 을 보강한다(파이프라인 미수정 위해 복제).
+스타일 색은 service/report/style_colors.py 단일 출처 (PDF 북과 공유).
 """
 from __future__ import annotations
 
@@ -11,28 +10,20 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
+from config import PARAM
 from service.report.dashboard_data import compute_drawdown
 from service.report.style_colors import STYLE_COLORS, _DEFAULT_COLOR
 
-def _strategy_label() -> str:
-    """본전략 표기: '<유니버스>전략' (예: MXWO전략). config 미가용 시 '전략'.
-
-    구 표기 CEW 를 대체 (2026-08-28 사용자 지정)."""
-    try:
-        from config import PARAM
-        return f"{PARAM['benchmark']}전략"
-    except Exception:
-        return "전략"
-
-
-_STRAT_LABEL = _strategy_label()
+# 본전략 표기 '<유니버스>전략' (예: MXWO전략) — 구 표기 CEW 대체 (2026-08-28 사용자 지정).
+# dashboard.py 도 이 상수를 공유한다.
+STRAT_LABEL = f"{PARAM['benchmark']}전략"
 
 # 전략별 색/라벨 (누적수익 비교). 본전략은 브랜드 옐로로 가장 굵게.
 _STRAT = [
     ("ew_all", "#707a8a", "전체 EW", 1.6),
     ("ew_top50", "#2dbdb6", "Top50 EW", 1.8),
     ("ew", "#3b82f6", "선정 EW", 1.8),
-    ("cew", "#fcd535", _STRAT_LABEL, 2.8),
+    ("cew", "#fcd535", STRAT_LABEL, 2.8),
 ]
 
 # 트레이딩 시맨틱: 상승/롱 = green, 하락/숏 = red (Binance)
@@ -86,7 +77,7 @@ def monthly_returns_heatmap_fig(table: pd.DataFrame) -> go.Figure:
         hovertemplate="%{y} %{x}: %{z:.2f}%<extra></extra>",
         xgap=2, ygap=2, colorbar=dict(title="%", thickness=10),
     ))
-    fig.update_layout(title=f"수익률 (%, {_STRAT_LABEL})",
+    fig.update_layout(title=f"수익률 (%, {STRAT_LABEL})",
                       height=max(240, 26 * len(years) + 130), **_BASE_LAYOUT)
     fig.update_yaxes(autorange="reversed")  # 최근 연도 위로
     return fig
@@ -138,7 +129,7 @@ def rolling_sharpe_fig(r: pd.Series,
         ))
     fig.add_hline(y=0, line=dict(color=_MUTED, width=1, dash="dot"))
     fig.update_layout(
-        title=f"롤링 Sharpe (12/24/36/48개월, {_STRAT_LABEL})", height=360,
+        title=f"롤링 Sharpe (12/24/36/48개월, {STRAT_LABEL})", height=360,
         margin=dict(l=60, r=30, t=50, b=95), **_DARK,
         legend=dict(orientation="h", yanchor="top", y=-48.0 / (360 - 145), x=0),
     )
@@ -258,12 +249,12 @@ def equity_curve_fig(curves: pd.DataFrame, shade: str = "monthly") -> go.Figure:
 def drawdown_fig(curves: pd.DataFrame) -> go.Figure:
     dd = compute_drawdown(curves["cew_cumulative"])
     fig = go.Figure(go.Scatter(
-        x=dd.index, y=dd, fill="tozeroy", name=f"{_STRAT_LABEL} 낙폭",
+        x=dd.index, y=dd, fill="tozeroy", name=f"{STRAT_LABEL} 낙폭",
         line=dict(color=_NEG_COLOR, width=1.4),
         hovertemplate="%{x|%Y-%m}<br>%{y:.2%}<extra></extra>",
     ))
     # .0% 는 눈금 간격이 1% 미만일 때 같은 라벨(-1% x2)이 반복됨 -> 소수 1자리
-    fig.update_layout(title=f"낙폭 (drawdown, {_STRAT_LABEL})", height=320,
+    fig.update_layout(title=f"낙폭 (drawdown, {STRAT_LABEL})", height=320,
                       yaxis_tickformat=".1%", **_BASE_LAYOUT)
     return fig
 
@@ -275,7 +266,7 @@ def monthly_dist_fig(curves: pd.DataFrame) -> go.Figure:
         hovertemplate="%{x:.2%} 구간<br>%{y}개월<extra></extra>",
     ))
     fig.add_vline(x=0, line_dash="dash", line_color=_MUTED)
-    fig.update_layout(title=f"월별 수익 분포 ({_STRAT_LABEL})", height=320,
+    fig.update_layout(title=f"월별 수익 분포 ({STRAT_LABEL})", height=320,
                       xaxis_tickformat=".2%", bargap=0.03,
                       yaxis_title="개월 수", **_BASE_LAYOUT)
     return fig
@@ -341,22 +332,6 @@ def longs_shorts_fig(ls_df: pd.DataFrame, decomp_df: pd.DataFrame | None = None)
         yaxis=dict(automargin=True, categoryorder="array", categoryarray=ticker_order),
         legend=dict(orientation="h", yanchor="top", y=-48.0 / (h - 160), x=0),
         margin=dict(l=60, r=20, t=50, b=110), **_DARK)
-    return fig
-
-
-def factor_tilt_fig(tilt_df: pd.DataFrame, top_n: int | None = None) -> go.Figure:
-    """top_n=None 이면 전체 표시 (2026-08-25 사용자 지정)."""
-    d = (tilt_df if top_n is None else tilt_df.head(top_n)).sort_values("factor_weight")
-    fig = go.Figure(go.Bar(
-        x=d["factor_weight"], y=d["factor"], orientation="h",
-        marker_color=[_style_color(st) for st in d["style"]],
-        customdata=d["style"],
-        hovertemplate="%{y}<br>%{x:.3%}<br>%{customdata}<extra></extra>",
-    ))
-    label = f"전체 {len(d)}개" if top_n is None else f"상위 {len(d)}"
-    fig.update_layout(title=f"팩터 틸트 ({label}, 스타일별 색)",
-                      height=max(360, 20 * len(d) + 80), xaxis_tickformat=".2%",
-                      yaxis=dict(automargin=True), **_BASE_LAYOUT)
     return fig
 
 

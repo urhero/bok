@@ -4,7 +4,7 @@ Unit tests for optimize_constrained_weights() function.
 
 optimize_constrained_weights() 함수 테스트:
 - 스타일 가중치 제약 하에서 포트폴리오 가중치 결정
-- hardcoded / equal_weight 두 가지 모드 지원
+- erc / equal_risk_weight / equal_weight / hardcoded 모드 지원
 - style_cap(기본 25%) 제약 적용
 """
 from __future__ import annotations
@@ -18,77 +18,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from service.pipeline.optimization import optimize_constrained_weights
-
-
-class TestRawWeightPreCap:
-    """weights_tbl.raw_weight = 캡 적용 전 비중 보존 (2026-07-30, 캡 효과 시각화용)."""
-
-    def test_raw_is_pre_cap_fitted_is_capped(self) -> None:
-        rng = np.random.default_rng(2)
-        # 스타일 S1 에 저변동 팩터 3개 몰아 캡(25%) 초과 유도, S2~S5 로 재분배 확인
-        cols, styles = [], []
-        for i in range(3):
-            cols.append(("A%d" % i, rng.normal(0, 0.002, 60), "S1"))
-        for i, s in enumerate(["S2", "S3", "S4", "S5"]):
-            cols.append(("B%d" % i, rng.normal(0, 0.03, 60), s))
-        df = pd.DataFrame({n: np.concatenate([[0.0], v]) for n, v, _ in cols},
-                          index=pd.date_range("2020-01-31", periods=61, freq="ME"))
-        style_list = [s for _, _, s in cols]
-        _, tbl = optimize_constrained_weights(
-            df, style_list, mode="equal_risk_weight", test_mode=False, style_cap=0.25)
-        by_style_raw = tbl.groupby("styleName")["raw_weight"].sum()
-        by_style_fit = tbl.groupby("styleName")["fitted_weight"].sum()
-        assert by_style_raw["S1"] > 0.25 + 1e-6, "저변동 몰빵으로 캡 전 S1 > 25% 여야 함"
-        # float32 재분배의 기존 허용 오차(~1e-4, production 로그의 0.2501 수준)
-        assert by_style_fit["S1"] <= 0.25 + 1e-3, "캡 후 S1 ~<= 25%"
-        assert by_style_fit["S1"] < by_style_raw["S1"], "캡이 실제로 깎았어야 함"
-        assert abs(tbl["raw_weight"].sum() - 1.0) < 1e-5
-        assert abs(tbl["fitted_weight"].sum() - 1.0) < 1e-5
-
-
-class TestErcSolver:
-    """_solve_erc_ccd: 정식 ERC (RC 균등·양수 비중, 음의 상관 포함)."""
-
-    @staticmethod
-    def _rc(cov, w):
-        rc = w * (cov @ w)
-        return rc / rc.sum()
-
-    def test_rc_equalized_with_negative_corr(self) -> None:
-        """음의 상관 팩터가 있어도 리스크 기여가 균등해지고 비중은 전부 양수."""
-        from service.pipeline.optimization import _solve_erc_ccd
-        rng = np.random.default_rng(5)
-        base = rng.normal(0, 0.02, 200)
-        rets = np.column_stack([
-            base + rng.normal(0, 0.005, 200),
-            base + rng.normal(0, 0.005, 200),
-            -base + rng.normal(0, 0.005, 200),   # 음의 상관 (헤지 팩터)
-            rng.normal(0, 0.02, 200),
-        ])
-        cov = np.cov(rets.T)
-        w = _solve_erc_ccd(cov)
-        assert (w > 0).all() and abs(w.sum() - 1.0) < 1e-12
-        rc = self._rc(cov, w)
-        assert np.abs(rc - 0.25).max() < 1e-6, f"RC 불균등: {rc}"
-
-    def test_hedge_factor_gets_larger_weight(self) -> None:
-        """포트폴리오와 음의 상관인 팩터는 동일 변동성의 순응 팩터보다 큰 비중."""
-        from service.pipeline.optimization import _solve_erc_ccd
-        rng = np.random.default_rng(7)
-        base = rng.normal(0, 0.02, 300)
-        rets = np.column_stack([
-            base, base + rng.normal(0, 0.002, 300),
-            base + rng.normal(0, 0.002, 300),
-            -base + rng.normal(0, 0.002, 300),   # 헤지
-        ])
-        cov = np.cov(rets.T)
-        w = _solve_erc_ccd(cov)
-        assert w[3] > w[0], "헤지 팩터가 우대돼야 함 (구 구현은 0으로 붕괴)"
-
-    def test_identity_cov_equal_weights(self) -> None:
-        from service.pipeline.optimization import _solve_erc_ccd
-        w = _solve_erc_ccd(np.eye(5) * 0.04)
-        assert np.abs(w - 0.2).max() < 1e-9
 
 
 class TestBlendDeployWeights:
@@ -113,43 +42,6 @@ class TestBlendDeployWeights:
         for _ in range(3):
             w = blend_deploy_weights({"NEW": 1.0}, w, 0.5)
         assert w["OLD"] < 0.13 and w["NEW"] > 0.87
-
-
-class TestErwVolWindow:
-    """equal_risk_weight 의 erw_vol_window (최근 N개월 실현 vol 가중)."""
-
-    @staticmethod
-    def _regime_frame() -> tuple[pd.DataFrame, list[str]]:
-        """FA: 과거 고변동 -> 최근 저변동, FB: 반대. 24개월 + 기준점 행."""
-        rng = np.random.default_rng(3)
-        early_a, late_a = rng.normal(0, 0.10, 12), rng.normal(0, 0.01, 12)
-        early_b, late_b = rng.normal(0, 0.01, 12), rng.normal(0, 0.10, 12)
-        idx = pd.date_range("2023-01-31", periods=25, freq="ME")
-        df = pd.DataFrame({
-            "FA": np.concatenate([[0.0], early_a, late_a]),
-            "FB": np.concatenate([[0.0], early_b, late_b]),
-        }, index=idx)
-        return df, ["S1", "S2"]
-
-    def test_window_uses_recent_vol(self) -> None:
-        rtn_df, styles = self._regime_frame()
-        _, full = optimize_constrained_weights(
-            rtn_df, styles, mode="equal_risk_weight", test_mode=True)
-        _, recent = optimize_constrained_weights(
-            rtn_df, styles, mode="equal_risk_weight", test_mode=True, erw_vol_window=12)
-        wf = dict(zip(full["factor"], full["fitted_weight"]))
-        wr = dict(zip(recent["factor"], recent["fitted_weight"]))
-        # 전체 기간 vol 은 두 팩터 대칭 -> 비슷한 비중. 최근 12개월은 FA 저변동 -> FA 과중.
-        assert abs(wf["FA"] - wf["FB"]) < 0.2
-        assert wr["FA"] > 0.8
-
-    def test_none_window_unchanged(self) -> None:
-        rtn_df, styles = self._regime_frame()
-        _, a = optimize_constrained_weights(
-            rtn_df, styles, mode="equal_risk_weight", test_mode=True)
-        _, b = optimize_constrained_weights(
-            rtn_df, styles, mode="equal_risk_weight", test_mode=True, erw_vol_window=None)
-        assert a["fitted_weight"].tolist() == b["fitted_weight"].tolist()
 
 
 class TestOptimizeConstrainedWeightsBasic:
@@ -439,40 +331,6 @@ class TestEqualRiskWeightMode:
         # (기존 알고리즘 특성: 초과 시 경고만 남기고 허용). 실질 캡 준수만 확인.
         assert all(style_weights <= 0.40 + 1e-3)
         assert np.isclose(weights_tbl["fitted_weight"].sum(), 1.0, atol=1e-6)
-
-    def test_risk_basis_caps_risk_budget_not_notional(self) -> None:
-        """style_cap_basis="risk": 스타일별 리스크 예산(w*sigma) 합이 cap 이하.
-
-        저변동 스타일은 (통상)비중이 cap 을 넘을 수 있다 (리스크 기준이므로 정상).
-        """
-        rng = np.random.default_rng(3)
-        n = 61
-        # 스타일 A: 저변동 4팩터, 스타일 B/C/D/E: 고변동 각 2팩터
-        cols, styles = {}, []
-        for i in range(4):
-            cols[f"A{i}"] = rng.normal(0.003, 0.01, n)
-            styles.append("A")
-        for s in ["B", "C", "D", "E"]:
-            for i in range(2):
-                cols[f"{s}{i}"] = rng.normal(0.003, 0.05, n)
-                styles.append(s)
-        rtn_df = pd.DataFrame(cols)
-        rtn_df.iloc[0] = 0.0
-
-        _, weights_tbl = optimize_constrained_weights(
-            rtn_df=rtn_df, style_list=styles,
-            mode="equal_risk_weight", style_cap=0.25, test_mode=False,
-            style_cap_basis="risk",
-        )
-        w = weights_tbl.set_index("factor")["fitted_weight"]
-        vols = rtn_df.iloc[1:].std()
-        risk = (w * vols)
-        risk_share = risk.groupby(np.asarray(styles)).sum() / risk.sum()
-        assert all(risk_share <= 0.25 + 1e-3)  # 리스크 예산 기준 캡 준수
-        assert np.isclose(w.sum(), 1.0, atol=1e-6)
-        # 저변동 스타일 A는 비중이 25%를 넘는 것이 정상 (리스크 기준 캡의 정의)
-        notional_share = w.groupby(np.asarray(styles)).sum()
-        assert notional_share["A"] > 0.25
 
     def test_zero_vol_factor_does_not_explode(self) -> None:
         """무분산 팩터는 vol 하한(1e-6) 가드로 폭주하지 않는다."""

@@ -17,16 +17,18 @@ import logging
 import pandas as pd
 import sqlalchemy as sql
 
-from config import PARAM
+from config import PARAM, UNIVERSES
 
 logger = logging.getLogger(__name__)
 
-# universe 테이블명은 파라미터화 불가 (DDL 식별자) → allowlist로 검증
-ALLOWED_UNIVERSES = {"clarifi_mxcn1a_afl", "clarifi_mxwo_afl"}
+# universe 테이블명은 파라미터화 불가 (DDL 식별자) -> config.UNIVERSES 로 allowlist 검증
+ALLOWED_UNIVERSES = {u["universe"] for u in UNIVERSES.values()}
 
 
 def _build_engine(arg: dict):
-    """PARAM dict 로 SQLAlchemy 엔진 생성 (fetch_snp / fetch_country_map 공용)."""
+    """PARAM dict 로 SQLAlchemy 엔진 생성 + universe allowlist 검증 (fetch_snp / fetch_country_map 공용)."""
+    if arg.get("universe") not in ALLOWED_UNIVERSES:
+        raise ValueError(f"Invalid universe '{arg.get('universe')}'. Allowed: {ALLOWED_UNIVERSES}")
     conn_url = sql.engine.URL.create(
         "mssql+pyodbc",
         username=arg["user_name"],
@@ -44,12 +46,9 @@ def fetch_country_map(param: dict | None = None) -> pd.DataFrame:
     country 는 정적 속성 (전 이력 복수 국가 종목 0건 확인, 2026-07-28).
     """
     arg = param if param is not None else PARAM
-    universe = arg["universe"]
-    if universe not in ALLOWED_UNIVERSES:
-        raise ValueError(f"Invalid universe '{universe}'. Allowed: {ALLOWED_UNIVERSES}")
     engine = _build_engine(arg)
     df = pd.read_sql_query(
-        sql.text(f"SELECT gvkeyiid, MAX(country) AS country FROM [dbo].[{universe}] GROUP BY gvkeyiid"),
+        sql.text(f"SELECT gvkeyiid, MAX(country) AS country FROM [dbo].[{arg['universe']}] GROUP BY gvkeyiid"),
         con=engine,
     )
     engine.dispose()
@@ -83,8 +82,6 @@ class GenerateQueryStructure:
         engine = _build_engine(arg)
 
         universe = arg["universe"]
-        if universe not in ALLOWED_UNIVERSES:
-            raise ValueError(f"Invalid universe '{universe}'. Allowed: {ALLOWED_UNIVERSES}")
         query_raw = sql.text(
             f"WITH RankedData AS ("
             f"    SELECT "

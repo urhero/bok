@@ -151,26 +151,6 @@ class TestLoadFactorParquet:
         years = pd.to_datetime(result["ddt"]).dt.year.unique()
         assert list(years) == [2024]
 
-    def test_load_fallback_single_file(self, sample_factor_df, tmp_path):
-        """단일 파일 fallback."""
-        single_path = tmp_path / "TEST_factor.parquet"
-        sample_factor_df.to_parquet(single_path, index=False)
-
-        result = load_factor_parquet(tmp_path, "TEST")
-        assert len(result) == len(sample_factor_df)
-
-    def test_load_split_priority_over_single(self, sample_factor_df, tmp_path):
-        """분할 파일이 단일 파일보다 우선."""
-        # 단일 파일 (빈 데이터)
-        single_path = tmp_path / "TEST_factor.parquet"
-        pd.DataFrame(columns=sample_factor_df.columns).to_parquet(single_path, index=False)
-
-        # 분할 파일 (실제 데이터)
-        save_factor_parquet_by_year(sample_factor_df, tmp_path, "TEST")
-
-        result = load_factor_parquet(tmp_path, "TEST")
-        assert len(result) == len(sample_factor_df)  # 분할 파일에서 로드
-
     def test_load_not_found(self, tmp_path):
         """파일 없으면 FileNotFoundError."""
         with pytest.raises(FileNotFoundError):
@@ -199,14 +179,6 @@ class TestLoadFactorParquet:
         pd.testing.assert_frame_equal(
             subset.reset_index(drop=True), full[cols].reset_index(drop=True),
         )
-
-    def test_load_columns_pushdown_single(self, sample_factor_df, tmp_path):
-        """columns= 가 단일 파일 fallback 경로에도 적용된다."""
-        sample_factor_df.to_parquet(tmp_path / "TEST_factor.parquet", index=False)
-        cols = ["ddt", "gvkeyiid", "val"]
-        subset = load_factor_parquet(tmp_path, "TEST", columns=cols)
-        assert list(subset.columns) == cols
-        assert len(subset) == len(sample_factor_df)
 
 
 class TestListYearlyParquets:

@@ -62,30 +62,3 @@ def tax_cost(delta: pd.Series, benchmark: str | None = None) -> float:
     buys = delta.clip(lower=0.0)
     sells = (-delta).clip(lower=0.0)
     return float((buys * rf["buy"]).sum() + (sells * rf["sell"]).sum())
-
-
-def excluded_countries(threshold_bp: float | None) -> set[str]:
-    """평균 세율((매수+매도)/2)이 임계 이상인 국가 집합. None/0 이면 빈 집합."""
-    if not threshold_bp:
-        return set()
-    return {c for c, (b, s) in COUNTRY_TAX_BPS.items() if (b + s) / 2.0 >= threshold_bp}
-
-
-def drop_high_tax_countries(
-    raw: pd.DataFrame, benchmark: str, threshold_bp: float | None
-) -> pd.DataFrame:
-    """고세율 국가 종목을 유니버스에서 제외한다 (데이터 로드 직후 1회).
-
-    비용 회계(tax_cost)와 달리 선정·가중·MP 전 단계에 영향을 준다.
-    국가 미매핑 종목은 보존 (면세 취급과 동일한 보수적 처리).
-    """
-    drop = excluded_countries(threshold_bp)
-    if not drop:
-        return raw
-    path = DATA_DIR / f"{benchmark}_country_map.parquet"
-    if not path.exists():  # _rate_frame 과 동일한 degrade (커밋 7a0ed44 의 형제 경로)
-        logger.warning("%s 없음 - 고세율 국가 배제 미적용", path.name)
-        return raw
-    cmap = pd.read_parquet(path)
-    bad = set(cmap.loc[cmap["country"].isin(drop), "gvkeyiid"])
-    return raw[~raw["gvkeyiid"].isin(bad)]

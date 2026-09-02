@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 """MXWO 채택 파라미터 재검증 스윕 (2026-08-06, 앞뒤 3+케이스).
 
-baseline = 현행 채택 스택 (w48/TSM4/Top50/수축0.7/spread0.05/hyst0.25/w1f6).
+baseline = config 의 현행 채택 스택(BASE_ENGINE + PIPELINE_PARAMS 기본값).
 각 케이스 = baseline 에서 파라미터 1개만 변경. factor-level walk-forward.
-사용: python param_recheck_runner.py <worker_idx> <n_workers>
+사용: python research/param_recheck_runner.py <worker_idx> <n_workers>
 """
-import sys
-sys.path.insert(0, "C:/Users/IKM/bok")
 import logging
-logging.basicConfig(level=logging.WARNING)
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+logging.basicConfig(level=logging.WARNING)
 
 import numpy as np
 import pandas as pd

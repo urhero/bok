@@ -16,9 +16,11 @@ from pathlib import Path
 
 import pandas as pd
 
+from config import PARAM, PIPELINE_PARAMS
+from service.paths import latest
 from service.report import dashboard_charts as ch
 from service.report import dashboard_data as dd
-from service.paths import latest
+from service.report.dashboard_charts import STRAT_LABEL
 
 logger = logging.getLogger(__name__)
 
@@ -220,7 +222,7 @@ def _oos_rows(curves) -> list[dict]:
     metrics = [("CAGR", "cagr", True), ("최대 낙폭 (Maximum Drawdown)", "mdd", True),
                ("Sharpe", "sharpe", False), ("Calmar", "calmar", False)]
     return [
-        {"cat": f"OOS 성과 (EW/Top50/{_strategy_label()})", "metric": label, "single": None, "interp": "",
+        {"cat": f"OOS 성과 (EW/Top50/{STRAT_LABEL})", "metric": label, "single": None, "interp": "",
          "ew": _fmt_perf(perf["ew"][m], pct),
          "top50": _fmt_perf(perf["top50"][m], pct),
          "cew": _fmt_perf(perf["cew"][m], pct)}
@@ -307,7 +309,7 @@ def _diagnostics_table(output_dir: Path, curves=None, end_date=None) -> str:
         )
     return (
         '<div class="card full"><table class="diag-table">'
-        f'<thead><tr><th>분류</th><th>지표</th><th>EW</th><th>Top50</th><th>{_strategy_label()}</th><th>해석</th></tr></thead>'
+        f'<thead><tr><th>분류</th><th>지표</th><th>EW</th><th>Top50</th><th>{STRAT_LABEL}</th><th>해석</th></tr></thead>'
         f'<tbody>{"".join(trs)}</tbody></table></div>'
     )
 
@@ -390,7 +392,7 @@ def _drawdown_episodes_section(curves) -> tuple[str, str]:
     본전략만 기본 표시하고 EW 계열은 접힘용으로 분리 (2026-08-28 사용자 지정)."""
     main, others = [], []
     for label, cum_col in _DD_CURVE_SPECS:
-        label = label.format(strat=_strategy_label())
+        label = label.format(strat=STRAT_LABEL)
         if cum_col not in curves.columns:
             continue
         eps = dd.compute_drawdown_episodes(curves[cum_col], min_depth=0.005)
@@ -412,32 +414,14 @@ def _drawdown_episodes_section(curves) -> tuple[str, str]:
     return "".join(main), "".join(others)
 
 
-def _benchmark() -> str:
-    """유니버스명 (config PARAM). 미가용 시 'BOK'."""
-    try:
-        from config import PARAM
-        return PARAM["benchmark"]
-    except Exception:
-        return "BOK"
-
-
-def _strategy_label() -> str:
-    """본전략 표기 '<유니버스>전략' — 구 표기 CEW 대체 (2026-08-28 사용자 지정)."""
-    return f"{_benchmark()}전략"
-
-
 def _is_label() -> tuple[str, str]:
     """학습(IS) 표기 (제목용, 본문용). 롤링 창이면 '롤링 N개월', 아니면
-    'YYYY-MM부터 확장창' (config backtest_start). config 미가용 시 빈 문자열."""
-    try:
-        from config import PIPELINE_PARAMS
-        w = PIPELINE_PARAMS.get("is_window_months")
-        if w:
-            return f"학습 롤링 {int(w)}개월", f"학습(IS) 롤링 {int(w)}개월 창"
-        start = pd.Timestamp(PIPELINE_PARAMS["backtest_start"]).strftime("%Y-%m")
-        return f"학습 {start}~ 확장창", f"학습(IS) {start}부터 확장창"
-    except Exception:
-        return "", ""
+    'YYYY-MM부터 확장창' (config backtest_start)."""
+    w = PIPELINE_PARAMS.get("is_window_months")
+    if w:
+        return f"학습 롤링 {int(w)}개월", f"학습(IS) 롤링 {int(w)}개월 창"
+    start = pd.Timestamp(PIPELINE_PARAMS["backtest_start"]).strftime("%Y-%m")
+    return f"학습 {start}~ 확장창", f"학습(IS) {start}부터 확장창"
 
 
 def _backtest_stats_card(curves) -> str:
@@ -532,8 +516,7 @@ def _attach_benchmark(curves: pd.DataFrame) -> pd.DataFrame:
 
     MP 는 시장중립 오버레이이므로 실제 운용 수익 = BM + MP. 파일이 없으면 무동작.
     """
-    from config import PARAM as _param
-    path = dd.DATA_DIR / f"{_param['benchmark']}_bm_returns.csv"
+    path = dd.DATA_DIR / f"{PARAM['benchmark']}_bm_returns.csv"
     if not path.exists() or "cew_return" not in curves.columns:
         return curves
     bm = pd.read_csv(path, parse_dates=["date"]).set_index("date")["bm_return"]
@@ -739,14 +722,8 @@ def _build_portfolio_section(output_dir: Path, end_date: str | None,
     tilt = dd.factor_tilt(weights)
     selected = dd.active_factors(weights)
 
-    style_cap = 0.25
-    benchmark = "MXCN1A"
-    try:
-        from config import PARAM, PIPELINE_PARAMS
-        style_cap = float(PIPELINE_PARAMS.get("style_cap", 0.25))
-        benchmark = PARAM.get("benchmark", "MXCN1A")
-    except (ImportError, AttributeError):  # config 없어도 기본값으로 진행 (그 외 오류는 전파)
-        pass
+    style_cap = float(PIPELINE_PARAMS["style_cap"])
+    benchmark = PARAM["benchmark"]
 
     cards = [
         f'<div class="card">{_fig_div(ch.style_allocation_fig(style_w, style_cap), include_js=not js_already)}</div>'
@@ -845,7 +822,7 @@ def _correlation_regime_section(output_dir: Path, end_date=None) -> str:
     if wf.exists():
         cew = pd.read_csv(wf, index_col=0, parse_dates=True)["cew_return"].dropna()
         fig.add_trace(go.Bar(
-            x=cew.index, y=cew * 100, name=f"{_strategy_label()} 월수익률(%)",
+            x=cew.index, y=cew * 100, name=f"{STRAT_LABEL} 월수익률(%)",
             marker_color=["#4FBF87" if v >= 0 else "#E06C75" for v in cew],
         ), row=2, col=1)
         yearly = cew.groupby(cew.index.year).apply(lambda x: (1 + x).prod() - 1)
@@ -870,8 +847,8 @@ def _correlation_regime_section(output_dir: Path, end_date=None) -> str:
 
     note = ('<div class="note">multiplier 참고 지표 (자동 스케일링 미사용 — 변동성 국면 섹션과 동일 지위). '
             '상단: 평균 상관·흡수률 급등 = 팩터가 한 방향으로 쓸리는 매크로 장세로 L/S 분산 효과 약화. '
-            f'하단: {_strategy_label()} 월수익률 (OOS 시작 2018-06 이후). '
-            f'붉은 음영 = {_strategy_label()} 연수익 음수인 해. '
+            f'하단: {STRAT_LABEL} 월수익률 (OOS 시작 2018-06 이후). '
+            f'붉은 음영 = {STRAT_LABEL} 연수익 음수인 해. '
             '데이터: walk-forward 전기간 팩터 수익률 (마지막 IS 규칙 기준, 상관 구조 참고용).</div>')
     return _collapsible('상관 국면 (multiplier 참고)',
                         f'{note}<div class="card">{_fig_div(fig)}</div>')
@@ -886,12 +863,7 @@ def _style_cap_section(output_dir: Path, snap: str) -> str:
     if df.empty or (df["raw_weight"] - df["fitted_weight"]).abs().max() < 1e-12:
         return ""  # 캡 미발동(전후 동일)이면 생략
 
-    style_cap = 0.25
-    try:
-        from config import PIPELINE_PARAMS
-        style_cap = float(PIPELINE_PARAMS.get("style_cap", 0.25))
-    except (ImportError, AttributeError):
-        pass
+    style_cap = float(PIPELINE_PARAMS["style_cap"])
 
     g = df.groupby("styleName")[["raw_weight", "fitted_weight"]].sum()
     g = g.sort_values("raw_weight", ascending=False)
@@ -1142,7 +1114,7 @@ def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
 
     header = (
         '<header>'
-        f'<span class="title">{_benchmark()} 유니버스 전략 포트폴리오 대시보드</span>'
+        f'<span class="title">{PARAM["benchmark"]} 유니버스 전략 포트폴리오 대시보드</span>'
         f'<span class="date">{snap}</span>'
         '<span class="gen">read-only viz - 기존 output CSV 기반</span>'
         '<button id="theme-btn" class="theme-btn" onclick="__toggleTheme()">라이트 모드</button>'
@@ -1165,7 +1137,7 @@ def build_dashboard(end_date: str | None = None, output_dir: Path | None = None,
         'if(!console.warn)console.warn=function(){'
         '(console.log||function(){}).apply(console,arguments);};}</script>'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f'<title>{_benchmark()} 유니버스 전략 포트폴리오 대시보드 {snap}</title>'
+        f'<title>{PARAM["benchmark"]} 유니버스 전략 포트폴리오 대시보드 {snap}</title>'
         '<link rel="preconnect" href="https://fonts.googleapis.com">'
         '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
         '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700'

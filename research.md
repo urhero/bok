@@ -54,7 +54,6 @@ main.py (CLI)
 | `python main.py mp test <file>` | 소량 데이터 테스트 모드 | 동일 경로, `test_file` 인자 활성 |
 | `python main.py mp --report` | PDF 보고서만 생성 후 종료 | `_generate_report()` → `return` (early return) |
 | `python main.py backtest <start> <end>` | Walk-Forward OOS 백테스트 + 과적합 진단 | `WalkForwardEngine.run()` → `generate_overfit_report()` |
-| `python main.py mp <start> <end> --benchmark` | MP vs. 동일가중 벤치마크 비교 | `compare_vs_benchmark()` |
 
 ---
 
@@ -66,7 +65,7 @@ main.py (CLI)
 - 유니버스 종속 데이터는 전부 `data/{BENCHMARK}_` 접두어: 팩터/수익률 parquet, `_country_map.parquet`, `_bmwgt.parquet`,
   `_bm_returns.csv`(대시보드 BM 오버레이), `_mp_target_gross.csv` / `_mp_multiplier.csv`(배포 배수 이력). 파일이 없으면 해당 기능은 no-op
   (MXCN1A: 거래세 0, 배수 1.0, BM 오버레이 생략) — MXCN1A 결과가 MXWO 전용 기능의 영향을 받지 않는 근거.
-- sharpe1 에서 추가된 키(`min_coverage_pct`, `sector_short_cap`, `mp_target_gross`, `is_window_months`, `deploy_step`, `bm_short_cap`, `ranking_group`, `weight_rebal_months`)는
+- sharpe1 에서 추가된 키(`min_coverage_pct`, `sector_short_cap`, `mp_target_gross`, `is_window_months`, `deploy_step`, `bm_short_cap`, `weight_rebal_months`)는
   MXCN1A 쪽 값이 전부 "미적용"이라 코드 경로가 main 시절과 동일하다 (통합 시 mp test / 실데이터 백테스트로 검증).
 
 | 항목 | MXCN1A (중국 A주) | MXWO (MSCI World) |
@@ -231,7 +230,8 @@ MXWO 에서 off** — 롤링 IS 의 출렁이는 rank_score 분포에서 winner_
 파괴, off 시 +0.24). w36~72 스윕 결과 36~48 고원 — 경계점 w36 대신 내부점 w48
 채택 (full Sharpe 0.412, 최근 3년 1.397). 지역 중립 랭킹(`ranking_group=
 "region_sector"`)은 전 윈도우에서 sector 대비 열위로 기각 — 국가 편중(특히 미국
-모멘텀)이 노이즈가 아니라 알파원이었음 (docs/superpowers/specs/2026-07-28-mxwo-region-neutral-ranking-design.md).
+모멘텀)이 노이즈가 아니라 알파원이었음 (docs/superpowers/specs/2026-07-28-mxwo-region-neutral-ranking-design.md;
+구현은 2026-09-02 정리에서 제거, git 이력 참조).
 
 **2026-07-29 Sharpe 사다리 채택분** (상세: docs/experiments/mxwo_sharpe_ladder_20260729.md):
 `optimization_mode="erc"`(상관 인지 ERC, cov 48M 대각수축 0.2 — 2026-08-07 전구간 스윕 후 0.7에서 변경) + `spread_threshold_pct=0.05`
@@ -368,10 +368,10 @@ per-factor:
 - 채택 근거: Sharpe 사다리 + MP-level 실측 + ERC 붕괴 정정 —
   [mxwo_sharpe_ladder_20260729.md](docs/experiments/mxwo_sharpe_ladder_20260729.md)
 - (참고) ERW 채택 이력: [equal_risk_weight_20260722.md](docs/experiments/equal_risk_weight_20260722.md)
-- `style_cap_basis="risk"`(리스크 예산 기준 캡)는 A/B 열위로 기각, 옵션만 잔류
+- 리스크 예산(w×σ) 기준 스타일 캡(구 `style_cap_basis="risk"`)은 A/B 열위로 기각 -> 구현 제거 (2026-09-02)
 - 주의: 캡 재분배 루프는 float32 라 편중 초기가중에서 ~1e-4 캡 초과 잔차 가능 (경고 로그)
 
-**test_mode**: `style_cap = 1.0`으로 완화 (소량 데이터에서 제약 충족 불가 방지)
+**test_mode**: 스타일 캡 재분배 자체를 생략 (소량 데이터에서 제약 충족 불가 방지)
 
 #### [7] _construct_and_export: MP 구성 + CSV 출력
 
@@ -436,8 +436,7 @@ main.py
   │    ├→ service/download/parquet_io.py (load_factor_parquet)
   │    ├→ service/pipeline/factor_analysis.py (prepend_start_zero 포함)
   │    ├→ service/pipeline/optimization.py
-  │    ├→ service/pipeline/weight_construction.py (build_factor_weight_frames, aggregate_mp_weights, calculate_style_weights 포함)
-  │    └→ service/pipeline/benchmark_comparison.py (--benchmark 옵션)
+  │    └→ service/pipeline/weight_construction.py (build_factor_weight_frames, aggregate_mp_weights, calculate_style_weights 포함)
   └→ service/backtest/ (backtest 커맨드)
        ├→ walk_forward_engine.py (WalkForwardEngine)
        │    ├→ data_slicer.py
@@ -586,7 +585,7 @@ def construct_long_short_df(labeled_data_df, backtest_start="2017-12-31"):
 `weight_construction.py` — 시작일이 `backtest_start` 파라미터로 전달됨. `PIPELINE_PARAMS["backtest_start"]`에서 중앙 관리되며, `aggregate_factor_returns()`를 통해 전달.
 
 #### 4.4.2 SQL injection 완화
-`factor_query.py` — universe 테이블명이 f-string 삽입. `ALLOWED_UNIVERSES` allowlist로 방어.
+`factor_query.py` — universe 테이블명이 f-string 삽입. `config.UNIVERSES` 에서 파생한 `ALLOWED_UNIVERSES` allowlist 로 `_build_engine()` 에서 방어.
 
 ### 4.5 테스트 커버리지 현황
 
@@ -804,9 +803,7 @@ python main.py backtest <start> <end> [옵션]
   --selection-hysteresis 선정 히스테리시스 margin (미지정 시 config 값)
   --cluster-method       topn / winner_median (미지정 시 config 값)
   --style-cap            스타일 합계 상한 (미지정 시 config 0.25; 1.0=캡 해제)
-
-python main.py mp <start> <end> --benchmark
-  → MP vs. 동일가중(1/N) 비교 리포트
+  --is-window-months     롤링 IS 윈도우 개월 (미지정 시 config is_window_months; 0=expanding)
 ```
 
 ### 6.7 실제 실행 결과
@@ -867,6 +864,8 @@ python main.py mp <start> <end> --benchmark
 계약은 `tests/test_unit/test_determinism.py` 가 핀으로 고정한다(서로 다른 `PYTHONHASHSEED`
 하위 프로세스 출력 동일성). 단일 프로세스 내에서는 해시 시드가 고정되어 비결정성이 드러나지
 않으므로 반드시 별도 프로세스로 검증한다.
+
+**2026-09-02 추가 수정:** `overfit_diagnostics.calc_oos_percentile_tracking` 이 `active_factors`(set)를 그대로 순회해 평균을 내 합산 순서가 PYTHONHASHSEED 에 따라 달라졌고, 테스트 데이터에서 평균 백분위가 정확히 0.60 경계라 해석 문구(보통/과적합 의심)가 실행마다 뒤집혔다 -> `sorted(active_set)` 로 고정 (표시값 4자리·실데이터 판정엔 영향 없음).
 
 ---
 

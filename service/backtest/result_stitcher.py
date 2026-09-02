@@ -36,8 +36,6 @@ class WalkForwardResult:
     """
 
     def __init__(self, results: list[dict[str, Any]]):
-        self._raw_results = results
-
         if not results:
             self.oos_returns = pd.Series(dtype=float)
             self.oos_ew_returns = pd.Series(dtype=float)

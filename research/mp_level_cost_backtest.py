@@ -42,11 +42,11 @@ from service.backtest.walk_forward_engine import (
     _run_weight_optimization,
     deploy_weights,
 )
-from service.paths import OUTPUT_DIR, latest
+from service.paths import DATA_DIR, OUTPUT_DIR, latest
 from service.backtest.stock_level import stock_weights_at
 from service.pipeline.transaction_tax import tax_cost
 from service.pipeline.factor_analysis import ANALYZE_COLS, calculate_factor_stats_batch
-from service.pipeline.model_portfolio import DATA_DIR, ModelPortfolioPipeline
+from service.pipeline.model_portfolio import ModelPortfolioPipeline
 from service.pipeline.weight_construction import (
     calculate_vectorized_return,
     construct_long_short_df,
@@ -254,7 +254,6 @@ def run(test_file: str | None, out_dir: Path, selection_cost_bps: float | None =
         cost_fl = sum(cost_full.loc[t, f] * w_dep.get(f, 0) for f in avail)
 
         w_t, r_t = stock_weights_at(frames, w_dep, t, backtest_start_ts,
-                                    stock_weight_cap=pp.get("stock_weight_cap"),
                                     sector_short_cap=pp.get("sector_short_cap"))
         gross = float((w_t * r_t).sum()) if len(w_t) else 0.0
 

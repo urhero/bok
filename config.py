@@ -61,25 +61,18 @@ _COMMON_PARAMS = {
     "top_factor_count": 50,            # 상위 팩터 선정 수
     "spread_threshold_pct": 0.05,      # L/N/S 라벨링 임계값. MXWO 0.05 (2026-07-29, 0.025~0.05 고원) / MXCN1A 0.05 (2026-08-05: MDD -10.1->-6.1%, Calmar 0.305); 구 0.10
     "min_sector_stocks": 10,           # 섹터-날짜 최소 종목 수 (프로덕션)
-    "ranking_group": "sector",         # 5분위 랭킹 그룹: "sector"(기본, 채택) / "region_sector"=(날짜,지역,섹터). 지역 중립화는 전 윈도우에서 열위로 기각 (2026-07-28 A/B — 국가 모멘텀이 알파원)
     "max_zero_return_months": 10,      # 0 수익률 허용 최대 월 수
     "backtest_start": "2009-12-31",    # 백테스트 시작일 (엔진은 parquet 전체 기간을 돎 — MXWO 데이터는 2015-06 부터)
     "backtest_end": "2026-03-31",      # 백테스트 종료일
     "optimization_mode": "erc",        # "erc"(상관 인지 ERC; MXWO 2026-07-29, MXCN1A 2026-08-05 채택) / "equal_risk_weight"(1/sigma) / "equal_weight"(1/N) / "hardcoded". 근거: docs/experiments/mxwo_sharpe_ladder_20260729.md, mxcn1a_component_ablation_20260805.md
     "deploy_step": 1.0,                # 부분 조정 배포 (1.0=전량 조정). MXWO: 20bp 시절 0.5 채택했으나 10bp 전환 후 역전 — 실측 step1.0 0.672 > 0.5 0.604 (2026-07-30)
     "ts_mom_window": 3,                # 팩터 TS 모멘텀 틸트: trailing N개월 자기수익 음수 팩터 비중 감쇠. MXWO 3 (2026-08-07 재검증: 독립 재실행 2회 연속 3M 피크 + 실측 net 0.721->0.761) / MXCN1A 3 (창 3~6 고원, 2026-08-05). None/0 = off
-    "bm_short_cap": False,             # 종목별 숏 비중 <= 그 종목의 BM 비중 (총 보유가 음수가 되지 않게). 배수 적용 후 최종 비중에 적용, 초과분은 여유 있는 숏에 재분배(water-filling), 롱은 숏 총액에 맞춰 비례 조정(중립 유지). BM 미편입 종목은 숏 불가. data/{benchmark}_bmwgt.parquet 필요. **2026-08-21 실측 기각 -> False**: 상한이 소형주 숏을 잘라내 숏 북이 대형주로 편중되는데, 2018-2026 대형-소형 스프레드가 +8.63%p/yr 라 대형주 숏은 구조적 역풍 -> Sharpe +0.715 -> -0.447 반전. 구현은 보존 (mxwo_sharpe_ladder_20260729.md 13차)
+    "bm_short_cap": False,             # 종목별 숏 비중 <= 그 종목의 BM 비중 (총 보유가 음수가 되지 않게). 배수 적용 후 최종 비중에 적용, 초과분은 잘라내고(재분배 없음) 롱은 숏 총액에 맞춰 비례 조정(중립 유지). BM 미편입 종목은 숏 불가. data/{benchmark}_bmwgt.parquet 필요. **2026-08-21 실측 기각 -> False**: 상한이 소형주 숏을 잘라내 숏 북이 대형주로 편중되는데, 2018-2026 대형-소형 스프레드가 +8.63%p/yr 라 대형주 숏은 구조적 역풍 -> Sharpe +0.715 -> -0.447 반전. 구현은 보존 (mxwo_sharpe_ladder_20260729.md 13차)
     "factor_ranking_method": "tstat",  # "shrunk_tstat" / "tstat"(현 기본) / "cagr" — mp+backtest 공통 선정 기준
     "n_clusters": 18,                  # 클러스터 수 (use_cluster_dedup=True일 때)
     "per_cluster_keep": 3,             # 클러스터당 유지 팩터 수
     "cluster_method": "winner_median", # "winner_median"(기본): 클러스터 1등 보호 + 전역 중위값 바닥(top_n 고정 없음, ~18~54 가변) / "topn": 클러스터당 상위3 -> 전역 rank_score Top-N
     "newey_west_lag": 3,               # Newey-West 보정 lag (meta_data.csv 진단용)
-    "style_cap_basis": "weight",       # "weight"(명목비중, 기본)/"risk": 스타일 캡 적용 기준. risk 는 equal_risk_weight 전용 (w*sigma 예산 기준 캡)
-    "universe_mask": "off",            # "off"/"on": 상대 모멘텀 유니버스 마스크 (docs/superpowers/specs/2026-07-21-ls-universe-mask-design.md)
-    "universe_momentum_windows": [1, 3, 6, 12],         # 복합 신호 horizon (개월)
-    "universe_momentum_weights": [0.4, 0.3, 0.2, 0.1],  # horizon별 가중 (최근 가중)
-    "universe_split": [0.3, 0.4, 0.3], # 롱/공통/숏 유니버스 비율
-    "universe_group": "global",        # "global"/"sector": 유니버스 순위 그룹 (sector = (날짜,섹터) 내 백분위)
 }
 
 _UNIVERSE_PARAMS = {
@@ -137,9 +130,3 @@ COUNTRY_TAX_BPS = {
     "ZAF": (25.0, 0.0),      # STT 0.25% 매수
     "USA": (0.0, 0.206),     # SEC Section 31 $20.60/백만 매도 (2026-04-04 부터)
 }
-
-# 고세율 국가 유니버스 배제 임계 (평균 (매수+매도)/2 기준, bp). None = 배제 없음(기본).
-# 값을 주면 평균 세율이 임계 이상인 국가의 종목을 데이터 로드 단계에서 통째로 제외한다
-# (선정·가중·MP 전 단계에 영향 — 비용 회계만 바꾸는 COUNTRY_TAX_BPS 와 다름).
-# 실험용 스위치 (2026-08-12): 10.0 -> 영국/아일랜드/프랑스/남아공/스페인/이탈리아/홍콩 제외.
-TAX_EXCLUSION_THRESHOLD_BP = None
