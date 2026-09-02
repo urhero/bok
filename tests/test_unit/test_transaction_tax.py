@@ -14,6 +14,8 @@ def patched_rates(monkeypatch):
         index=["UK1", "HK1", "JP1"],
     )
     monkeypatch.setattr(tt, "_rate_frame", lambda benchmark: rf)
+    import config
+    monkeypatch.setitem(config.PIPELINE_PARAMS, "apply_country_tax", True)  # MXCN1A env 에서도 세율 경로 검증
     return rf
 
 
@@ -42,6 +44,15 @@ def test_mixed_book_sums_by_direction(patched_rates):
 
 def test_empty_delta(patched_rates):
     assert tt.tax_cost(pd.Series(dtype=float)) == 0.0
+
+
+def test_apply_country_tax_flag_disables(patched_rates, monkeypatch):
+    """apply_country_tax=False (MXCN1A) 면 세율표가 있어도 0 — A주는 홍콩 인지세 대상이 아님."""
+    import config
+    monkeypatch.setitem(config.PIPELINE_PARAMS, "apply_country_tax", False)
+    assert tt.tax_cost(pd.Series({"UK1": 1.0, "HK1": -1.0})) == 0.0
+    monkeypatch.setitem(config.PIPELINE_PARAMS, "apply_country_tax", True)
+    assert tt.tax_cost(pd.Series({"UK1": 1.0})) == pytest.approx(0.005)
 
 
 def test_missing_country_map_degrades_to_zero(monkeypatch, tmp_path):

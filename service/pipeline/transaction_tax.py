@@ -21,6 +21,7 @@ from functools import lru_cache
 
 import pandas as pd
 
+import config
 from config import COUNTRY_TAX_BPS, PARAM
 from service.paths import DATA_DIR
 
@@ -52,8 +53,11 @@ def tax_cost(delta: pd.Series, benchmark: str | None = None) -> float:
     """부호 있는 비중 변화 시리즈(index=gvkeyiid)에 대한 거래세 총액(수익률 단위).
 
     세율표에 없는 국가/미매핑 종목은 0 (면세국 다수 — 일본·독일·캐나다 등).
+    유니버스 config `apply_country_tax=False` 면 세율표·국가맵과 무관하게 0 (MXCN1A —
+    A주는 등록지가 HKG 여도 홍콩 인지세 대상이 아니므로 등록지 기준 세율표를 쓰지 않는다).
     """
-    if delta is None or len(delta) == 0:
+    # 플래그는 호출 시점에 config 모듈에서 읽는다 (테스트의 config reload 에도 안전).
+    if delta is None or len(delta) == 0 or not config.PIPELINE_PARAMS.get("apply_country_tax", True):
         return 0.0
     frame = _rate_frame(benchmark or PARAM["benchmark"])
     if frame is None:

@@ -32,6 +32,7 @@ def test_universe_params(monkeypatch, bm, cost, dedup, win):
     assert cfg.PIPELINE_PARAMS["transaction_cost_bps"] == cost
     assert cfg.PIPELINE_PARAMS["use_cluster_dedup"] is dedup
     assert cfg.PIPELINE_PARAMS["is_window_months"] == win
+    assert cfg.PIPELINE_PARAMS["apply_country_tax"] is (bm == "MXWO")  # 거래세는 MXWO 전용
     assert cfg.PIPELINE_PARAMS["style_cap"] == 0.25  # 공통
 
 

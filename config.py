@@ -80,6 +80,7 @@ _UNIVERSE_PARAMS = {
     # 실측 net Sharpe 0.703 / MDD -4.9%.
     "MXCN1A": {
         "transaction_cost_bps": 20.0,  # 종목 단위 거래비용 (basis points)
+        "apply_country_tax": False,    # 국가별 거래세(COUNTRY_TAX_BPS) 미적용. A주는 등록지(HKG 등)와 무관하게 본토 인지세 대상 — 등록지 기준 세율표가 맞지 않음 (2026-09-02)
         "erc_shrinkage": 0.5,          # ERC cov 대각 수축 비율. 0.2~0.5 고원, 실측 검증값 0.5 채택 (2026-08-05)
         "ts_mom_scale": 0.5,           # 감쇠 배율 (0.7은 열위, 0.5 채택)
         "use_cluster_dedup": True,     # Sprint 1-B: Top-N Hierarchical Clustering 중복 제거 (production 적용)
@@ -94,6 +95,7 @@ _UNIVERSE_PARAMS = {
     # 실측 net Sharpe 0.739 / MDD -4.80 (국가별 거래세 반영 후).
     "MXWO": {
         "transaction_cost_bps": 10.0,  # 선진국 대형주 실집행 기준 10bp (2026-07-30 사용자 지정). 국가별 거래세는 COUNTRY_TAX_BPS 로 별도 계상
+        "apply_country_tax": True,     # 등록지 기준 국가별 거래세 적용 (실측 회계 전용, 2026-08-12)
         "erc_shrinkage": 0.2,          # 0.2 채택 (2026-08-07 전구간 0~1 스윕: 단조 하강 곡선, 실측 net 0.761->0.782/MDD -3.71%. 0은 특이 cov(n<p)+집중 12%라 회피, 0.1~0.3 안전지대 내부점)
         "ts_mom_scale": 0.2,           # 0.2 채택 (2026-08-10 전구간 0~1 스윕: 0 방향 단조 우위, 실측 net 0.782->0.840/MDD -3.50%. 0은 완전 제외 벼랑 규칙+회전 4.4x+최근구간 최약이라 회피, 0.2 = 내부 안전점)
         "use_cluster_dedup": False,    # 롤링 IS와 winner_median 궁합 문제로 off (2026-07-28 A/B: on -0.12 / off +0.41 Sharpe)

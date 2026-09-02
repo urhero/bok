@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Rich 콘솔 출력의 cp949 안전성 테스트 (CLAUDE.md: em-dash/화살표/이모지 금지)."""
 import io
+import re
 
 import pytest
 from rich.console import Console
@@ -23,7 +24,10 @@ def test_print_overfit_report_output_is_cp949_safe(monkeypatch):
     report = generate_overfit_report(WalkForwardResult([]), full_period_cagr=0.0)
     reporting.print_overfit_report(report)
 
-    text = rec.export_text()
+    # Rich 의 표/패널 테두리(박스 문자 U+2500~257F)는 렌더 환경에 따라 달라지고(Linux: 둥근
+    # 모서리 U+256D 는 cp949 에 없음, Windows legacy 콘솔: ASCII 대체) Rich 가 알아서 처리하므로
+    # 검사 대상에서 제외한다. 검사 대상은 우리가 쓴 본문 텍스트(em-dash/화살표/이모지)다.
+    text = re.sub(r"[─-╿]", "", rec.export_text())
     assert "Funnel" in text
     try:
         text.encode("cp949")

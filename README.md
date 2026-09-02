@@ -400,6 +400,7 @@ HTML은 plotly.js 인라인이라 오프라인에서 단독으로 열린다.
 | `min_coverage_pct` | 0 | 0.10 |
 | `sector_short_cap` | None | 0.15 |
 | `mp_target_gross` | 0.14 (롱 +7% / 숏 -7%, 2026-08-31 스냅샷부터; 이전은 배수 1.0) | 0.40 (롱 +20% / 숏 -20%) |
+| `apply_country_tax` | False (A주는 등록지 무관하게 본토 인지세 대상 — 등록지 세율표 부적합) | True (COUNTRY_TAX_BPS, 실측 회계 전용) |
 | 출력 경로 | `output/MXCN1A/` | `output/MXWO/` |
 | 유니버스 종속 데이터 | `data/MXCN1A_*` (+ `_mp_target_gross.csv`) | `data/MXWO_*` (+ `_mp_target_gross.csv`, `_mp_multiplier.csv`, `_bm_returns.csv`, `_bmwgt.parquet`, `_country_map.parquet`) |
 | 정본 실측 (배포 기준) | net Sharpe 0.703 / MDD -4.87% (미스케일, 거래세 미반영) | Sharpe 0.734 / MDD -1.80% / TE 1.04% (롱숏 ±20%, 거래세 반영) |

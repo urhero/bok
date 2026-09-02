@@ -64,7 +64,8 @@ main.py (CLI)
 - `service/paths.py`: `OUTPUT_DIR = output/{BENCHMARK}/` (구 "MXCN1A 만 루트 `output/`" 예외 제거), `HISTORY_DIR = OUTPUT_DIR/mp_weight_history/`.
 - 유니버스 종속 데이터는 전부 `data/{BENCHMARK}_` 접두어: 팩터/수익률 parquet, `_country_map.parquet`, `_bmwgt.parquet`,
   `_bm_returns.csv`(대시보드 BM 오버레이), `_mp_target_gross.csv` / `_mp_multiplier.csv`(배포 배수 이력). 파일이 없으면 해당 기능은 no-op
-  (MXCN1A: 거래세 0, 배수 1.0, BM 오버레이 생략) — MXCN1A 결과가 MXWO 전용 기능의 영향을 받지 않는 근거.
+  (MXCN1A: BM 오버레이 생략). 거래세는 파일 유무가 아니라 `apply_country_tax` 로 명시 제어 (MXCN1A False —
+  2026-09-02 재다운로드가 `MXCN1A_country_map.parquet` 를 만들자 HKG 등록 A주 4종에 홍콩 인지세가 붙는 것을 막기 위해 도입).
 - sharpe1 에서 추가된 키(`min_coverage_pct`, `sector_short_cap`, `mp_target_gross`, `is_window_months`, `deploy_step`, `bm_short_cap`, `weight_rebal_months`)는
   MXCN1A 쪽 값이 전부 "미적용"이라 코드 경로가 main 시절과 동일하다 (통합 시 mp test / 실데이터 백테스트로 검증).
 
@@ -80,6 +81,7 @@ main.py (CLI)
 | `min_coverage_pct` | 0 | 0.10 |
 | `sector_short_cap` | None | 0.15 |
 | `mp_target_gross` | 0.14 (롱 +7% / 숏 -7%, 2026-08-31 스냅샷부터; 이전은 배수 1.0) | 0.40 (롱 +20% / 숏 -20%) |
+| `apply_country_tax` | False (A주는 등록지 무관하게 본토 인지세 대상 — 등록지 세율표 부적합) | True (COUNTRY_TAX_BPS, 실측 회계 전용) |
 | 출력 경로 | `output/MXCN1A/` | `output/MXWO/` |
 | 유니버스 종속 데이터 | `data/MXCN1A_*` (+ `_mp_target_gross.csv`) | `data/MXWO_*` (+ `_mp_target_gross.csv`, `_mp_multiplier.csv`, `_bm_returns.csv`, `_bmwgt.parquet`, `_country_map.parquet`) |
 | 정본 실측 (배포 기준) | net Sharpe 0.703 / MDD -4.87% (미스케일, 거래세 미반영) | Sharpe 0.734 / MDD -1.80% / TE 1.04% (롱숏 ±20%, 거래세 반영) |
