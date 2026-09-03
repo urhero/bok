@@ -399,12 +399,13 @@ agg_w = weight_raw.groupby(["ddt", "ticker", "isin", "gvkeyiid"])[["mp_ls_weight
 agg_w["style"] = "CEW"
 ```
 
-**출력 파일 4종**:
+**출력 파일 5종**:
 
 | 파일 | 내용 | 용도 |
 |------|------|------|
 | `total_aggregated_weights_*.csv` | 팩터별 + MP 행이 모두 포함된 전체 가중치 | 감사 추적 |
 | `total_aggregated_weights_style_*.csv` | 스타일별 집계 | 스타일 노출 모니터링 |
+| `total_aggregated_weights_style_mponly_*.csv` | 위 파일의 style=MP 행만 (종목별 최종 롱/숏 비중) | 최종 비중 확인 |
 | `pivoted_total_agg_wgt_*.csv` | 피벗 형태 (행=종목, 열=스타일×팩터) | Bloomberg Optimizer 입력 |
 | `meta_data.csv` | 팩터 성과 지표 (CAGR, 순위) | 팩터 선정 근거 |
 

@@ -141,7 +141,7 @@ class TestRealDataOutputFiles:
     def test_total_aggregated_weights_style_file_exists(self, pipeline_result) -> None:
         """total_aggregated_weights_style CSV가 생성되는지 확인"""
         end_date = pipeline_result["end_date"]
-        pattern = f"total_aggregated_weights_style_{end_date}_test.csv"
+        pattern = f"total_aggregated_weights_style_{end_date}_mp_test.csv"
         files = list(OUTPUT_DIR.glob(pattern))
         assert len(files) >= 1, f"Expected {pattern} in output/"
 
@@ -320,7 +320,7 @@ class TestRealDataOutputCSVQuality:
 
     @staticmethod
     def _load_style_weights(end_date: str) -> pd.DataFrame | None:
-        files = list(OUTPUT_DIR.glob(f"total_aggregated_weights_style_{end_date}_test.csv"))
+        files = list(OUTPUT_DIR.glob(f"total_aggregated_weights_style_{end_date}_mp_test.csv"))
         return pd.read_csv(files[0]) if files else None
 
     @pytest.mark.skipif(not HAS_REAL_DATA, reason="No year-split parquet in data/")

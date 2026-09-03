@@ -162,8 +162,8 @@ BENCHMARK=MXWO python main.py backtest 2015-06-30 2026-07-31
 
 ### (c) 결과물 산출
 - 종목 × 팩터 × 스타일 구조의 최종 가중치 패널 → CSV 출력
-  - `total_aggregated_weights_{end_date}_test.csv` — 종목×팩터 가중치 (파일명의 `_test`는 고정 리터럴 — production에서도 붙음. test 모드 표시 아님)
-  - `total_aggregated_weights_style_{end_date}_test.csv` — 스타일별 집계 (종목 단위, `_test` 동일)
+  - `total_aggregated_weights_{end_date}_mp.csv` — 종목×팩터 가중치 (test 모드는 `_mp_{stem}` 접미사)
+  - `total_aggregated_weights_style_{end_date}_mp.csv` — 스타일별 집계 (종목 단위); `..._style_mponly_{end_date}.csv` 는 style=MP 행만 (종목별 최종 비중)
   - `pivoted_total_agg_wgt_{end_date}.csv` — 피벗 형태 (Optimizer 연동용)
   - `meta_data.csv` — 팩터 성과 요약 (test 모드에서만 `meta_data_test_*.csv`로 바뀜)
 - factor 가중치 + style 요약 → `output/{BENCHMARK}/mp_weight_history/` (production 실행 시 항상 저장, test 모드는 3종 모두 미저장)

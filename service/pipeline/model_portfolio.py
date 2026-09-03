@@ -413,8 +413,12 @@ class ModelPortfolioPipeline:
         # 배포 규모를 파일명에 명시 (총 gross % — 예: gross32 = 롱/숏 각 ±16%)
         if target:
             suffix += f"_gross{round(float(target) * 100)}"
-        final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_test{suffix}.csv")
-        final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_test{suffix}.csv")
+        final_weights.to_csv(OUTPUT_DIR / f"total_aggregated_weights_{end_date}_mp{suffix}.csv")
+        final_style_weight.to_csv(OUTPUT_DIR / f"total_aggregated_weights_style_{end_date}_mp{suffix}.csv")
+        # MP 스타일(합산 비중) 행만 별도 파일 — 종목별 최종 롱/숏 비중 확인용
+        final_style_weight.xs("MP", level="style", drop_level=False).to_csv(
+            OUTPUT_DIR / f"total_aggregated_weights_style_mponly_{end_date}{suffix}.csv"
+        )
 
         # 피벗 테이블 (MP factor_weight 백필 + 결정적 출력 가드는 헬퍼에 보존)
         pivoted_final = build_pivoted_export(final_weights, sim_result)
